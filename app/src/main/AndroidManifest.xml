@@ -14,7 +14,7 @@
         <!--
           usesCleartextTraffic is on because the server this app talks to is a self-hosted
           Ishi-Read instance whose address the user supplies at runtime (often a bare LAN
-          IP without TLS) -- see Ishi-Read's own README note about needing a reverse proxy
+          IP without TLS); see Ishi-Read's own README note about needing a reverse proxy
           for HTTPS. Tighten this with a network_security_config once a fixed, HTTPS-only
           deployment is the norm.
         -->
