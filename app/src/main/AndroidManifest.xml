@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".IshiReaderApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.IshiReader"
+        android:usesCleartextTraffic="true">
+        <!--
+          usesCleartextTraffic is on because the server this app talks to is a self-hosted
+          Ishi-Read instance whose address the user supplies at runtime (often a bare LAN
+          IP without TLS) -- see Ishi-Read's own README note about needing a reverse proxy
+          for HTTPS. Tighten this with a network_security_config once a fixed, HTTPS-only
+          deployment is the norm.
+        -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".reader.ReaderActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+    </application>
+
+</manifest>
