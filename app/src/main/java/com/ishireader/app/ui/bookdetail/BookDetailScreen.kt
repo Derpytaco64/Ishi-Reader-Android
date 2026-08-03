@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -112,13 +113,35 @@ fun BookDetailScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            MetadataChips(book = book, onCopyUuid = { uuid -> clipboard.setText(AnnotatedString(uuid)) })
+            MetadataChips(book = book)
+
+            if (book.publisher != null) {
+                ChipSection(title = "Publisher") { Chip(book.publisher) }
+            }
+
+            if (book.isbn != null || book.calibreId != null || book.uuid != null) {
+                ChipSection(title = "Identifiers") {
+                    book.isbn?.let { Chip("ISBN: $it") }
+                    book.calibreId?.let { Chip("Calibre ID: $it") }
+                    book.uuid?.let { uuid ->
+                        Chip("UUID: $uuid", trailing = {
+                            TextButton(
+                                onClick = { clipboard.setText(AnnotatedString(uuid)) },
+                                modifier = Modifier.padding(start = 4.dp)
+                            ) {
+                                Text("Copy", style = MaterialTheme.typography.labelSmall)
+                            }
+                        })
+                    }
+                }
+            }
+
+            if (book.language != null) {
+                ChipSection(title = "Language") { Chip(book.language) }
+            }
 
             if (book.tags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Genres", style = MaterialTheme.typography.titleSmall)
-                Spacer(modifier = Modifier.height(8.dp))
-                GenreChips(tags = book.tags)
+                ChipSection(title = "Genres") { book.tags.forEach { tag -> Chip(tag) } }
             }
 
             book.description?.takeIf { it.isNotBlank() }?.let { description ->
@@ -144,16 +167,12 @@ private fun ProgressDial(percent: Double) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MetadataChips(book: Book, onCopyUuid: (String) -> Unit) {
+private fun MetadataChips(book: Book) {
     val chips = buildList {
         book.addedAt?.let { add("Added" to DateFormat.getDateInstance().format(Date(it.toLong()))) }
         book.modified?.let { add("Modified" to it) }
         book.published?.let { add("Published" to it) }
-        book.publisher?.let { add("Publisher" to it) }
-        book.language?.let { add("Language" to it) }
-        book.isbn?.let { add("ISBN" to it) }
         book.fileSize?.let { add("Size" to it) }
-        book.calibreId?.let { add("Calibre ID" to it) }
     }
 
     FlowRow(
@@ -162,26 +181,21 @@ private fun MetadataChips(book: Book, onCopyUuid: (String) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         chips.forEach { (label, value) -> Chip("$label: $value") }
-        book.uuid?.let { uuid ->
-            Chip("UUID: $uuid", trailing = {
-                TextButton(onClick = { onCopyUuid(uuid) }, modifier = Modifier.padding(start = 4.dp)) {
-                    Text("Copy", style = MaterialTheme.typography.labelSmall)
-                }
-            })
-        }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun GenreChips(tags: List<String>) {
+private fun ChipSection(title: String, content: @Composable FlowRowScope.() -> Unit) {
+    Spacer(modifier = Modifier.height(16.dp))
+    Text(title, style = MaterialTheme.typography.titleSmall)
+    Spacer(modifier = Modifier.height(8.dp))
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        tags.forEach { tag -> Chip(tag) }
-    }
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        content = content
+    )
 }
 
 @Composable
