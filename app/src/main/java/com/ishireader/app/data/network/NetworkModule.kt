@@ -32,6 +32,11 @@ class NetworkModule(context: Context) {
     val isConfigured: Boolean
         get() = currentApi != null
 
+    /** Scheme+host of the configured server, no trailing slash -- lets callers turn a
+     *  server-relative path (e.g. PublicUser.avatarUrl) into something Coil can load. */
+    val baseUrl: String?
+        get() = currentBaseUrl
+
     /** @throws IllegalArgumentException if [serverUrl] can't be turned into a valid HTTP(S) base URL. */
     fun configure(serverUrl: String) {
         val trimmed = serverUrl.trim().trimEnd('/')
