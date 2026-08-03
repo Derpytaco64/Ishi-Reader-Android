@@ -24,11 +24,14 @@ import com.ishireader.app.ui.library.LibraryScreen
 import com.ishireader.app.ui.library.LibraryViewModel
 import com.ishireader.app.ui.login.LoginScreen
 import com.ishireader.app.ui.login.LoginViewModel
+import com.ishireader.app.ui.series.SeriesScreen
+import com.ishireader.app.ui.series.SeriesViewModel
 import com.ishireader.app.ui.theme.IshiReaderTheme
 
 private const val ROUTE_LOGIN = "login"
 private const val ROUTE_HOME = "home"
 private const val ROUTE_LIBRARY = "library"
+private const val ROUTE_SERIES = "series"
 private const val ARG_MANIFEST_URL = "manifestUrl"
 private const val ROUTE_BOOK_DETAIL = "bookDetail/{$ARG_MANIFEST_URL}"
 
@@ -63,7 +66,8 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             viewModel = viewModel,
                             onBookClick = { book -> openBookDetail(navController, book) },
-                            onViewLibraryClick = { navController.navigate(ROUTE_LIBRARY) }
+                            onViewLibraryClick = { navController.navigate(ROUTE_LIBRARY) },
+                            onViewSeriesClick = { navController.navigate(ROUTE_SERIES) }
                         )
                     }
                     composable(ROUTE_LIBRARY) {
@@ -71,6 +75,15 @@ class MainActivity : ComponentActivity() {
                             factory = LibraryViewModel.Factory(app.libraryRepository)
                         )
                         LibraryScreen(
+                            viewModel = viewModel,
+                            onBookClick = { book -> openBookDetail(navController, book) }
+                        )
+                    }
+                    composable(ROUTE_SERIES) {
+                        val viewModel: SeriesViewModel = viewModel(
+                            factory = SeriesViewModel.Factory(app.libraryRepository)
+                        )
+                        SeriesScreen(
                             viewModel = viewModel,
                             onBookClick = { book -> openBookDetail(navController, book) }
                         )

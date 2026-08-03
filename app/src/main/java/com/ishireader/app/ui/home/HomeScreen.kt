@@ -42,7 +42,8 @@ private val ShelfItemWidth = 110.dp
 fun HomeScreen(
     viewModel: HomeViewModel,
     onBookClick: (Book) -> Unit,
-    onViewLibraryClick: () -> Unit
+    onViewLibraryClick: () -> Unit,
+    onViewSeriesClick: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val isEmpty = state.continueReading.isEmpty() && state.lastSeriesRead.isEmpty() &&
@@ -53,6 +54,7 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Home") },
                 actions = {
+                    TextButton(onClick = onViewSeriesClick) { Text("Series") }
                     TextButton(onClick = onViewLibraryClick) { Text("Library") }
                     IconButton(onClick = viewModel::refresh) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
