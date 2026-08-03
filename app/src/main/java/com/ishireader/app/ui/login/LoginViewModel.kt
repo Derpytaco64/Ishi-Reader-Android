@@ -37,11 +37,14 @@ class LoginViewModel(
             _uiState.value = _uiState.value.copy(serverUrl = savedUrl)
 
             // Already have a valid session cookie for this server? Skip straight to the library.
+            // A bad saved URL just falls through to the login form instead of crashing the app.
             if (savedUrl.isNotBlank()) {
-                network.configure(savedUrl)
-                if (authRepository.fetchCurrentUser() is ApiResult.Success) {
-                    _uiState.value = _uiState.value.copy(loggedIn = true)
-                }
+                runCatching { network.configure(savedUrl) }
+                    .onSuccess {
+                        if (authRepository.fetchCurrentUser() is ApiResult.Success) {
+                            _uiState.value = _uiState.value.copy(loggedIn = true)
+                        }
+                    }
             }
         }
     }
@@ -68,8 +71,16 @@ class LoginViewModel(
         _uiState.value = state.copy(isLoading = true, error = null)
 
         viewModelScope.launch {
+            val configureResult = runCatching { network.configure(state.serverUrl) }
+            if (configureResult.isFailure) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = configureResult.exceptionOrNull()?.message ?: "Invalid server URL"
+                )
+                return@launch
+            }
+
             preferences.setServerUrl(state.serverUrl)
-            network.configure(state.serverUrl)
 
             when (val result = authRepository.login(state.username, state.password)) {
                 is ApiResult.Success -> _uiState.value = _uiState.value.copy(isLoading = false, loggedIn = true)

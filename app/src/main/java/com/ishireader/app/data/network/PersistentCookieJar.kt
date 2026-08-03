@@ -37,7 +37,7 @@ class PersistentCookieJar(context: Context) : CookieJar {
             if (raw is String) {
                 val restored = runCatching { json.decodeFromString<List<StoredCookie>>(raw) }
                     .getOrDefault(emptyList())
-                    .map { it.toCookie() }
+                    .mapNotNull { runCatching { it.toCookie() }.getOrNull() }
                 if (restored.isNotEmpty()) cache[host] = restored.toMutableList()
             }
         }

@@ -3,6 +3,7 @@ package com.ishireader.app.data.network
 import android.content.Context
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -31,8 +32,18 @@ class NetworkModule(context: Context) {
     val isConfigured: Boolean
         get() = currentApi != null
 
+    /** @throws IllegalArgumentException if [serverUrl] can't be turned into a valid HTTP(S) base URL. */
     fun configure(serverUrl: String) {
-        val normalized = serverUrl.trimEnd('/')
+        val trimmed = serverUrl.trim().trimEnd('/')
+        // Users naturally type "reader.example.com" or a bare LAN IP without a scheme --
+        // Retrofit's baseUrl() throws immediately on that instead of guessing one, so default
+        // to https rather than let the exception propagate uncaught.
+        val normalized = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            trimmed
+        } else {
+            "https://$trimmed"
+        }
+        require(normalized.toHttpUrlOrNull() != null) { "\"$serverUrl\" isn't a valid server URL" }
         if (normalized == currentBaseUrl) return
 
         val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
