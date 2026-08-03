@@ -15,9 +15,8 @@ retrofitSerializationConverter = "1.0.0"
 coroutines = "1.9.0"
 coil = "2.7.0"
 desugarJdkLibs = "2.1.4"
-# CHECK BEFORE FIRST BUILD: pin this against whatever is current on Maven Central /
-# https://github.com/readium/kotlin-toolkit releases -- it was not possible to verify the
-# latest published version while scaffolding this project.
+# Confirmed resolvable on Maven Central and matches the documented 3.1.x navigator API
+# (see the comment atop ReaderActivity.kt). Bump freely if a newer 3.x patch is out.
 readium = "3.1.1"
 
 [libraries]

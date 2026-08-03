@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
+import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
@@ -29,14 +30,13 @@ import org.readium.r2.streamer.parser.DefaultPublicationParser
  * renders it with the Readium Kotlin toolkit's EPUB navigator, syncing the reading position
  * back to /api/userdata/position as the user reads.
  *
- * CAVEAT: this is the one file in the scaffold built against APIs that were not possible to
- * verify against the live Readium Maven artifacts while writing it (see the "readium" version
- * TODO in gradle/libs.versions.toml). AssetRetriever / PublicationOpener / EpubNavigatorFragment
- * construction has shifted signatures across kotlin-toolkit releases -- if this doesn't compile
- * as-is, diff it against the `reader` module of https://github.com/readium/kotlin-toolkit's own
- * test-app for whatever version actually resolves; the overall flow (retrieve asset -> open
- * publication -> create navigator fragment -> observe currentLocator) will still be the same
- * shape even if a constructor or two has moved.
+ * Navigator setup (EpubNavigatorFactory -> createFragmentFactory -> instantiate) matches the
+ * documented 3.1.x pattern at https://readium.org/kotlin-toolkit/3.1.2/guides/navigator/preferences/ --
+ * confirmed against the docs site since the toolkit's 3.0 release replaced the old
+ * EpubNavigatorFragment.createFactory() API with this two-step factory. AssetRetriever/
+ * PublicationOpener signatures were not independently re-verified against 3.1.1's exact release
+ * notes, so if either of those throws an unresolved-reference error, check
+ * https://github.com/readium/kotlin-toolkit/blob/develop/docs/migration-guide.md for what changed.
  */
 class ReaderActivity : FragmentActivity() {
 
@@ -109,11 +109,9 @@ class ReaderActivity : FragmentActivity() {
     private fun showNavigator(publication: Publication, initialLocator: Locator?) {
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
 
-        val factory = EpubNavigatorFragment.createFactory(
-            publication = publication,
-            initialLocator = initialLocator
-        )
-        val fragment = factory.instantiate(classLoader, EpubNavigatorFragment::class.java.name)
+        val navigatorFactory = EpubNavigatorFactory(publication = publication)
+        val fragmentFactory = navigatorFactory.createFragmentFactory(initialLocator = initialLocator)
+        val fragment = fragmentFactory.instantiate(classLoader, EpubNavigatorFragment::class.java.name)
 
         supportFragmentManager.commitNow {
             replace(R.id.reader_container, fragment, NAVIGATOR_FRAGMENT_TAG)
