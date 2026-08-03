@@ -114,6 +114,13 @@ fun BookDetailScreen(
 
             MetadataChips(book = book, onCopyUuid = { uuid -> clipboard.setText(AnnotatedString(uuid)) })
 
+            if (book.tags.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Genres", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                GenreChips(tags = book.tags)
+            }
+
             book.description?.takeIf { it.isNotBlank() }?.let { description ->
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("Description", style = MaterialTheme.typography.titleSmall)
@@ -155,7 +162,6 @@ private fun MetadataChips(book: Book, onCopyUuid: (String) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         chips.forEach { (label, value) -> Chip("$label: $value") }
-        book.tags.forEach { tag -> Chip(tag) }
         book.uuid?.let { uuid ->
             Chip("UUID: $uuid", trailing = {
                 TextButton(onClick = { onCopyUuid(uuid) }, modifier = Modifier.padding(start = 4.dp)) {
@@ -163,6 +169,18 @@ private fun MetadataChips(book: Book, onCopyUuid: (String) -> Unit) {
                 }
             })
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GenreChips(tags: List<String>) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        tags.forEach { tag -> Chip(tag) }
     }
 }
 
