@@ -49,14 +49,16 @@ class MainActivity : ComponentActivity() {
                         val viewModel: LoginViewModel = viewModel(
                             factory = LoginViewModel.Factory(app.preferences, app.network, app.authRepository)
                         )
-                        LoginScreen(
-                            viewModel = viewModel,
-                            onLoggedIn = {
-                                navController.navigate(ROUTE_HOME) {
-                                    popUpTo(ROUTE_LOGIN) { inclusive = true }
+                        IshiReaderTheme(darkTheme = true, dynamicColor = false) {
+                            LoginScreen(
+                                viewModel = viewModel,
+                                onLoggedIn = {
+                                    navController.navigate(ROUTE_HOME) {
+                                        popUpTo(ROUTE_LOGIN) { inclusive = true }
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                     composable(ROUTE_HOME) {
                         val homeViewModel: HomeViewModel = viewModel(
