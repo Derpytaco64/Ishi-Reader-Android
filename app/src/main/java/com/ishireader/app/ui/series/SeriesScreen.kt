@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -73,6 +74,9 @@ fun SeriesScreen(
         topBar = {
             TopAppBar(
                 title = { Text(seriesTitle(selectedSlot)) },
+                // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
+                // the true top of the window (it's always a page inside that pager).
+                windowInsets = WindowInsets(0.dp),
                 navigationIcon = {
                     if (selectedSlot != null) {
                         IconButton(onClick = viewModel::clearSelection) {

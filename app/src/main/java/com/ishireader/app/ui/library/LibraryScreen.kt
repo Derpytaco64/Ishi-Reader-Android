@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -51,6 +52,9 @@ fun LibraryScreen(
         topBar = {
             TopAppBar(
                 title = { Text(if (state.tab == LibraryTab.AUDIOBOOKS) "Audiobooks" else "Books") },
+                // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
+                // the true top of the window (it's always a page inside that pager).
+                windowInsets = WindowInsets(0.dp),
                 actions = {
                     Box {
                         TextButton(onClick = { sortMenuExpanded = true }) {

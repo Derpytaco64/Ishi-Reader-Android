@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,6 +53,9 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Home") },
+                // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
+                // the true top of the window (it's always a page inside that pager).
+                windowInsets = WindowInsets(0.dp),
                 actions = {
                     IconButton(onClick = viewModel::refresh) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Refresh")

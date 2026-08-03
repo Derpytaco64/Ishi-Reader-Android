@@ -3,6 +3,7 @@ package com.ishireader.app.ui.main
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,7 +38,11 @@ fun MainTabsScreen(
     val pagerState = rememberPagerState(pageCount = { TabTitles.size })
     val scope = rememberCoroutineScope()
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // The tab strip sits above each page's own TopAppBar rather than inside a Scaffold, so it
+    // needs its own status bar inset padding -- otherwise it renders under the status bar/camera
+    // cutout. Each page's TopAppBar has its own status bar inset zeroed out to compensate (see
+    // HomeScreen/LibraryScreen/SeriesScreen), since that space is now reserved here instead.
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         TabRow(selectedTabIndex = pagerState.currentPage) {
             TabTitles.forEachIndexed { index, title ->
                 Tab(
