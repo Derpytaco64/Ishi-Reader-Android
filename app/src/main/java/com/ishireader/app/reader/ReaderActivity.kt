@@ -1,12 +1,7 @@
 package com.ishireader.app.reader
 
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.core.content.edit
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
@@ -21,9 +16,6 @@ import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
-import org.readium.r2.navigator.epub.EpubPreferences
-import org.readium.r2.navigator.preferences.Theme
-import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.AbsoluteUrl
@@ -52,27 +44,14 @@ class ReaderActivity : FragmentActivity() {
         const val EXTRA_MANIFEST_URL = "manifest_url"
         const val EXTRA_TITLE = "title"
         private const val NAVIGATOR_FRAGMENT_TAG = "epub_navigator"
-        private const val READER_PREFS_NAME = "reader_settings"
-        private const val KEY_FONT_SIZE = "font_size"
-        private const val KEY_THEME = "theme"
     }
 
     private val app: IshiReaderApp by lazy { application as IshiReaderApp }
-
-    @OptIn(ExperimentalReadiumApi::class)
-    private var currentPreferences: EpubPreferences = EpubPreferences()
-    private val fontScaleState = mutableStateOf(1.0)
-    private val themeState = mutableStateOf(Theme.LIGHT)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_reader)
         title = intent.getStringExtra(EXTRA_TITLE)
-
-        currentPreferences = loadPreferences()
-        fontScaleState.value = currentPreferences.fontSize ?: 1.0
-        themeState.value = currentPreferences.theme ?: Theme.LIGHT
-        setUpSettingsOverlay()
 
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL)
         if (manifestUrl == null) {
@@ -83,55 +62,6 @@ class ReaderActivity : FragmentActivity() {
 
         if (savedInstanceState == null) {
             openBook(manifestUrl)
-        }
-    }
-
-    @OptIn(ExperimentalReadiumApi::class)
-    private fun setUpSettingsOverlay() {
-        findViewById<ComposeView>(R.id.reader_overlay).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                ReaderSettingsOverlay(
-                    fontScale = fontScaleState.value,
-                    theme = themeState.value,
-                    onFontScaleChange = { scale ->
-                        fontScaleState.value = scale
-                        applyPreferences(currentPreferences.copy(fontSize = scale))
-                    },
-                    onThemeChange = { theme ->
-                        themeState.value = theme
-                        applyPreferences(currentPreferences.copy(theme = theme))
-                    }
-                )
-            }
-        }
-    }
-
-    @OptIn(ExperimentalReadiumApi::class)
-    private fun applyPreferences(preferences: EpubPreferences) {
-        currentPreferences = preferences
-        val fragment = supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) as? EpubNavigatorFragment
-        Log.d("ReaderActivity", "applyPreferences: fragment=$fragment preferences=$preferences")
-        fragment?.submitPreferences(preferences)
-        savePreferences(preferences)
-    }
-
-    @OptIn(ExperimentalReadiumApi::class)
-    private fun loadPreferences(): EpubPreferences {
-        val prefs = getSharedPreferences(READER_PREFS_NAME, MODE_PRIVATE)
-        val fontSize = if (prefs.contains(KEY_FONT_SIZE)) prefs.getFloat(KEY_FONT_SIZE, 1.0f).toDouble() else null
-        val theme = prefs.getString(KEY_THEME, null)?.let { name -> runCatching { Theme.valueOf(name) }.getOrNull() }
-        // publisherStyles must be off for theme/fontSize to actually apply -- otherwise the book's
-        // own embedded CSS wins and these preferences are silently ignored (Readium's documented
-        // behavior: "many settings require this to be off").
-        return EpubPreferences(fontSize = fontSize, theme = theme, publisherStyles = false)
-    }
-
-    @OptIn(ExperimentalReadiumApi::class)
-    private fun savePreferences(preferences: EpubPreferences) {
-        getSharedPreferences(READER_PREFS_NAME, MODE_PRIVATE).edit {
-            preferences.fontSize?.let { putFloat(KEY_FONT_SIZE, it.toFloat()) }
-            preferences.theme?.let { putString(KEY_THEME, it.name) }
         }
     }
 
@@ -176,15 +106,11 @@ class ReaderActivity : FragmentActivity() {
         return runCatching { Locator.fromJSON(JSONObject(locatorJson.toString())) }.getOrNull()
     }
 
-    @OptIn(ExperimentalReadiumApi::class)
     private fun showNavigator(publication: Publication, initialLocator: Locator?) {
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
 
         val navigatorFactory = EpubNavigatorFactory(publication = publication)
-        val fragmentFactory = navigatorFactory.createFragmentFactory(
-            initialLocator = initialLocator,
-            initialPreferences = currentPreferences
-        )
+        val fragmentFactory = navigatorFactory.createFragmentFactory(initialLocator = initialLocator)
         val fragment = fragmentFactory.instantiate(classLoader, EpubNavigatorFragment::class.java.name)
 
         supportFragmentManager.commitNow {
