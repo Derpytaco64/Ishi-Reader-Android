@@ -44,7 +44,7 @@ import com.ishireader.app.data.model.Book
 import java.text.DateFormat
 import java.util.Date
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BookDetailScreen(
     book: Book,
