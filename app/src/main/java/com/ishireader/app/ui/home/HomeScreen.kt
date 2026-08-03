@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -38,6 +39,7 @@ import com.ishireader.app.data.model.Book
 import com.ishireader.app.ui.common.BookCoverCard
 
 private val ShelfItemWidth = 110.dp
+private val ProgressBarHeight = 4.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -174,11 +176,15 @@ private fun ContinueReadingCard(
 ) {
     Column(modifier = modifier) {
         BookCoverCard(book = item.book, onClick = onClick, modifier = Modifier.fillMaxWidth())
-        item.percent?.let { percent ->
-            LinearProgressIndicator(
-                progress = { (percent / 100.0).toFloat() },
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-            )
+        // Reserves the progress bar's space even when there's no percent yet, so "Remove" lands
+        // in the same spot across every card in a row instead of shifting up for books without one.
+        Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(ProgressBarHeight)) {
+            item.percent?.let { percent ->
+                LinearProgressIndicator(
+                    progress = { (percent / 100.0).toFloat() },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
         TextButton(onClick = onDismiss, contentPadding = PaddingValues(0.dp)) {
             Text("Remove", style = MaterialTheme.typography.labelSmall)

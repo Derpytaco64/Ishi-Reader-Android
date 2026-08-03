@@ -81,3 +81,18 @@ data class ApiError(val error: String? = null)
  */
 @Serializable
 data class LibraryPrefsResponse(val libraryPrefs: JsonElement? = null)
+
+/** One book's membership in a shelf -- addedAt is when it joined *this* shelf, distinct from
+ *  Book.addedAt (when it was added to the library). */
+@Serializable
+data class ShelfBookEntry(val url: String, val addedAt: Double)
+
+/** customShelves is stored server-side as a flat array under library-prefs, not an object keyed
+ *  by id -- the array's own order *is* display order, there's no separate ordering field. */
+@Serializable
+data class CustomShelf(
+    val id: String,
+    val name: String,
+    val icon: String,
+    val books: List<ShelfBookEntry> = emptyList()
+)

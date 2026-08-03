@@ -26,6 +26,7 @@ import com.ishireader.app.ui.login.LoginViewModel
 import com.ishireader.app.ui.main.MainTabsScreen
 import com.ishireader.app.ui.main.TopBarViewModel
 import com.ishireader.app.ui.series.SeriesViewModel
+import com.ishireader.app.ui.shelves.ShelvesViewModel
 import com.ishireader.app.ui.theme.IshiReaderTheme
 
 private const val ROUTE_LOGIN = "login"
@@ -67,6 +68,9 @@ class MainActivity : ComponentActivity() {
                         val seriesViewModel: SeriesViewModel = viewModel(
                             factory = SeriesViewModel.Factory(app.libraryRepository)
                         )
+                        val shelvesViewModel: ShelvesViewModel = viewModel(
+                            factory = ShelvesViewModel.Factory(app.libraryRepository, app.libraryPrefsRepository)
+                        )
                         val topBarViewModel: TopBarViewModel = viewModel(
                             factory = TopBarViewModel.Factory(app.authRepository)
                         )
@@ -74,6 +78,7 @@ class MainActivity : ComponentActivity() {
                             homeViewModel = homeViewModel,
                             libraryViewModel = libraryViewModel,
                             seriesViewModel = seriesViewModel,
+                            shelvesViewModel = shelvesViewModel,
                             topBarViewModel = topBarViewModel,
                             avatarBaseUrl = app.network.baseUrl,
                             onBookClick = { book -> openBookDetail(navController, book) }

@@ -41,10 +41,13 @@ import com.ishireader.app.ui.library.LibraryScreen
 import com.ishireader.app.ui.library.LibraryViewModel
 import com.ishireader.app.ui.series.SeriesScreen
 import com.ishireader.app.ui.series.SeriesViewModel
+import com.ishireader.app.ui.shelves.ShelvesScreen
+import com.ishireader.app.ui.shelves.ShelvesViewModel
 import kotlinx.coroutines.launch
 
-private val TabTitles = listOf("Home", "Library", "Series")
-private val HeaderIconSize = 40.dp
+private val TabTitles = listOf("Home", "Library", "Series", "Shelves")
+private val LogoSize = 56.dp
+private val AvatarSize = 40.dp
 
 /** Home/Library/Series as swipeable pages under one tab strip, instead of separate pushed
  *  destinations -- each keeps its own ViewModel (scoped to this composable's back stack entry,
@@ -55,6 +58,7 @@ fun MainTabsScreen(
     homeViewModel: HomeViewModel,
     libraryViewModel: LibraryViewModel,
     seriesViewModel: SeriesViewModel,
+    shelvesViewModel: ShelvesViewModel,
     topBarViewModel: TopBarViewModel,
     avatarBaseUrl: String?,
     onBookClick: (Book) -> Unit
@@ -82,7 +86,7 @@ fun MainTabsScreen(
                 painter = painterResource(R.drawable.app_logo),
                 contentDescription = "Ishi Reader",
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(HeaderIconSize).clip(CircleShape)
+                modifier = Modifier.size(LogoSize).clip(CircleShape)
             )
             UserAvatar(user = user, baseUrl = avatarBaseUrl)
         }
@@ -103,7 +107,8 @@ fun MainTabsScreen(
             when (page) {
                 0 -> HomeScreen(viewModel = homeViewModel, onBookClick = onBookClick)
                 1 -> LibraryScreen(viewModel = libraryViewModel, onBookClick = onBookClick)
-                else -> SeriesScreen(viewModel = seriesViewModel, onBookClick = onBookClick)
+                2 -> SeriesScreen(viewModel = seriesViewModel, onBookClick = onBookClick)
+                else -> ShelvesScreen(viewModel = shelvesViewModel, onBookClick = onBookClick)
             }
         }
     }
@@ -117,7 +122,7 @@ private fun UserAvatar(user: PublicUser?, baseUrl: String?) {
     val avatarUrl = user?.avatarUrl?.let { path -> baseUrl?.let { it + path } }
     Box(
         modifier = Modifier
-            .size(HeaderIconSize)
+            .size(AvatarSize)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center
