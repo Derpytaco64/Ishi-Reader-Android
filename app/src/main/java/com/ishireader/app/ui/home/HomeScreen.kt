@@ -3,9 +3,10 @@ package com.ishireader.app.ui.home
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -79,14 +80,13 @@ fun HomeScreen(
                             .padding(vertical = 8.dp)
                     ) {
                         if (state.continueReading.isNotEmpty()) {
-                            ShelfSection(title = "Continue Reading") {
-                                state.continueReading.forEach { item ->
-                                    ContinueReadingCard(
-                                        item = item,
-                                        onClick = { onBookClick(item.book) },
-                                        onDismiss = { viewModel.dismissFromContinueReading(item.book) }
-                                    )
-                                }
+                            ShelfGrid(title = "Continue Reading", items = state.continueReading) { item ->
+                                ContinueReadingCard(
+                                    item = item,
+                                    onClick = { onBookClick(item.book) },
+                                    onDismiss = { viewModel.dismissFromContinueReading(item.book) },
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
                         }
 
@@ -99,10 +99,8 @@ fun HomeScreen(
                         }
 
                         if (state.myLibrary.isNotEmpty()) {
-                            ShelfSection(title = "My Library") {
-                                state.myLibrary.forEach { book ->
-                                    BookCoverCard(book = book, onClick = { onBookClick(book) }, modifier = Modifier.width(ShelfItemWidth))
-                                }
+                            ShelfGrid(title = "My Library", items = state.myLibrary) { book ->
+                                BookCoverCard(book = book, onClick = { onBookClick(book) }, modifier = Modifier.weight(1f))
                             }
                         }
                     }
@@ -129,26 +127,48 @@ private fun ShelfCarousel(title: String, books: List<Book>, onBookClick: (Book) 
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** Rows of exactly [columns] items, each stretched to an equal share of the width -- same cover
+ *  size as LibraryScreen's grid produces on a typical phone, filling the row instead of wrapping
+ *  fixed-width items (which is what FlowRow gave us and left uneven trailing gaps). Plain Column/
+ *  Row rather than LazyVerticalGrid since this already lives inside HomeScreen's own outer
+ *  verticalScroll -- nesting two vertically-scrolling lazy layouts needs a bounded height that
+ *  isn't naturally available here. */
 @Composable
-private fun ShelfSection(title: String, content: @Composable () -> Unit) {
+private fun <T> ShelfGrid(
+    title: String,
+    items: List<T>,
+    columns: Int = 3,
+    itemContent: @Composable RowScope.(T) -> Unit
+) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     )
-    FlowRow(
+    Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        content()
+        items.chunked(columns).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                row.forEach { item -> itemContent(item) }
+                repeat(columns - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+            }
+        }
     }
 }
 
 @Composable
-private fun ContinueReadingCard(item: ContinueReadingItem, onClick: () -> Unit, onDismiss: () -> Unit) {
-    Column(modifier = Modifier.width(ShelfItemWidth)) {
+private fun ContinueReadingCard(
+    item: ContinueReadingItem,
+    onClick: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
         BookCoverCard(book = item.book, onClick = onClick, modifier = Modifier.fillMaxWidth())
         item.percent?.let { percent ->
             LinearProgressIndicator(
