@@ -3,6 +3,7 @@ package com.ishireader.app.ui.bookdetail
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -134,6 +135,7 @@ private fun ProgressDial(percent: Double) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MetadataChips(book: Book, onCopyUuid: (String) -> Unit) {
     val chips = buildList {
