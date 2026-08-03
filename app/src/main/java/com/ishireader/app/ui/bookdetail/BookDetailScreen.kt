@@ -115,6 +115,17 @@ fun BookDetailScreen(
 
             MetadataChips(book = book)
 
+            if (book.tags.isNotEmpty()) {
+                ChipSection(title = "Genres") { book.tags.forEach { tag -> Chip(tag) } }
+            }
+
+            book.description?.takeIf { it.isNotBlank() }?.let { description ->
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Description", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(description, style = MaterialTheme.typography.bodyMedium)
+            }
+
             if (book.publisher != null) {
                 ChipSection(title = "Publisher") { Chip(book.publisher) }
             }
@@ -138,17 +149,6 @@ fun BookDetailScreen(
 
             if (book.language != null) {
                 ChipSection(title = "Language") { Chip(book.language) }
-            }
-
-            if (book.tags.isNotEmpty()) {
-                ChipSection(title = "Genres") { book.tags.forEach { tag -> Chip(tag) } }
-            }
-
-            book.description?.takeIf { it.isNotBlank() }?.let { description ->
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Description", style = MaterialTheme.typography.titleSmall)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(description, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
