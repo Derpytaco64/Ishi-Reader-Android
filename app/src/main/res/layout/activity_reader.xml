@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Compose overlay for reader settings (font size / theme) -- sits on top of the navigator
+    <!-- Compose overlay for reader settings (font size / theme): sits on top of the navigator
          fragment but has no background, so touches over empty space fall through to the page. -->
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/reader_overlay"
