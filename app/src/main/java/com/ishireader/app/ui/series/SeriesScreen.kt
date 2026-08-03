@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -45,7 +47,14 @@ import coil.compose.AsyncImage
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.ui.common.BookCoverCard
 
-private val FanCoverWidth = 110.dp
+// CLAUDE-ADDED: Mirrors StatefulSeriesView.tsx's fan sizing ratios (fan height / offset / grid
+// column width, all relative to a 110px reference cover), just scaled down to a cover width that
+// actually fits multiple columns on a phone -- the site's own 110px reference cover only yields a
+// single (very wide) column at typical mobile viewport widths.
+private val FanCoverWidth = 84.dp
+private val FanHeight = FanCoverWidth * (210f / 110f)
+private val FanOffset = FanCoverWidth * (40f / 110f)
+private val FanGridColumnWidth = FanCoverWidth * (200f / 110f)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,10 +127,10 @@ fun SeriesScreen(
                 }
                 else -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 200.dp),
-                        contentPadding = PaddingValues(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(24.dp),
+                        columns = GridCells.Adaptive(minSize = FanGridColumnWidth),
+                        contentPadding = PaddingValues(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(state.slots) { slot ->
@@ -164,7 +173,7 @@ private fun SeriesFanCard(slot: SeriesSlot, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(1f)
+            .height(FanHeight)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -174,10 +183,11 @@ private fun SeriesFanCard(slot: SeriesSlot, onClick: () -> Unit) {
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(x = -FanOffset, y = (-4).dp)
                     .width(FanCoverWidth)
                     .aspectRatio(2f / 3f)
-                    .rotate(-8f)
-                    .align(Alignment.CenterStart)
+                    .rotate(-20f)
             )
         }
         slot.right?.let { book ->
@@ -186,13 +196,14 @@ private fun SeriesFanCard(slot: SeriesSlot, onClick: () -> Unit) {
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(x = FanOffset, y = (-4).dp)
                     .width(FanCoverWidth)
                     .aspectRatio(2f / 3f)
-                    .rotate(8f)
-                    .align(Alignment.CenterEnd)
+                    .rotate(20f)
             )
         }
-        Box(modifier = Modifier.width(FanCoverWidth).aspectRatio(2f / 3f)) {
+        Box(modifier = Modifier.align(Alignment.Center).width(FanCoverWidth).aspectRatio(2f / 3f)) {
             AsyncImage(
                 model = slot.center.cover,
                 contentDescription = slot.name,
