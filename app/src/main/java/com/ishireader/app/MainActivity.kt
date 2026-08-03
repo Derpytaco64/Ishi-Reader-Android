@@ -1,16 +1,22 @@
 package com.ishireader.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.reader.ReaderActivity
+import com.ishireader.app.ui.bookdetail.BookDetailScreen
+import com.ishireader.app.ui.bookdetail.BookDetailViewModel
 import com.ishireader.app.ui.library.LibraryScreen
 import com.ishireader.app.ui.library.LibraryViewModel
 import com.ishireader.app.ui.login.LoginScreen
@@ -19,6 +25,8 @@ import com.ishireader.app.ui.theme.IshiReaderTheme
 
 private const val ROUTE_LOGIN = "login"
 private const val ROUTE_LIBRARY = "library"
+private const val ARG_MANIFEST_URL = "manifestUrl"
+private const val ROUTE_BOOK_DETAIL = "bookDetail/{$ARG_MANIFEST_URL}"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,8 +58,33 @@ class MainActivity : ComponentActivity() {
                         )
                         LibraryScreen(
                             viewModel = viewModel,
-                            onBookClick = { book -> openReader(book) }
+                            onBookClick = { book ->
+                                navController.navigate("bookDetail/${Uri.encode(book.manifestUrl())}")
+                            }
                         )
+                    }
+                    composable(
+                        route = ROUTE_BOOK_DETAIL,
+                        arguments = listOf(navArgument(ARG_MANIFEST_URL) { type = NavType.StringType })
+                    ) { backStackEntry ->
+                        val manifestUrl = Uri.decode(backStackEntry.arguments?.getString(ARG_MANIFEST_URL))
+                        val book = app.libraryRepository.findCached(manifestUrl)
+
+                        if (book == null) {
+                            // Cache was empty (e.g. process death brought us straight back here) --
+                            // there's no single-book endpoint to refetch from, so just back out.
+                            LaunchedEffect(Unit) { navController.popBackStack() }
+                        } else {
+                            val viewModel: BookDetailViewModel = viewModel(
+                                factory = BookDetailViewModel.Factory(book, app.positionRepository)
+                            )
+                            BookDetailScreen(
+                                book = book,
+                                viewModel = viewModel,
+                                onBackClick = { navController.popBackStack() },
+                                onReadClick = { openReader(book) }
+                            )
+                        }
                     }
                 }
             }

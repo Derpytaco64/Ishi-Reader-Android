@@ -17,7 +17,7 @@ val DEFAULT_SORT_MODE = SortMode.ADDED_NEWEST
 private val collator: Collator = Collator.getInstance()
 
 /** [addedAt] lets shelf views sort by "date added to shelf" instead of "date added to library". */
-fun List<Book>.sortedBy(mode: SortMode, addedAt: (Book) -> Double? = { it.addedAt }): List<Book> =
+fun List<Book>.sortedByMode(mode: SortMode, addedAt: (Book) -> Double? = { it.addedAt }): List<Book> =
     when (mode) {
         SortMode.TITLE_ASC -> sortedWith(compareBy(collator) { it.title })
         SortMode.TITLE_DESC -> sortedWith(compareByDescending(collator) { it.title })

@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.SortMode
-import com.ishireader.app.data.model.sortedBy
+import com.ishireader.app.data.model.sortedByMode
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.LibraryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,7 +67,7 @@ class LibraryViewModel(private val libraryRepository: LibraryRepository) : ViewM
         sortMode: SortMode = _uiState.value.sortMode
     ): List<Book> {
         val filtered = allBooks.filter { it.isAudiobook == (tab == LibraryTab.AUDIOBOOKS) }
-        return filtered.sortedBy(sortMode)
+        return filtered.sortedByMode(sortMode)
     }
 
     class Factory(private val libraryRepository: LibraryRepository) : ViewModelProvider.Factory {
