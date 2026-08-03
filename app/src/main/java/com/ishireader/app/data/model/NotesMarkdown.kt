@@ -1,5 +1,6 @@
 package com.ishireader.app.data.model
 
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import java.text.SimpleDateFormat
@@ -18,9 +19,9 @@ fun buildNotesMarkdown(title: String, author: String?, notes: List<StoredNote>):
     }
 
     val sections = sorted.mapIndexed { index, note ->
-        val quote = note.locator?.jsonObject
+        val quote = (note.locator?.jsonObject
             ?.get("text")?.jsonObject
-            ?.get("highlight")?.contentOrNull
+            ?.get("highlight") as? JsonPrimitive)?.contentOrNull
 
         buildList {
             add("## Note ${index + 1} — ${formatNoteTimestamp(note.createdAt)}")
