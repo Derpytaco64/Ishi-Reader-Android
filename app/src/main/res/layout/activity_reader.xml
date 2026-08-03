@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.fragment.app.FragmentContainerView
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/reader_container"
     android:layout_width="match_parent"
-    android:layout_height="match_parent" />
+    android:layout_height="match_parent">
+
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/reader_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Compose overlay for reader settings (font size / theme) -- sits on top of the navigator
+         fragment but has no background, so touches over empty space fall through to the page. -->
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/reader_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</FrameLayout>

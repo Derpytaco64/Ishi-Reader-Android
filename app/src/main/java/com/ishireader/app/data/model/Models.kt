@@ -96,3 +96,19 @@ data class CustomShelf(
     val icon: String,
     val books: List<ShelfBookEntry> = emptyList()
 )
+
+/** locator is passed through raw for the same reason as PositionResponse.locator -- this app only
+ *  ever needs to read `locator.text.highlight` out of it (see NotesMarkdown.kt) for the export's
+ *  optional quoted passage. */
+@Serializable
+data class StoredNote(
+    val id: String,
+    val locator: JsonElement? = null,
+    val text: String,
+    val createdAt: Double,
+    val updatedAt: Double? = null,
+    val chapterTitle: String? = null
+)
+
+@Serializable
+data class NotesResponse(val items: List<StoredNote> = emptyList())

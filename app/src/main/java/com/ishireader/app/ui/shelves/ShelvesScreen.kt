@@ -55,7 +55,8 @@ import com.ishireader.app.ui.common.BookCoverCard
 @Composable
 fun ShelvesScreen(
     viewModel: ShelvesViewModel,
-    onBookClick: (Book) -> Unit
+    onBookClick: (Book) -> Unit,
+    onBookLongClick: (Book) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val selectedShelf = state.selectedShelf
@@ -80,7 +81,7 @@ fun ShelvesScreen(
                 },
                 actions = {
                     if (selectedShelf == null) {
-                        TextButton(onClick = viewModel::openCreateModal) { Text("+ Shelf") }
+                        TextButton(onClick = { viewModel.openCreateModal() }) { Text("+ Shelf") }
                     } else {
                         TextButton(onClick = viewModel::toggleManagingBooks) {
                             Text(if (state.isManagingBooks) "Done" else "Add Books")
@@ -107,24 +108,19 @@ fun ShelvesScreen(
                 }
                 selectedShelf == null -> ShelfOverviewList(shelves = state.shelves, viewModel = viewModel)
                 state.isManagingBooks -> ManageShelfBooksGrid(shelf = selectedShelf, allBooks = state.allBooks, viewModel = viewModel)
-                else -> ShelfDetailGrid(books = state.selectedShelfBooks, onBookClick = onBookClick, viewModel = viewModel)
+                else -> ShelfDetailGrid(
+                    books = state.selectedShelfBooks,
+                    onBookClick = onBookClick,
+                    onBookLongClick = onBookLongClick,
+                    viewModel = viewModel
+                )
             }
         }
     }
 
-    state.modal?.let { modal ->
-        ShelfFormDialog(modal = modal, viewModel = viewModel)
-    }
-
-    if (state.pendingDeleteShelfId != null) {
-        AlertDialog(
-            onDismissRequest = viewModel::cancelDelete,
-            title = { Text("Delete shelf?") },
-            text = { Text("This can't be undone.") },
-            confirmButton = { TextButton(onClick = viewModel::confirmDelete) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = viewModel::cancelDelete) { Text("Cancel") } }
-        )
-    }
+    // The create/edit modal and delete confirmation are rendered from MainTabsScreen instead of
+    // here -- this composable only exists while the Shelves tab is the pager's current page, but
+    // the book context menu's "+ Create new shelf" can open the create modal from any tab.
 }
 
 @Composable
@@ -167,7 +163,12 @@ private fun ShelfOverviewList(shelves: List<CustomShelf>, viewModel: ShelvesView
 }
 
 @Composable
-private fun ShelfDetailGrid(books: List<Book>, onBookClick: (Book) -> Unit, viewModel: ShelvesViewModel) {
+private fun ShelfDetailGrid(
+    books: List<Book>,
+    onBookClick: (Book) -> Unit,
+    onBookLongClick: (Book) -> Unit,
+    viewModel: ShelvesViewModel
+) {
     if (books.isEmpty()) {
         Text(
             text = "No books on this shelf yet. Tap \"Add Books\" to add some.",
@@ -184,7 +185,12 @@ private fun ShelfDetailGrid(books: List<Book>, onBookClick: (Book) -> Unit, view
     ) {
         items(books, key = { it.url }) { book ->
             Box(modifier = Modifier.fillMaxWidth()) {
-                BookCoverCard(book = book, onClick = { onBookClick(book) }, modifier = Modifier.fillMaxWidth())
+                BookCoverCard(
+                    book = book,
+                    onClick = { onBookClick(book) },
+                    modifier = Modifier.fillMaxWidth(),
+                    onLongClick = { onBookLongClick(book) }
+                )
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -237,7 +243,7 @@ private fun ManageShelfBooksGrid(shelf: CustomShelf, allBooks: List<Book>, viewM
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ShelfFormDialog(modal: ShelfModalState, viewModel: ShelvesViewModel) {
+fun ShelfFormDialog(modal: ShelfModalState, viewModel: ShelvesViewModel) {
     AlertDialog(
         onDismissRequest = viewModel::closeModal,
         title = { Text(if (modal.editingShelfId == null) "New Shelf" else "Edit Shelf") },

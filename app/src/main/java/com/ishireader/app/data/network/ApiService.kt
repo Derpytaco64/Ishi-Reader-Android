@@ -5,6 +5,7 @@ import com.ishireader.app.data.model.LibraryPrefsResponse
 import com.ishireader.app.data.model.LoginRequest
 import com.ishireader.app.data.model.LoginResponse
 import com.ishireader.app.data.model.MeResponse
+import com.ishireader.app.data.model.NotesResponse
 import com.ishireader.app.data.model.PositionRequest
 import com.ishireader.app.data.model.PositionResponse
 import kotlinx.serialization.json.JsonObject
@@ -41,4 +42,7 @@ interface ApiService {
     /** Server does a shallow top-level merge, not an overwrite -- only send the keys you mean to patch. */
     @POST("api/userdata/library-prefs")
     suspend fun patchLibraryPrefs(@Body patch: JsonObject): Response<Unit>
+
+    @GET("api/userdata/notes")
+    suspend fun getNotes(@Query("manifestUrl") manifestUrl: String): Response<NotesResponse>
 }

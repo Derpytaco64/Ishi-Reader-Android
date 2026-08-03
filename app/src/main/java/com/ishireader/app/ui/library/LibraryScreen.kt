@@ -43,7 +43,8 @@ import com.ishireader.app.ui.common.BookCoverCard
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
-    onBookClick: (Book) -> Unit
+    onBookClick: (Book) -> Unit,
+    onBookLongClick: (Book) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -120,7 +121,12 @@ fun LibraryScreen(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(state.books) { book ->
-                                BookCoverCard(book = book, onClick = { onBookClick(book) }, modifier = Modifier.fillMaxWidth())
+                                BookCoverCard(
+                                    book = book,
+                                    onClick = { onBookClick(book) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onLongClick = { onBookLongClick(book) }
+                                )
                             }
                         }
                     }

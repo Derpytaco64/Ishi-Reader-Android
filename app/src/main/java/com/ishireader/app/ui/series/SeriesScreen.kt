@@ -61,7 +61,8 @@ private val FanGridColumnWidth = FanCoverWidth * (200f / 110f)
 @Composable
 fun SeriesScreen(
     viewModel: SeriesViewModel,
-    onBookClick: (Book) -> Unit
+    onBookClick: (Book) -> Unit,
+    onBookLongClick: (Book) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val selectedSlot = state.selectedSlot
@@ -125,7 +126,12 @@ fun SeriesScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(state.selectedBooks) { book ->
-                            BookCoverCard(book = book, onClick = { onBookClick(book) }, modifier = Modifier.fillMaxWidth())
+                            BookCoverCard(
+                                book = book,
+                                onClick = { onBookClick(book) },
+                                modifier = Modifier.fillMaxWidth(),
+                                onLongClick = { onBookLongClick(book) }
+                            )
                         }
                     }
                 }

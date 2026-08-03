@@ -1,6 +1,7 @@
 package com.ishireader.app.ui.common
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,10 +16,14 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.Book
 
-/** Cover + title, used by the Books/Audiobooks grid and every Home shelf (carousel or wrapping). */
+/** Cover + title, used by the Books/Audiobooks grid and every Home shelf (carousel or wrapping).
+ *  [onLongClick] opens the shared book context menu (Go to Series / Export Notes / shelf toggle /
+ *  Remove from Continue Reading) where the caller wires it up -- null wherever that doesn't apply
+ *  (e.g. the shelf "manage books" picker grid, where a tap already means something else). */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BookCoverCard(book: Book, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.clickable(onClick = onClick)) {
+fun BookCoverCard(book: Book, onClick: () -> Unit, modifier: Modifier = Modifier, onLongClick: (() -> Unit)? = null) {
+    Column(modifier = modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         AsyncImage(
             model = book.cover,
             contentDescription = book.title,

@@ -33,7 +33,10 @@ private val DefaultIcon = ShelfIcons.first()
 data class ShelfModalState(
     val editingShelfId: String? = null,
     val name: String = "",
-    val icon: String = DefaultIcon
+    val icon: String = DefaultIcon,
+    /** Set when opened from the book context menu's "+ Create new shelf" -- that book is added
+     *  to the shelf the instant it's created, same as the site's StatefulShelfFormModal. */
+    val addBookUrl: String? = null
 )
 
 data class ShelvesUiState(
@@ -100,8 +103,8 @@ class ShelvesViewModel(
         _uiState.value = _uiState.value.copy(isManagingBooks = !_uiState.value.isManagingBooks)
     }
 
-    fun openCreateModal() {
-        _uiState.value = _uiState.value.copy(modal = ShelfModalState())
+    fun openCreateModal(addBookUrl: String? = null) {
+        _uiState.value = _uiState.value.copy(modal = ShelfModalState(addBookUrl = addBookUrl))
     }
 
     fun openEditModal(shelfId: String) {
@@ -134,7 +137,8 @@ class ShelvesViewModel(
                 if (shelf.id == modal.editingShelfId) shelf.copy(name = name, icon = modal.icon) else shelf
             }
         } else {
-            current + CustomShelf(id = UUID.randomUUID().toString(), name = name, icon = modal.icon, books = emptyList())
+            val initialBooks = modal.addBookUrl?.let { listOf(ShelfBookEntry(it, System.currentTimeMillis().toDouble())) } ?: emptyList()
+            current + CustomShelf(id = UUID.randomUUID().toString(), name = name, icon = modal.icon, books = initialBooks)
         }
         _uiState.value = _uiState.value.copy(shelves = updated, modal = null)
         persist(updated)

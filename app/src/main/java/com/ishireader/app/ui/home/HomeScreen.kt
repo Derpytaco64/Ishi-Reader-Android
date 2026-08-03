@@ -45,7 +45,8 @@ private val ProgressBarHeight = 4.dp
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onBookClick: (Book) -> Unit
+    onBookClick: (Book) -> Unit,
+    onBookLongClick: (Book) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val isEmpty = state.continueReading.isEmpty() && state.lastSeriesRead.isEmpty() &&
@@ -90,6 +91,7 @@ fun HomeScreen(
                                 ContinueReadingCard(
                                     item = item,
                                     onClick = { onBookClick(item.book) },
+                                    onLongClick = { onBookLongClick(item.book) },
                                     onDismiss = { viewModel.dismissFromContinueReading(item.book) },
                                     modifier = Modifier.weight(1f)
                                 )
@@ -97,16 +99,21 @@ fun HomeScreen(
                         }
 
                         if (state.lastSeriesRead.isNotEmpty()) {
-                            ShelfCarousel(title = "Last Series Read", books = state.lastSeriesRead, onBookClick = onBookClick)
+                            ShelfCarousel(title = "Last Series Read", books = state.lastSeriesRead, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
                         }
 
                         if (state.recentlyAdded.isNotEmpty()) {
-                            ShelfCarousel(title = "Recently Added", books = state.recentlyAdded, onBookClick = onBookClick)
+                            ShelfCarousel(title = "Recently Added", books = state.recentlyAdded, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
                         }
 
                         if (state.myLibrary.isNotEmpty()) {
                             ShelfGrid(title = "My Library", items = state.myLibrary) { book ->
-                                BookCoverCard(book = book, onClick = { onBookClick(book) }, modifier = Modifier.weight(1f))
+                                BookCoverCard(
+                                    book = book,
+                                    onClick = { onBookClick(book) },
+                                    modifier = Modifier.weight(1f),
+                                    onLongClick = { onBookLongClick(book) }
+                                )
                             }
                         }
                     }
@@ -117,7 +124,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun ShelfCarousel(title: String, books: List<Book>, onBookClick: (Book) -> Unit) {
+private fun ShelfCarousel(title: String, books: List<Book>, onBookClick: (Book) -> Unit, onBookLongClick: (Book) -> Unit) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleMedium,
@@ -128,7 +135,12 @@ private fun ShelfCarousel(title: String, books: List<Book>, onBookClick: (Book) 
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(books) { book ->
-            BookCoverCard(book = book, onClick = { onBookClick(book) }, modifier = Modifier.width(ShelfItemWidth))
+            BookCoverCard(
+                book = book,
+                onClick = { onBookClick(book) },
+                modifier = Modifier.width(ShelfItemWidth),
+                onLongClick = { onBookLongClick(book) }
+            )
         }
     }
 }
@@ -171,11 +183,12 @@ private fun <T> ShelfGrid(
 private fun ContinueReadingCard(
     item: ContinueReadingItem,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        BookCoverCard(book = item.book, onClick = onClick, modifier = Modifier.fillMaxWidth())
+        BookCoverCard(book = item.book, onClick = onClick, modifier = Modifier.fillMaxWidth(), onLongClick = onLongClick)
         // Reserves the progress bar's space even when there's no percent yet, so "Remove" lands
         // in the same spot across every card in a row instead of shifting up for books without one.
         Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(ProgressBarHeight)) {

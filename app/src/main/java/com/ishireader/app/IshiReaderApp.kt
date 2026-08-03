@@ -8,6 +8,7 @@ import com.ishireader.app.data.prefs.AppPreferences
 import com.ishireader.app.data.repository.AuthRepository
 import com.ishireader.app.data.repository.LibraryPrefsRepository
 import com.ishireader.app.data.repository.LibraryRepository
+import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
 import okhttp3.OkHttpClient
 
@@ -30,6 +31,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory {
         private set
     lateinit var libraryPrefsRepository: LibraryPrefsRepository
         private set
+    lateinit var notesRepository: NotesRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -39,6 +42,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory {
         libraryRepository = LibraryRepository(network)
         positionRepository = PositionRepository(network)
         libraryPrefsRepository = LibraryPrefsRepository(network)
+        notesRepository = NotesRepository(network)
     }
 
     /**

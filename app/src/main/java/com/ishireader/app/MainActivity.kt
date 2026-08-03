@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
                             seriesViewModel = seriesViewModel,
                             shelvesViewModel = shelvesViewModel,
                             topBarViewModel = topBarViewModel,
+                            notesRepository = app.notesRepository,
                             avatarBaseUrl = app.network.baseUrl,
                             onBookClick = { book -> openBookDetail(navController, book) }
                         )
