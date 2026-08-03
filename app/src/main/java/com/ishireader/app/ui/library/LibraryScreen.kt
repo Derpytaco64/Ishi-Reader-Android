@@ -1,11 +1,9 @@
 package com.ishireader.app.ui.library
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,12 +33,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.SortMode
+import com.ishireader.app.ui.common.BookCoverCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,33 +116,12 @@ fun LibraryScreen(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(state.books) { book ->
-                                BookCover(book, onClick = { onBookClick(book) })
+                                BookCoverCard(book = book, onClick = { onBookClick(book) }, modifier = Modifier.fillMaxWidth())
                             }
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun BookCover(book: Book, onClick: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        AsyncImage(
-            model = book.cover,
-            contentDescription = book.title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .padding(bottom = 4.dp)
-        )
-        Text(
-            text = book.title,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }

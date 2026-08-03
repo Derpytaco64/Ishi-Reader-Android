@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -17,6 +18,8 @@ import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.reader.ReaderActivity
 import com.ishireader.app.ui.bookdetail.BookDetailScreen
 import com.ishireader.app.ui.bookdetail.BookDetailViewModel
+import com.ishireader.app.ui.home.HomeScreen
+import com.ishireader.app.ui.home.HomeViewModel
 import com.ishireader.app.ui.library.LibraryScreen
 import com.ishireader.app.ui.library.LibraryViewModel
 import com.ishireader.app.ui.login.LoginScreen
@@ -24,6 +27,7 @@ import com.ishireader.app.ui.login.LoginViewModel
 import com.ishireader.app.ui.theme.IshiReaderTheme
 
 private const val ROUTE_LOGIN = "login"
+private const val ROUTE_HOME = "home"
 private const val ROUTE_LIBRARY = "library"
 private const val ARG_MANIFEST_URL = "manifestUrl"
 private const val ROUTE_BOOK_DETAIL = "bookDetail/{$ARG_MANIFEST_URL}"
@@ -46,10 +50,20 @@ class MainActivity : ComponentActivity() {
                         LoginScreen(
                             viewModel = viewModel,
                             onLoggedIn = {
-                                navController.navigate(ROUTE_LIBRARY) {
+                                navController.navigate(ROUTE_HOME) {
                                     popUpTo(ROUTE_LOGIN) { inclusive = true }
                                 }
                             }
+                        )
+                    }
+                    composable(ROUTE_HOME) {
+                        val viewModel: HomeViewModel = viewModel(
+                            factory = HomeViewModel.Factory(app.libraryRepository, app.positionRepository, app.libraryPrefsRepository)
+                        )
+                        HomeScreen(
+                            viewModel = viewModel,
+                            onBookClick = { book -> openBookDetail(navController, book) },
+                            onViewLibraryClick = { navController.navigate(ROUTE_LIBRARY) }
                         )
                     }
                     composable(ROUTE_LIBRARY) {
@@ -58,9 +72,7 @@ class MainActivity : ComponentActivity() {
                         )
                         LibraryScreen(
                             viewModel = viewModel,
-                            onBookClick = { book ->
-                                navController.navigate("bookDetail/${Uri.encode(book.manifestUrl())}")
-                            }
+                            onBookClick = { book -> openBookDetail(navController, book) }
                         )
                     }
                     composable(
@@ -89,6 +101,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun openBookDetail(navController: NavHostController, book: Book) {
+        navController.navigate("bookDetail/${Uri.encode(book.manifestUrl())}")
     }
 
     private fun openReader(book: Book) {

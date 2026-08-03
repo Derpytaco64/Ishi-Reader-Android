@@ -72,3 +72,12 @@ data class PositionRequest(val manifestUrl: String, val locator: JsonElement)
 
 @Serializable
 data class ApiError(val error: String? = null)
+
+/**
+ * `libraryPrefs` is a freeform per-user JSON blob the server shallow-merges on every POST
+ * (theme, accentColor, customShelves, continueReadingDismissed, etc.) -- passed through as raw
+ * JSON here too, same reasoning as PositionResponse's locator, since this app only ever reads
+ * or patches a handful of its keys rather than owning the whole shape.
+ */
+@Serializable
+data class LibraryPrefsResponse(val libraryPrefs: JsonElement? = null)

@@ -6,14 +6,15 @@ import coil.ImageLoaderFactory
 import com.ishireader.app.data.network.NetworkModule
 import com.ishireader.app.data.prefs.AppPreferences
 import com.ishireader.app.data.repository.AuthRepository
+import com.ishireader.app.data.repository.LibraryPrefsRepository
 import com.ishireader.app.data.repository.LibraryRepository
 import com.ishireader.app.data.repository.PositionRepository
 import okhttp3.OkHttpClient
 
 /**
  * Hand-rolled service locator instead of a DI framework -- the object graph here is small
- * (one network client, three thin repositories) and doesn't earn its keep yet. Reach for
- * Hilt if this grows past a handful of dependencies.
+ * (one network client, a handful of thin repositories) and doesn't earn its keep yet. Reach
+ * for Hilt if this grows past a handful of dependencies.
  */
 class IshiReaderApp : Application(), ImageLoaderFactory {
 
@@ -27,6 +28,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory {
         private set
     lateinit var positionRepository: PositionRepository
         private set
+    lateinit var libraryPrefsRepository: LibraryPrefsRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -35,6 +38,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory {
         authRepository = AuthRepository(network)
         libraryRepository = LibraryRepository(network)
         positionRepository = PositionRepository(network)
+        libraryPrefsRepository = LibraryPrefsRepository(network)
     }
 
     /**

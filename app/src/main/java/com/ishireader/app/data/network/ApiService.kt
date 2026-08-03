@@ -1,11 +1,13 @@
 package com.ishireader.app.data.network
 
 import com.ishireader.app.data.model.BooksResponse
+import com.ishireader.app.data.model.LibraryPrefsResponse
 import com.ishireader.app.data.model.LoginRequest
 import com.ishireader.app.data.model.LoginResponse
 import com.ishireader.app.data.model.MeResponse
 import com.ishireader.app.data.model.PositionRequest
 import com.ishireader.app.data.model.PositionResponse
+import kotlinx.serialization.json.JsonObject
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -32,4 +34,11 @@ interface ApiService {
 
     @POST("api/userdata/position")
     suspend fun setPosition(@Body request: PositionRequest): Response<Unit>
+
+    @GET("api/userdata/library-prefs")
+    suspend fun getLibraryPrefs(): Response<LibraryPrefsResponse>
+
+    /** Server does a shallow top-level merge, not an overwrite -- only send the keys you mean to patch. */
+    @POST("api/userdata/library-prefs")
+    suspend fun patchLibraryPrefs(@Body patch: JsonObject): Response<Unit>
 }
