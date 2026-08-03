@@ -119,7 +119,10 @@ class ReaderActivity : FragmentActivity() {
         val prefs = getSharedPreferences(READER_PREFS_NAME, MODE_PRIVATE)
         val fontSize = if (prefs.contains(KEY_FONT_SIZE)) prefs.getFloat(KEY_FONT_SIZE, 1.0f).toDouble() else null
         val theme = prefs.getString(KEY_THEME, null)?.let { name -> runCatching { Theme.valueOf(name) }.getOrNull() }
-        return EpubPreferences(fontSize = fontSize, theme = theme)
+        // publisherStyles must be off for theme/fontSize to actually apply -- otherwise the book's
+        // own embedded CSS wins and these preferences are silently ignored (Readium's documented
+        // behavior: "many settings require this to be off").
+        return EpubPreferences(fontSize = fontSize, theme = theme, publisherStyles = false)
     }
 
     @OptIn(ExperimentalReadiumApi::class)
