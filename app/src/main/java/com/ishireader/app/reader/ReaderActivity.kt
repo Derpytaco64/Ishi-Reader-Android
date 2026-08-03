@@ -1,6 +1,7 @@
 package com.ishireader.app.reader
 
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
@@ -110,6 +111,7 @@ class ReaderActivity : FragmentActivity() {
     private fun applyPreferences(preferences: EpubPreferences) {
         currentPreferences = preferences
         val fragment = supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) as? EpubNavigatorFragment
+        Log.d("ReaderActivity", "applyPreferences: fragment=$fragment preferences=$preferences")
         fragment?.submitPreferences(preferences)
         savePreferences(preferences)
     }
