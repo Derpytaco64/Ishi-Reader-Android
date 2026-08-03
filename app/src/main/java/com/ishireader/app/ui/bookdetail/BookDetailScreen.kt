@@ -3,6 +3,7 @@ package com.ishireader.app.ui.bookdetail
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -12,8 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -148,17 +147,19 @@ private fun MetadataChips(book: Book, onCopyUuid: (String) -> Unit) {
         book.calibreId?.let { add("Calibre ID" to it) }
     }
 
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(chips) { (label, value) -> Chip("$label: $value") }
-        items(book.tags) { tag -> Chip(tag) }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        chips.forEach { (label, value) -> Chip("$label: $value") }
+        book.tags.forEach { tag -> Chip(tag) }
         book.uuid?.let { uuid ->
-            item {
-                Chip("UUID: $uuid", trailing = {
-                    TextButton(onClick = { onCopyUuid(uuid) }, modifier = Modifier.padding(start = 4.dp)) {
-                        Text("Copy", style = MaterialTheme.typography.labelSmall)
-                    }
-                })
-            }
+            Chip("UUID: $uuid", trailing = {
+                TextButton(onClick = { onCopyUuid(uuid) }, modifier = Modifier.padding(start = 4.dp)) {
+                    Text("Copy", style = MaterialTheme.typography.labelSmall)
+                }
+            })
         }
     }
 }
