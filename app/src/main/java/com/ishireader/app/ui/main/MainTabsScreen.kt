@@ -9,15 +9,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.AlertDialog
@@ -29,12 +35,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,15 +57,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.ishireader.app.R
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.PublicUser
+import com.ishireader.app.data.model.UserStats
 import com.ishireader.app.data.model.buildNotesMarkdown
 import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.data.model.notesExportFilename
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.NotesRepository
+import com.ishireader.app.data.repository.StatsRepository
 import com.ishireader.app.ui.home.HomeScreen
 import com.ishireader.app.ui.home.HomeViewModel
 import com.ishireader.app.ui.library.LibraryScreen
@@ -89,6 +100,7 @@ fun MainTabsScreen(
     topBarViewModel: TopBarViewModel,
     settingsViewModel: SettingsViewModel,
     notesRepository: NotesRepository,
+    statsRepository: StatsRepository,
     avatarBaseUrl: String?,
     onBookClick: (Book) -> Unit,
     onLogout: () -> Unit
@@ -97,11 +109,22 @@ fun MainTabsScreen(
     val scope = rememberCoroutineScope()
     val user by topBarViewModel.user.collectAsState()
     val shelvesState by shelvesViewModel.uiState.collectAsState()
-    val homeState by homeViewModel.uiState.collectAsState()
     val settings by settingsViewModel.settings.collectAsState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     var userMenuExpanded by remember { mutableStateOf(false) }
+    var isStatsOpen by remember { mutableStateOf(false) }
+    var stats by remember { mutableStateOf<UserStats?>(null) }
     val context = LocalContext.current
+
+    LaunchedEffect(isStatsOpen) {
+        if (isStatsOpen) {
+            stats = null
+            when (val result = statsRepository.getStats()) {
+                is ApiResult.Success -> stats = result.data
+                is ApiResult.Failure -> {}
+            }
+        }
+    }
 
     var contextMenuBook by remember { mutableStateOf<Book?>(null) }
     var pendingExportMarkdown by remember { mutableStateOf<String?>(null) }
@@ -188,13 +211,14 @@ fun MainTabsScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                             )
                         }
-                        Text(
-                            text = "${homeState.myLibrary.size} books in your library",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                        )
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        DropdownMenuItem(
+                            text = { Text("Stats") },
+                            onClick = {
+                                userMenuExpanded = false
+                                isStatsOpen = true
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Log out") },
                             leadingIcon = { Icon(Icons.Filled.ExitToApp, contentDescription = null) },
@@ -260,6 +284,10 @@ fun MainTabsScreen(
                 dismissButton = { TextButton(onClick = shelvesViewModel::cancelDelete) { Text("Cancel") } }
             )
         }
+
+        if (isStatsOpen) {
+            StatsDialog(stats = stats, onDismiss = { isStatsOpen = false })
+        }
     }
 }
 
@@ -292,4 +320,93 @@ private fun UserAvatar(user: PublicUser?, baseUrl: String?) {
             )
         }
     }
+}
+
+/** Mirrors StatefulUserMenu.tsx's stats dialog -- same four sections/fields, read from the same
+ *  /api/userdata/stats endpoint, just laid out as label/value rows instead of a tile grid. */
+@Composable
+private fun StatsDialog(stats: UserStats?, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 4.dp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp)
+            ) {
+                Text(text = "Stats", style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (stats == null) {
+                    Text(text = "Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    StatSection("Library") {
+                        StatRow("Books in Library", stats.booksInLibrary.toString())
+                        StatRow("Books Started", stats.booksStarted.toString())
+                        StatRow("Books Finished", stats.booksFinished.toString())
+                    }
+                    StatSection("Reading") {
+                        StatRow("Time Reading", formatFullReadingTime(stats.totalReadingSeconds))
+                        StatRow("Average Pace", stats.averageWpm?.let { "$it wpm" } ?: "—")
+                        StatRow("Words Read", stats.totalWordsRead.toString())
+                        StatRow("Day Streak", stats.currentStreakDays.toString())
+                    }
+                    StatSection("Audiobooks") {
+                        StatRow("Audiobooks in Library", stats.audiobooksInLibrary.toString())
+                        StatRow("Audiobooks Started", stats.audiobooksStarted.toString())
+                        StatRow("Audiobooks Finished", stats.audiobooksFinished.toString())
+                        StatRow("Time Listened", formatFullReadingTime(stats.totalListeningSeconds))
+                    }
+                    StatSection("Annotations") {
+                        StatRow("Highlights", stats.highlightsCount.toString())
+                        StatRow("Bookmarks", stats.bookmarksCount.toString())
+                        StatRow("Notes", stats.notesCount.toString())
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                    Text("Close")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+    )
+    Column(content = content)
+}
+
+@Composable
+private fun StatRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** Same h/m/s breakdown as the site's formatFullReadingTime (formatReadingTime.ts) -- every unit
+ *  below the largest present one is always shown (no rounding to a single unit). */
+private fun formatFullReadingTime(totalSeconds: Double): String {
+    val whole = totalSeconds.toLong()
+    val hours = whole / 3600
+    val minutes = (whole % 3600) / 60
+    val seconds = whole % 60
+
+    val parts = mutableListOf<String>()
+    if (hours > 0) parts.add("${hours}h")
+    if (hours > 0 || minutes > 0) parts.add("${minutes}m")
+    parts.add("${seconds}s")
+    return parts.joinToString(" ")
 }

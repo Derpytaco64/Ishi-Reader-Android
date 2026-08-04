@@ -8,6 +8,7 @@ import com.ishireader.app.data.model.MeResponse
 import com.ishireader.app.data.model.NotesResponse
 import com.ishireader.app.data.model.PositionRequest
 import com.ishireader.app.data.model.PositionResponse
+import com.ishireader.app.data.model.UserStats
 import kotlinx.serialization.json.JsonObject
 import retrofit2.Response
 import retrofit2.http.Body
@@ -45,4 +46,7 @@ interface ApiService {
 
     @GET("api/userdata/notes")
     suspend fun getNotes(@Query("manifestUrl") manifestUrl: String): Response<NotesResponse>
+
+    @GET("api/userdata/stats")
+    suspend fun stats(): Response<UserStats>
 }

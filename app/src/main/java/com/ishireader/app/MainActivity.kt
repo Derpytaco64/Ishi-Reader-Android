@@ -105,6 +105,7 @@ class MainActivity : ComponentActivity() {
                                 topBarViewModel = topBarViewModel,
                                 settingsViewModel = settingsViewModel,
                                 notesRepository = app.notesRepository,
+                                statsRepository = app.statsRepository,
                                 avatarBaseUrl = app.network.baseUrl,
                                 onBookClick = { book -> openBookDetail(navController, book) },
                                 onLogout = {

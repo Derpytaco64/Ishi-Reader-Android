@@ -112,3 +112,25 @@ data class StoredNote(
 
 @Serializable
 data class NotesResponse(val items: List<StoredNote> = emptyList())
+
+/** Mirrors the server's UserStats shape (src/lib/userData/statsTypes.ts) -- a whole-library
+ *  aggregate for the current user, not per-book like everything else here. Time totals are
+ *  Double (accumulated from per-session floating-point seconds), unlike the plain integer counts.
+ *  null averageWpm means no eligible reading-speed sample exists yet, not a rate of zero. */
+@Serializable
+data class UserStats(
+    val booksInLibrary: Int = 0,
+    val booksStarted: Int = 0,
+    val booksFinished: Int = 0,
+    val totalReadingSeconds: Double = 0.0,
+    val totalWordsRead: Int = 0,
+    val averageWpm: Int? = null,
+    val currentStreakDays: Int = 0,
+    val highlightsCount: Int = 0,
+    val bookmarksCount: Int = 0,
+    val notesCount: Int = 0,
+    val audiobooksInLibrary: Int = 0,
+    val audiobooksStarted: Int = 0,
+    val audiobooksFinished: Int = 0,
+    val totalListeningSeconds: Double = 0.0
+)
