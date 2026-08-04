@@ -9,6 +9,7 @@ import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.AdminRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -164,10 +165,17 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
 
     // --- Appearance (recolors/retheme's the site's own /login + admin panel, not this app) ----
 
+    private var accentColorJob: Job? = null
+    private var themeModeJob: Job? = null
+
     fun setLoginAccentColor(hex: String) {
         val previous = _uiState.value.loginAccentColor
         _uiState.value = _uiState.value.copy(loginAccentColor = hex, appearanceError = null)
-        viewModelScope.launch {
+        // CLAUDE-ADDED: ColorWheelPicker calls this on every drag-move event, so a stale in-flight
+        // save from an earlier drag position must be cancelled -- otherwise it can complete *after*
+        // this one and overwrite the server with a color the user already dragged past.
+        accentColorJob?.cancel()
+        accentColorJob = viewModelScope.launch {
             // CLAUDE-ADDED: The old fire-and-forget version discarded this result entirely, so a
             // failed save (expired session, network blip) would leave the switch/picker showing the
             // new value indefinitely -- only reverting silently the next time something reloaded the
@@ -185,7 +193,8 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
     fun setLoginThemeMode(mode: String) {
         val previous = _uiState.value.loginThemeMode
         _uiState.value = _uiState.value.copy(loginThemeMode = mode, appearanceError = null)
-        viewModelScope.launch {
+        themeModeJob?.cancel()
+        themeModeJob = viewModelScope.launch {
             val result = repository.setLoginThemeMode(mode)
             if (result is ApiResult.Failure) {
                 _uiState.value = _uiState.value.copy(

@@ -8,6 +8,7 @@ import com.ishireader.app.data.model.CoverSize
 import com.ishireader.app.data.model.HomeShelfId
 import com.ishireader.app.data.model.ThemeMode
 import com.ishireader.app.data.repository.LibraryPrefsRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,11 +48,19 @@ class SettingsViewModel(private val repository: LibraryPrefsRepository) : ViewMo
         update(_settings.value.copy(shelfOrder = order))
     }
 
+    private var patchJob: Job? = null
+
     /** Optimistic: applies locally first (so the drawer feels instant), then fires the PATCH --
-     *  matches the same pattern already used by the Shelves tab and Continue Reading dismissal. */
+     *  matches the same pattern already used by the Shelves tab and Continue Reading dismissal.
+     *  Cancels any still-in-flight patch first: the color wheel calls this on every drag-move
+     *  event, so without cancelling, an earlier request can land *after* the final one and
+     *  silently overwrite it with a stale color -- the drawer still shows the right color (it's
+     *  local state), but the server ends up with an in-between one, which is what comes back on
+     *  the next launch. */
     private fun update(newSettings: AppSettings) {
         _settings.value = newSettings
-        viewModelScope.launch { repository.patchSettings(newSettings) }
+        patchJob?.cancel()
+        patchJob = viewModelScope.launch { repository.patchSettings(newSettings) }
     }
 
     class Factory(private val repository: LibraryPrefsRepository) : ViewModelProvider.Factory {
