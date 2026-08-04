@@ -20,7 +20,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -28,7 +27,6 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Tab
@@ -163,17 +161,15 @@ fun MainTabsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Icon(Icons.Filled.Menu, contentDescription = "Settings")
-                    }
-                    Image(
-                        painter = painterResource(R.drawable.app_logo),
-                        contentDescription = "Ishi Reader",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(LogoSize).clip(CircleShape)
-                    )
-                }
+                Image(
+                    painter = painterResource(R.drawable.app_logo),
+                    contentDescription = "Settings",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(LogoSize)
+                        .clip(CircleShape)
+                        .clickable { scope.launch { drawerState.open() } }
+                )
                 Box {
                     Box(modifier = Modifier.clickable { userMenuExpanded = true }) {
                         UserAvatar(user = user, baseUrl = avatarBaseUrl)
