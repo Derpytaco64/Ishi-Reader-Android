@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                                 LoginScreen(
                                     viewModel = viewModel,
                                     onLoggedIn = {
+                                        settingsViewModel.reload()
                                         navController.navigate(ROUTE_HOME) {
                                             popUpTo(ROUTE_LOGIN) { inclusive = true }
                                         }

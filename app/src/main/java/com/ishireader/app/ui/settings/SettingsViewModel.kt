@@ -22,6 +22,16 @@ class SettingsViewModel(private val repository: LibraryPrefsRepository) : ViewMo
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
     init {
+        reload()
+    }
+
+    /** Re-fetches from the server. Needed beyond the initial [init] call because this ViewModel is
+     *  created at the Activity level, before login -- its first fetch races NetworkModule.configure()
+     *  (called from LoginViewModel's own init) and typically loses, silently falling back to
+     *  AppSettings() defaults that then stick for the rest of the process's life since this
+     *  ViewModel outlives Login -> Home navigation. MainActivity calls this once login is confirmed
+     *  so the real saved settings actually get loaded. */
+    fun reload() {
         viewModelScope.launch { _settings.value = repository.getSettings() }
     }
 
