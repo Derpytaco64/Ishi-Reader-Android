@@ -227,6 +227,10 @@ private fun AppearanceSection(state: AdminUiState, viewModel: AdminViewModel) {
                 onCheckedChange = { viewModel.setLoginThemeMode(if (it) "dark" else "light") }
             )
         }
+        if (state.appearanceError != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(state.appearanceError, color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 

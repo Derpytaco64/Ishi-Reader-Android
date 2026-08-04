@@ -1,3 +1,13 @@
 <resources>
     <style name="Theme.IshiReader" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- CLAUDE-ADDED: Without this, the platform/core-splashscreen default is an icon on a plain
+         white background -- this matches the launcher icon's own dark background (#1B1B1F, see
+         ic_launcher_background.xml) so cold start doesn't flash white before MainActivity's own
+         (dark) theme takes over. -->
+    <style name="Theme.IshiReader.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#1B1B1F</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.IshiReader</item>
+    </style>
 </resources>

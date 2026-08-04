@@ -37,6 +37,7 @@ data class AdminUiState(
     val userDataFolder: String = "",
     val loginAccentColor: String = "#2f6fed",
     val loginThemeMode: String = "dark",
+    val appearanceError: String? = null,
 
     val savingField: String? = null,
     val fieldErrors: Map<String, String> = emptyMap(),
@@ -164,13 +165,33 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
     // --- Appearance (recolors/retheme's the site's own /login + admin panel, not this app) ----
 
     fun setLoginAccentColor(hex: String) {
-        _uiState.value = _uiState.value.copy(loginAccentColor = hex)
-        viewModelScope.launch { repository.setLoginAccentColor(hex) }
+        val previous = _uiState.value.loginAccentColor
+        _uiState.value = _uiState.value.copy(loginAccentColor = hex, appearanceError = null)
+        viewModelScope.launch {
+            // CLAUDE-ADDED: The old fire-and-forget version discarded this result entirely, so a
+            // failed save (expired session, network blip) would leave the switch/picker showing the
+            // new value indefinitely -- only reverting silently the next time something reloaded the
+            // real server value (e.g. the login screen), looking like the setting "didn't stick".
+            if (repository.setLoginAccentColor(hex) is ApiResult.Failure) {
+                _uiState.value = _uiState.value.copy(
+                    loginAccentColor = previous,
+                    appearanceError = "Couldn't save accent color"
+                )
+            }
+        }
     }
 
     fun setLoginThemeMode(mode: String) {
-        _uiState.value = _uiState.value.copy(loginThemeMode = mode)
-        viewModelScope.launch { repository.setLoginThemeMode(mode) }
+        val previous = _uiState.value.loginThemeMode
+        _uiState.value = _uiState.value.copy(loginThemeMode = mode, appearanceError = null)
+        viewModelScope.launch {
+            if (repository.setLoginThemeMode(mode) is ApiResult.Failure) {
+                _uiState.value = _uiState.value.copy(
+                    loginThemeMode = previous,
+                    appearanceError = "Couldn't save theme mode"
+                )
+            }
+        }
     }
 
     // --- Add user ---------------------------------------------------------------------------

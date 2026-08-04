@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.okhttp.core)
     implementation(libs.okhttp.logging.interceptor)
     implementation(libs.coil.compose)
+    implementation(libs.androidx.core.splashscreen)
 
     // Readium Kotlin toolkit -- see the TODO on the "readium" version entry in
     // gradle/libs.versions.toml before syncing for the first time.
