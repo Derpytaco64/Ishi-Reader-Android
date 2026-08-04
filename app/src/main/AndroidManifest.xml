@@ -22,7 +22,7 @@
 
         <!-- IshiReaderApp supplies its own WorkManager Configuration (a custom WorkerFactory that
              injects PositionDao/NetworkModule into PositionSyncWorker), which requires turning off
-             WorkManager's default auto-initializer -- otherwise the default Configuration wins the
+             WorkManager's default auto-initializer; otherwise the default Configuration wins the
              race and PositionSyncWorker can't be instantiated. -->
         <provider
             android:name="androidx.startup.InitializationProvider"
