@@ -21,7 +21,11 @@ class NetworkModule(context: Context) {
 
     val cookieJar = PersistentCookieJar(context.applicationContext)
 
-    private val json = Json { ignoreUnknownKeys = true }
+    // encodeDefaults=true matters for @Body DTOs like LoginThemeModeField/LoginAccentColorField
+    // whose constructor default happens to equal a real value ("dark", "#2f6fed") -- without it,
+    // kotlinx.serialization omits a property that equals its declared default, so saving that
+    // specific value serializes to "{}" and the server 400s on the missing field.
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     private var currentBaseUrl: String? = null
     private var currentApi: ApiService? = null
