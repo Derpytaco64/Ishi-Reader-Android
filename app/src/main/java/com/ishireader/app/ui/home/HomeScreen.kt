@@ -66,7 +66,9 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Home") },
+                // CLAUDE-ADDED: No title -- it used to just repeat "Home", the same text already
+                // shown by MainTabsScreen's tab strip.
+                title = {},
                 // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
                 // the true top of the window (it's always a page inside that pager).
                 windowInsets = WindowInsets(0.dp)

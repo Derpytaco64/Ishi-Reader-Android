@@ -19,7 +19,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -77,14 +77,18 @@ fun SeriesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(seriesTitle(selectedSlot)) },
+                // CLAUDE-ADDED: No title while on the series overview -- it used to just repeat
+                // "Series", the same text already shown by MainTabsScreen's tab strip. Once a
+                // series is selected, though, its name is real info (not a duplicate), so it's
+                // still shown here.
+                title = { if (selectedSlot != null) Text(seriesTitle(selectedSlot)) },
                 // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
                 // the true top of the window (it's always a page inside that pager).
                 windowInsets = WindowInsets(0.dp),
                 navigationIcon = {
                     if (selectedSlot != null) {
                         IconButton(onClick = viewModel::clearSelection) {
-                            Icon(Icons.Filled.ArrowBack, contentDescription = "Back to Series")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Series")
                         }
                     }
                 }
