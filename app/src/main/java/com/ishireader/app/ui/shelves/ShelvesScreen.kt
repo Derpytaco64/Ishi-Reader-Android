@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.CustomShelf
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.settings.LocalAppSettings
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -176,8 +177,9 @@ private fun ShelfDetailGrid(
         )
         return
     }
+    val coverSize = LocalAppSettings.current.coverSize
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 120.dp),
+        columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -211,9 +213,10 @@ private fun ShelfDetailGrid(
 @Composable
 private fun ManageShelfBooksGrid(shelf: CustomShelf, allBooks: List<Book>, viewModel: ShelvesViewModel) {
     val memberUrls = shelf.books.map { it.url }.toSet()
+    val coverSize = LocalAppSettings.current.coverSize
 
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 120.dp),
+        columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

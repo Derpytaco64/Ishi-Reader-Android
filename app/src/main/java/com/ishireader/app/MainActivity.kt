@@ -5,7 +5,12 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -14,6 +19,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.ThemeMode
 import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.reader.ReaderActivity
 import com.ishireader.app.ui.bookdetail.BookDetailScreen
@@ -26,8 +32,12 @@ import com.ishireader.app.ui.login.LoginViewModel
 import com.ishireader.app.ui.main.MainTabsScreen
 import com.ishireader.app.ui.main.TopBarViewModel
 import com.ishireader.app.ui.series.SeriesViewModel
+import com.ishireader.app.ui.settings.LocalAppSettings
+import com.ishireader.app.ui.settings.SettingsViewModel
+import com.ishireader.app.ui.settings.parseAccentColor
 import com.ishireader.app.ui.shelves.ShelvesViewModel
 import com.ishireader.app.ui.theme.IshiReaderTheme
+import kotlinx.coroutines.launch
 
 private const val ROUTE_LOGIN = "login"
 private const val ROUTE_HOME = "home"
@@ -41,73 +51,94 @@ class MainActivity : ComponentActivity() {
         val app = application as IshiReaderApp
 
         setContent {
-            IshiReaderTheme {
-                val navController = rememberNavController()
+            val settingsViewModel: SettingsViewModel = viewModel(
+                factory = SettingsViewModel.Factory(app.libraryPrefsRepository)
+            )
+            val settings by settingsViewModel.settings.collectAsState()
+            val darkTheme = when (settings.theme) {
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
 
-                NavHost(navController = navController, startDestination = ROUTE_LOGIN) {
-                    composable(ROUTE_LOGIN) {
-                        val viewModel: LoginViewModel = viewModel(
-                            factory = LoginViewModel.Factory(app.preferences, app.network, app.authRepository)
-                        )
-                        IshiReaderTheme(darkTheme = true, dynamicColor = false) {
-                            LoginScreen(
-                                viewModel = viewModel,
-                                onLoggedIn = {
-                                    navController.navigate(ROUTE_HOME) {
-                                        popUpTo(ROUTE_LOGIN) { inclusive = true }
+            IshiReaderTheme(darkTheme = darkTheme, accentColor = parseAccentColor(settings.accentColor)) {
+                CompositionLocalProvider(LocalAppSettings provides settings) {
+                    val navController = rememberNavController()
+
+                    NavHost(navController = navController, startDestination = ROUTE_LOGIN) {
+                        composable(ROUTE_LOGIN) {
+                            val viewModel: LoginViewModel = viewModel(
+                                factory = LoginViewModel.Factory(app.preferences, app.network, app.authRepository)
+                            )
+                            IshiReaderTheme(darkTheme = true, dynamicColor = false) {
+                                LoginScreen(
+                                    viewModel = viewModel,
+                                    onLoggedIn = {
+                                        navController.navigate(ROUTE_HOME) {
+                                            popUpTo(ROUTE_LOGIN) { inclusive = true }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                        composable(ROUTE_HOME) {
+                            val homeViewModel: HomeViewModel = viewModel(
+                                factory = HomeViewModel.Factory(app.libraryRepository, app.positionRepository, app.libraryPrefsRepository)
+                            )
+                            val libraryViewModel: LibraryViewModel = viewModel(
+                                factory = LibraryViewModel.Factory(app.libraryRepository)
+                            )
+                            val seriesViewModel: SeriesViewModel = viewModel(
+                                factory = SeriesViewModel.Factory(app.libraryRepository)
+                            )
+                            val shelvesViewModel: ShelvesViewModel = viewModel(
+                                factory = ShelvesViewModel.Factory(app.libraryRepository, app.libraryPrefsRepository)
+                            )
+                            val topBarViewModel: TopBarViewModel = viewModel(
+                                factory = TopBarViewModel.Factory(app.authRepository)
+                            )
+                            MainTabsScreen(
+                                homeViewModel = homeViewModel,
+                                libraryViewModel = libraryViewModel,
+                                seriesViewModel = seriesViewModel,
+                                shelvesViewModel = shelvesViewModel,
+                                topBarViewModel = topBarViewModel,
+                                settingsViewModel = settingsViewModel,
+                                notesRepository = app.notesRepository,
+                                avatarBaseUrl = app.network.baseUrl,
+                                onBookClick = { book -> openBookDetail(navController, book) },
+                                onLogout = {
+                                    lifecycleScope.launch {
+                                        app.authRepository.logout()
+                                        navController.navigate(ROUTE_LOGIN) {
+                                            popUpTo(ROUTE_HOME) { inclusive = true }
+                                        }
                                     }
                                 }
                             )
                         }
-                    }
-                    composable(ROUTE_HOME) {
-                        val homeViewModel: HomeViewModel = viewModel(
-                            factory = HomeViewModel.Factory(app.libraryRepository, app.positionRepository, app.libraryPrefsRepository)
-                        )
-                        val libraryViewModel: LibraryViewModel = viewModel(
-                            factory = LibraryViewModel.Factory(app.libraryRepository)
-                        )
-                        val seriesViewModel: SeriesViewModel = viewModel(
-                            factory = SeriesViewModel.Factory(app.libraryRepository)
-                        )
-                        val shelvesViewModel: ShelvesViewModel = viewModel(
-                            factory = ShelvesViewModel.Factory(app.libraryRepository, app.libraryPrefsRepository)
-                        )
-                        val topBarViewModel: TopBarViewModel = viewModel(
-                            factory = TopBarViewModel.Factory(app.authRepository)
-                        )
-                        MainTabsScreen(
-                            homeViewModel = homeViewModel,
-                            libraryViewModel = libraryViewModel,
-                            seriesViewModel = seriesViewModel,
-                            shelvesViewModel = shelvesViewModel,
-                            topBarViewModel = topBarViewModel,
-                            notesRepository = app.notesRepository,
-                            avatarBaseUrl = app.network.baseUrl,
-                            onBookClick = { book -> openBookDetail(navController, book) }
-                        )
-                    }
-                    composable(
-                        route = ROUTE_BOOK_DETAIL,
-                        arguments = listOf(navArgument(ARG_MANIFEST_URL) { type = NavType.StringType })
-                    ) { backStackEntry ->
-                        val manifestUrl = Uri.decode(backStackEntry.arguments?.getString(ARG_MANIFEST_URL))
-                        val book = app.libraryRepository.findCached(manifestUrl)
+                        composable(
+                            route = ROUTE_BOOK_DETAIL,
+                            arguments = listOf(navArgument(ARG_MANIFEST_URL) { type = NavType.StringType })
+                        ) { backStackEntry ->
+                            val manifestUrl = Uri.decode(backStackEntry.arguments?.getString(ARG_MANIFEST_URL))
+                            val book = app.libraryRepository.findCached(manifestUrl)
 
-                        if (book == null) {
-                            // Cache was empty (e.g. process death brought us straight back here) --
-                            // there's no single-book endpoint to refetch from, so just back out.
-                            LaunchedEffect(Unit) { navController.popBackStack() }
-                        } else {
-                            val viewModel: BookDetailViewModel = viewModel(
-                                factory = BookDetailViewModel.Factory(book, app.positionRepository)
-                            )
-                            BookDetailScreen(
-                                book = book,
-                                viewModel = viewModel,
-                                onBackClick = { navController.popBackStack() },
-                                onReadClick = { openReader(book) }
-                            )
+                            if (book == null) {
+                                // Cache was empty (e.g. process death brought us straight back here) --
+                                // there's no single-book endpoint to refetch from, so just back out.
+                                LaunchedEffect(Unit) { navController.popBackStack() }
+                            } else {
+                                val viewModel: BookDetailViewModel = viewModel(
+                                    factory = BookDetailViewModel.Factory(book, app.positionRepository)
+                                )
+                                BookDetailScreen(
+                                    book = book,
+                                    viewModel = viewModel,
+                                    onBackClick = { navController.popBackStack() },
+                                    onReadClick = { openReader(book) }
+                                )
+                            }
                         }
                     }
                 }

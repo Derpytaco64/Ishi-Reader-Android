@@ -34,12 +34,25 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.CoverSize
+import com.ishireader.app.data.model.HomeShelfId
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.settings.LocalAppSettings
 
-private val ShelfItemWidth = 110.dp
 private val ProgressBarHeight = 4.dp
+
+/** Columns for the "wraps to a grid" shelves (Continue Reading, My Library) -- smaller covers
+ *  mean more of them fit per row, same idea as the Library tab's GridCells.Adaptive but fixed to
+ *  whole columns since this grid isn't lazy (see ShelfGrid's own doc comment for why). */
+private val CoverSize.homeGridColumns: Int
+    get() = when (this) {
+        CoverSize.SMALL -> 4
+        CoverSize.MEDIUM -> 3
+        CoverSize.LARGE -> 2
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +62,7 @@ fun HomeScreen(
     onBookLongClick: (Book) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val settings = LocalAppSettings.current
     val isEmpty = state.continueReading.isEmpty() && state.lastSeriesRead.isEmpty() &&
         state.recentlyAdded.isEmpty() && state.myLibrary.isEmpty()
 
@@ -86,34 +100,36 @@ fun HomeScreen(
                             .verticalScroll(rememberScrollState())
                             .padding(vertical = 8.dp)
                     ) {
-                        if (state.continueReading.isNotEmpty()) {
-                            ShelfGrid(title = "Continue Reading", items = state.continueReading) { item ->
-                                ContinueReadingCard(
-                                    item = item,
-                                    onClick = { onBookClick(item.book) },
-                                    onLongClick = { onBookLongClick(item.book) },
-                                    onDismiss = { viewModel.dismissFromContinueReading(item.book) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-
-                        if (state.lastSeriesRead.isNotEmpty()) {
-                            ShelfCarousel(title = "Last Series Read", books = state.lastSeriesRead, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
-                        }
-
-                        if (state.recentlyAdded.isNotEmpty()) {
-                            ShelfCarousel(title = "Recently Added", books = state.recentlyAdded, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
-                        }
-
-                        if (state.myLibrary.isNotEmpty()) {
-                            ShelfGrid(title = "My Library", items = state.myLibrary) { book ->
-                                BookCoverCard(
-                                    book = book,
-                                    onClick = { onBookClick(book) },
-                                    modifier = Modifier.weight(1f),
-                                    onLongClick = { onBookLongClick(book) }
-                                )
+                        settings.shelfOrder.forEach { shelfId ->
+                            if (!settings.isShelfVisible(shelfId)) return@forEach
+                            when (shelfId) {
+                                HomeShelfId.CONTINUE_READING -> if (state.continueReading.isNotEmpty()) {
+                                    ShelfGrid(title = "Continue Reading", items = state.continueReading, columns = settings.coverSize.homeGridColumns) { item ->
+                                        ContinueReadingCard(
+                                            item = item,
+                                            onClick = { onBookClick(item.book) },
+                                            onLongClick = { onBookLongClick(item.book) },
+                                            onDismiss = { viewModel.dismissFromContinueReading(item.book) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                                HomeShelfId.LAST_SERIES_READ -> if (state.lastSeriesRead.isNotEmpty()) {
+                                    ShelfCarousel(title = "Last Series Read", books = state.lastSeriesRead, itemWidth = settings.coverSize.minWidthDp.dp, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
+                                }
+                                HomeShelfId.RECENTLY_ADDED -> if (state.recentlyAdded.isNotEmpty()) {
+                                    ShelfCarousel(title = "Recently Added", books = state.recentlyAdded, itemWidth = settings.coverSize.minWidthDp.dp, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
+                                }
+                                HomeShelfId.MY_LIBRARY -> if (state.myLibrary.isNotEmpty()) {
+                                    ShelfGrid(title = "My Library", items = state.myLibrary, columns = settings.coverSize.homeGridColumns) { book ->
+                                        BookCoverCard(
+                                            book = book,
+                                            onClick = { onBookClick(book) },
+                                            modifier = Modifier.weight(1f),
+                                            onLongClick = { onBookLongClick(book) }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -124,7 +140,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun ShelfCarousel(title: String, books: List<Book>, onBookClick: (Book) -> Unit, onBookLongClick: (Book) -> Unit) {
+private fun ShelfCarousel(title: String, books: List<Book>, itemWidth: Dp, onBookClick: (Book) -> Unit, onBookLongClick: (Book) -> Unit) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleMedium,
@@ -138,7 +154,7 @@ private fun ShelfCarousel(title: String, books: List<Book>, onBookClick: (Book) 
             BookCoverCard(
                 book = book,
                 onClick = { onBookClick(book) },
-                modifier = Modifier.width(ShelfItemWidth),
+                modifier = Modifier.width(itemWidth),
                 onLongClick = { onBookLongClick(book) }
             )
         }

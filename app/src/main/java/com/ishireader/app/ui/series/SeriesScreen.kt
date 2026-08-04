@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.settings.LocalAppSettings
 
 // CLAUDE-ADDED: Mirrors StatefulSeriesView.tsx's fan sizing ratios (fan height / offset / grid
 // column width, all relative to a 110px reference cover), just scaled down to a cover width that
@@ -65,6 +66,7 @@ fun SeriesScreen(
     onBookLongClick: (Book) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val coverSize = LocalAppSettings.current.coverSize
     val selectedSlot = state.selectedSlot
 
     if (state.selectedSeriesKey != null) {
@@ -119,7 +121,7 @@ fun SeriesScreen(
                 }
                 selectedSlot != null -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 120.dp),
+                        columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
                         contentPadding = PaddingValues(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),

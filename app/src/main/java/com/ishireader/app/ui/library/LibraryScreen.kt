@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.SortMode
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.settings.LocalAppSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +48,7 @@ fun LibraryScreen(
     onBookLongClick: (Book) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val coverSize = LocalAppSettings.current.coverSize
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -114,7 +116,7 @@ fun LibraryScreen(
                     }
                     else -> {
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 120.dp),
+                            columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
                             contentPadding = PaddingValues(12.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),

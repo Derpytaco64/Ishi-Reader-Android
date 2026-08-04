@@ -1,11 +1,17 @@
 package com.ishireader.app.data.repository
 
+import com.ishireader.app.data.model.AppSettings
+import com.ishireader.app.data.model.CoverSize
 import com.ishireader.app.data.model.CustomShelf
+import com.ishireader.app.data.model.HomeShelfId
+import com.ishireader.app.data.model.ThemeMode
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.NetworkModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -17,12 +23,26 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val KEY_CONTINUE_READING_DISMISSED = "continueReadingDismissed"
 private const val KEY_CUSTOM_SHELVES = "customShelves"
+private const val KEY_THEME = "theme"
+private const val KEY_ACCENT_COLOR = "accentColor"
+private const val KEY_COVER_SIZE = "coverSize"
+private const val KEY_SHELF_ORDER = "shelfOrder"
+private const val KEY_SHELF_VISIBILITY = "shelfVisibility"
+
+@Serializable
+private data class SettingsFields(
+    val theme: String? = null,
+    val accentColor: String? = null,
+    val coverSize: String? = null,
+    val shelfOrder: List<String>? = null,
+    val shelfVisibility: Map<String, Boolean>? = null
+)
 
 /**
- * Handles the library-prefs fields the Home screen's Continue Reading shelf and the Shelves tab
- * need (matching useCustomShelves.ts's convention of mirroring client state to this same freeform
- * endpoint). Other fields (theme, accentColor, shelfPrefs/shelfOrder) belong to a later phase
- * (settings).
+ * Handles the library-prefs fields the Home screen's Continue Reading shelf, the Shelves tab, and
+ * the settings drawer (theme, accentColor, coverSize, shelfOrder/shelfVisibility) need -- all
+ * mirroring useCustomShelves.ts's convention of treating this as one freeform per-user blob the
+ * server shallow-merges on every PATCH.
  */
 class LibraryPrefsRepository(private val network: NetworkModule) {
 
@@ -68,6 +88,48 @@ class LibraryPrefsRepository(private val network: NetworkModule) {
         try {
             val element = json.encodeToJsonElement(ListSerializer(CustomShelf.serializer()), shelves)
             val patch = JsonObject(mapOf(KEY_CUSTOM_SHELVES to element))
+            val response = network.api.patchLibraryPrefs(patch)
+            if (response.isSuccessful) ApiResult.Success(Unit) else ApiResult.Failure("Couldn't save (${response.code()})")
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error")
+        }
+    }
+
+    /** Decodes straight from the top-level prefs object (ignoreUnknownKeys skips customShelves/
+     *  continueReadingDismissed/anything else living in the same blob) rather than pulling each
+     *  key out individually -- there's no nested shape to unwrap here, unlike customShelves. */
+    suspend fun getSettings(): AppSettings = withContext(Dispatchers.IO) {
+        try {
+            val prefs = network.api.getLibraryPrefs().body()?.libraryPrefs
+            val fields = prefs?.let { json.decodeFromJsonElement<SettingsFields>(it) } ?: SettingsFields()
+            AppSettings(
+                theme = ThemeMode.fromKey(fields.theme),
+                accentColor = fields.accentColor,
+                coverSize = CoverSize.fromKey(fields.coverSize),
+                shelfOrder = fields.shelfOrder?.mapNotNull { HomeShelfId.fromKey(it) }
+                    ?.let { ordered -> ordered + (HomeShelfId.Default - ordered.toSet()) }
+                    ?: HomeShelfId.Default,
+                shelfVisibility = fields.shelfVisibility
+                    ?.mapNotNull { (key, visible) -> HomeShelfId.fromKey(key)?.let { it to visible } }
+                    ?.toMap()
+                    ?: emptyMap()
+            )
+        } catch (e: Exception) {
+            AppSettings()
+        }
+    }
+
+    suspend fun patchSettings(settings: AppSettings): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val patch = JsonObject(
+                mapOf(
+                    KEY_THEME to JsonPrimitive(settings.theme.key),
+                    KEY_ACCENT_COLOR to JsonPrimitive(settings.accentColor),
+                    KEY_COVER_SIZE to JsonPrimitive(settings.coverSize.key),
+                    KEY_SHELF_ORDER to json.encodeToJsonElement(ListSerializer(String.serializer()), settings.shelfOrder.map { it.key }),
+                    KEY_SHELF_VISIBILITY to JsonObject(settings.shelfVisibility.mapKeys { it.key.key }.mapValues { JsonPrimitive(it.value) })
+                )
+            )
             val response = network.api.patchLibraryPrefs(patch)
             if (response.isSuccessful) ApiResult.Success(Unit) else ApiResult.Failure("Couldn't save (${response.code()})")
         } catch (e: Exception) {
