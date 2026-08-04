@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,7 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -63,18 +61,9 @@ fun HomeScreen(
     val isEmpty = state.continueReading.isEmpty() && state.lastSeriesRead.isEmpty() &&
         state.recentlyAdded.isEmpty() && state.myLibrary.isEmpty()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                // CLAUDE-ADDED: No title -- it used to just repeat "Home", the same text already
-                // shown by MainTabsScreen's tab strip.
-                title = {},
-                // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
-                // the true top of the window (it's always a page inside that pager).
-                windowInsets = WindowInsets(0.dp)
-            )
-        }
-    ) { padding ->
+    // CLAUDE-ADDED: No topBar at all -- an empty TopAppBar still reserves its default height,
+    // leaving a blank bar in the same spot the redundant "Home" title used to sit.
+    Scaffold { padding ->
         // CLAUDE-ADDED: Replaces the old explicit refresh button -- dragging down now does the
         // reload, same as a mobile browser.
         PullToRefreshBox(
