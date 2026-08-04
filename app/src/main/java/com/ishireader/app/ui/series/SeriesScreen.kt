@@ -75,6 +75,10 @@ fun SeriesScreen(
     }
 
     Scaffold(
+        // CLAUDE-ADDED: With no TopAppBar on the overview to zero out Scaffold's default
+        // systemBars content inset, that inset has to be zeroed here instead -- MainTabsScreen's
+        // header Row already consumes the status bar height once (same fix as HomeScreen).
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             // CLAUDE-ADDED: No bar at all on the series overview -- an empty TopAppBar still
             // reserves its default height, leaving a visible divider in the same spot the
