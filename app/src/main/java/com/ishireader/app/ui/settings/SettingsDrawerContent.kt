@@ -212,7 +212,7 @@ private fun ColorWheelPicker(color: Color, onColorChange: (Color) -> Unit, modif
                 .size(200.dp)
                 .pointerInput(Unit) {
                     val center = Offset(size.width / 2f, size.height / 2f)
-                    val radius = size.minDimension / 2f
+                    val radius = min(size.width, size.height) / 2f
                     awaitEachGesture {
                         val down = awaitFirstDown()
                         updateFromOffset(down.position, radius, center)
