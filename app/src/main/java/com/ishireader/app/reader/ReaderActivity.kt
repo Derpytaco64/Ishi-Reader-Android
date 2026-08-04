@@ -1,6 +1,9 @@
 package com.ishireader.app.reader
 
 import android.os.Bundle
+import android.view.View
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
@@ -22,13 +25,19 @@ import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.Try
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
+import org.readium.r2.shared.util.toUrl
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
+import java.io.File
 
 /**
- * Streams a book straight from the Ishi-Read server's Readium Web Publication Server and
- * renders it with the Readium Kotlin toolkit's EPUB navigator, syncing the reading position
- * back to /api/userdata/position as the user reads.
+ * Downloads a book from the Ishi-Read server (see BookDownloadRepository -- the Go readium
+ * server only streams an exploded manifest, it has no raw-file endpoint of its own, so the
+ * actual bytes come from the Next.js app's /api/books/download route) into local storage, then
+ * renders it with the Readium Kotlin toolkit's EPUB navigator from that local file. Opening a
+ * local asset is the well-tested path in the toolkit; streaming a remote RWPM manifest directly
+ * (the previous approach here) is fragile and has no offline support. Reading position still
+ * syncs back to /api/userdata/position, keyed by the original manifestUrl string.
  *
  * Navigator setup (EpubNavigatorFactory -> createFragmentFactory -> instantiate) matches the
  * documented 3.1.x pattern at https://readium.org/kotlin-toolkit/3.1.2/guides/navigator/preferences/ --
@@ -48,10 +57,18 @@ class ReaderActivity : FragmentActivity() {
 
     private val app: IshiReaderApp by lazy { application as IshiReaderApp }
 
+    private lateinit var progressOverlay: View
+    private lateinit var progressBar: ProgressBar
+    private lateinit var progressText: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_reader)
         title = intent.getStringExtra(EXTRA_TITLE)
+
+        progressOverlay = findViewById(R.id.reader_progress_overlay)
+        progressBar = findViewById(R.id.reader_progress_bar)
+        progressText = findViewById(R.id.reader_progress_text)
 
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL)
         if (manifestUrl == null) {
@@ -67,35 +84,72 @@ class ReaderActivity : FragmentActivity() {
 
     private fun openBook(manifestUrl: String) {
         lifecycleScope.launch {
-            val url = AbsoluteUrl(manifestUrl)
-            if (url == null) {
-                toastAndFinish("Invalid manifest URL")
-                return@launch
-            }
-
-            val httpClient = DefaultHttpClient()
-            val assetRetriever = AssetRetriever(contentResolver, httpClient)
-            val publicationParser = DefaultPublicationParser(
-                context = this@ReaderActivity,
-                httpClient = httpClient,
-                assetRetriever = assetRetriever,
-                pdfFactory = null
-            )
-            val publicationOpener = PublicationOpener(publicationParser)
-
-            val asset = when (val result = assetRetriever.retrieve(url)) {
-                is Try.Success -> result.value
-                is Try.Failure -> return@launch toastAndFinish("Couldn't reach book: ${result.value}")
-            }
-
-            val publication = when (val result = publicationOpener.open(asset, allowUserInteraction = false)) {
-                is Try.Success -> result.value
-                is Try.Failure -> return@launch toastAndFinish("Couldn't open book: ${result.value}")
-            }
-
-            val initialLocator = fetchSavedLocator(manifestUrl)
-            showNavigator(publication, initialLocator)
+            val localFile = ensureDownloaded(manifestUrl) ?: return@launch
+            openPublication(localFile, manifestUrl)
         }
+    }
+
+    /** Returns the local file for this book, downloading it first if it isn't already cached.
+     *  Returns null (and finishes the activity) if the download fails. */
+    private suspend fun ensureDownloaded(manifestUrl: String): File? {
+        app.bookDownloadRepository.localFileFor(manifestUrl)?.let { return it }
+
+        showProgressOverlay()
+        val result = app.bookDownloadRepository.download(manifestUrl) { bytesRead, totalBytes ->
+            runOnUiThread { updateDownloadProgress(bytesRead, totalBytes) }
+        }
+
+        return when (result) {
+            is ApiResult.Success -> result.data
+            is ApiResult.Failure -> {
+                toastAndFinish(result.message)
+                null
+            }
+        }
+    }
+
+    private fun showProgressOverlay() {
+        progressOverlay.visibility = View.VISIBLE
+        progressBar.isIndeterminate = true
+        progressText.setText(R.string.reader_downloading)
+    }
+
+    private fun updateDownloadProgress(bytesRead: Long, totalBytes: Long) {
+        if (totalBytes <= 0) {
+            progressBar.isIndeterminate = true
+            return
+        }
+        progressBar.isIndeterminate = false
+        val percent = ((bytesRead * 100) / totalBytes).toInt()
+        progressBar.progress = percent
+        progressText.text = getString(R.string.reader_downloading) + " $percent%"
+    }
+
+    private suspend fun openPublication(localFile: File, manifestUrl: String) {
+        val url = localFile.toUrl()
+
+        val httpClient = DefaultHttpClient()
+        val assetRetriever = AssetRetriever(contentResolver, httpClient)
+        val publicationParser = DefaultPublicationParser(
+            context = this,
+            httpClient = httpClient,
+            assetRetriever = assetRetriever,
+            pdfFactory = null
+        )
+        val publicationOpener = PublicationOpener(publicationParser)
+
+        val asset = when (val result = assetRetriever.retrieve(url)) {
+            is Try.Success -> result.value
+            is Try.Failure -> return toastAndFinish("Couldn't open book: ${result.value}")
+        }
+
+        val publication = when (val result = publicationOpener.open(asset, allowUserInteraction = false)) {
+            is Try.Success -> result.value
+            is Try.Failure -> return toastAndFinish("Couldn't open book: ${result.value}")
+        }
+
+        val initialLocator = fetchSavedLocator(manifestUrl)
+        showNavigator(publication, initialLocator)
     }
 
     /** Bridges the JSON we get back from Retrofit (kotlinx.serialization) into the org.json
@@ -107,6 +161,8 @@ class ReaderActivity : FragmentActivity() {
     }
 
     private fun showNavigator(publication: Publication, initialLocator: Locator?) {
+        progressOverlay.visibility = View.GONE
+
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
 
         val navigatorFactory = EpubNavigatorFactory(publication = publication)

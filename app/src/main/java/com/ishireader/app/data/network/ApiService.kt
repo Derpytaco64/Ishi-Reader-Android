@@ -24,6 +24,7 @@ import com.ishireader.app.data.model.SetupPasswordRequest
 import com.ishireader.app.data.model.UserDataFolderField
 import com.ishireader.app.data.model.UserStats
 import kotlinx.serialization.json.JsonObject
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -32,6 +33,7 @@ import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 /** Mirrors the endpoints under Ishi-Read's src/app/api/ that the mobile client needs for v1. */
 interface ApiService {
@@ -54,6 +56,12 @@ interface ApiService {
 
     @GET("api/books")
     suspend fun books(): Response<BooksResponse>
+
+    /** Streams the raw publication file (epub/pdf/cbz) so the Readium navigator can open it as a
+     *  local asset -- @Streaming keeps Retrofit from buffering the whole body into memory first. */
+    @Streaming
+    @GET("api/books/download")
+    suspend fun downloadBook(@Query("manifestUrl") manifestUrl: String): Response<ResponseBody>
 
     @GET("api/userdata/position")
     suspend fun getPosition(@Query("manifestUrl") manifestUrl: String): Response<PositionResponse>

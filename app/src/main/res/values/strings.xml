@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Ishi Reader</string>
+    <string name="reader_downloading">Downloading book…</string>
 </resources>
