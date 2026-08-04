@@ -158,7 +158,12 @@ class MainActivity : ComponentActivity() {
                                 LaunchedEffect(Unit) { navController.popBackStack() }
                             } else {
                                 val viewModel: BookDetailViewModel = viewModel(
-                                    factory = BookDetailViewModel.Factory(book, app.positionRepository)
+                                    factory = BookDetailViewModel.Factory(
+                                        book,
+                                        app.positionRepository,
+                                        app.notesRepository,
+                                        app.completedReadsRepository
+                                    )
                                 )
                                 BookDetailScreen(
                                     book = book,

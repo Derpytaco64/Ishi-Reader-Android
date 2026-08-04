@@ -7,6 +7,7 @@ import com.ishireader.app.data.network.NetworkModule
 import com.ishireader.app.data.prefs.AppPreferences
 import com.ishireader.app.data.repository.AdminRepository
 import com.ishireader.app.data.repository.AuthRepository
+import com.ishireader.app.data.repository.CompletedReadsRepository
 import com.ishireader.app.data.repository.LibraryPrefsRepository
 import com.ishireader.app.data.repository.LibraryRepository
 import com.ishireader.app.data.repository.NotesRepository
@@ -35,6 +36,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory {
         private set
     lateinit var notesRepository: NotesRepository
         private set
+    lateinit var completedReadsRepository: CompletedReadsRepository
+        private set
     lateinit var statsRepository: StatsRepository
         private set
     lateinit var adminRepository: AdminRepository
@@ -49,6 +52,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory {
         positionRepository = PositionRepository(network)
         libraryPrefsRepository = LibraryPrefsRepository(network)
         notesRepository = NotesRepository(network)
+        completedReadsRepository = CompletedReadsRepository(network)
         statsRepository = StatsRepository(network)
         adminRepository = AdminRepository(network)
     }

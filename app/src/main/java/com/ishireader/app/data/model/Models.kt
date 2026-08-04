@@ -121,6 +121,30 @@ data class StoredNote(
 @Serializable
 data class NotesResponse(val items: List<StoredNote> = emptyList())
 
+/** One calendar day's reading within a completed run -- mirrors DailyReadingBucket.ts. wpm/percent
+ *  are derived from seconds/words/progressionDelta at render time rather than stored precomputed. */
+@Serializable
+data class DailyReadingBucket(
+    val date: String,
+    val seconds: Double = 0.0,
+    val words: Double = 0.0,
+    val progressionDelta: Double = 0.0
+)
+
+/** One archived reading run, created whenever the in-reader timer is reset with "save" -- mirrors
+ *  StoredCompletedReadTime.ts. dailyHistory is optional since entries saved before that field
+ *  existed have none. */
+@Serializable
+data class StoredCompletedReadTime(
+    val id: String,
+    val seconds: Double,
+    val completedAt: Double,
+    val dailyHistory: List<DailyReadingBucket>? = null
+)
+
+@Serializable
+data class CompletedReadTimesResponse(val items: List<StoredCompletedReadTime> = emptyList())
+
 /** Mirrors AdminPageClient.tsx's local AdminUser shape and /api/admin/users' stripSecrets output
  *  (passwordHash/passwordSalt stripped server-side) -- only ever fetched by an admin. */
 @Serializable

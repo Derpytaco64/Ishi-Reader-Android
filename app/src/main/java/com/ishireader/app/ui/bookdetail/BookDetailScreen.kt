@@ -43,8 +43,16 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.DailyReadingBucket
+import com.ishireader.app.data.model.StoredNote
+import com.ishireader.app.data.model.percentFromLocator
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -129,6 +137,34 @@ fun BookDetailScreen(
                 Text(description, style = MaterialTheme.typography.bodyMedium)
             }
 
+            // CLAUDE-ADDED: The most recent entry from the reader's own Completed tab, matching
+            // StatefulBookSheet.tsx's "Completed Read" card -- only the single latest run, not the
+            // full history list the reader's Completed tab shows.
+            state.lastCompletedRead?.let { completedRead ->
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Completed Read", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Completed: ${formatTimestamp(completedRead.completedAt)}")
+                    Chip("Duration: ${formatDuration(completedRead.seconds)}")
+                }
+                completedRead.dailyHistory?.takeIf { it.isNotEmpty() }?.let { history ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        history.sortedByDescending { it.date }.forEach { bucket -> DailyHistoryRow(bucket) }
+                    }
+                }
+            }
+
+            if (state.notes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Notes", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    state.notes.sortedByDescending { it.createdAt }.forEach { note -> NoteCard(note) }
+                }
+            }
+
             if (book.publisher != null) {
                 ChipSection(title = "Publisher") { Chip(book.publisher) }
             }
@@ -166,6 +202,71 @@ private fun ProgressDial(percent: Double) {
         )
         Text("${percent}%", style = MaterialTheme.typography.labelSmall)
     }
+}
+
+/** One day's reading within a completed run's dailyHistory -- mirrors StatefulBookSheet.tsx's
+ *  sessionsList rows (date/duration/pace/percent), just with this screen's Chip styling instead of
+ *  that panel's baseline-aligned grid. wpm/percent are derived here, never stored precomputed. */
+@Composable
+private fun DailyHistoryRow(bucket: DailyReadingBucket) {
+    val wpm = if (bucket.seconds > 0) (bucket.words / (bucket.seconds / 60)).toInt() else null
+    val percent = (bucket.progressionDelta * 100).takeIf { it.isFinite() }?.toInt() ?: 0
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(formatDateOnly(bucket.date), style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+        Text(formatDuration(bucket.seconds), style = MaterialTheme.typography.labelSmall)
+        Text(wpm?.let { "$it wpm" } ?: "—", style = MaterialTheme.typography.labelSmall)
+        Text("$percent%", style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/** One note, matching the site's per-note rendering: the highlighted passage it was attached to
+ *  (if any), the note's own text, then chapter/percent/timestamp chips. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NoteCard(note: StoredNote) {
+    val quote = (note.locator?.jsonObject
+        ?.get("text")?.jsonObject
+        ?.get("highlight") as? JsonPrimitive)?.contentOrNull
+    val percent = percentFromLocator(note.locator)
+
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            quote?.let {
+                Text("“$it”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(note.text, style = MaterialTheme.typography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                note.chapterTitle?.let { Chip(it) }
+                percent?.let { Chip("$it%") }
+                Chip(formatTimestamp(note.createdAt))
+            }
+        }
+    }
+}
+
+private fun formatTimestamp(epochMillis: Double): String =
+    SimpleDateFormat("MMM d, yyyy h:mm a", Locale.getDefault()).format(Date(epochMillis.toLong()))
+
+private fun formatDateOnly(dateStr: String): String = try {
+    val parsed = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(dateStr)
+    SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(parsed!!)
+} catch (e: Exception) {
+    dateStr
+}
+
+/** Same h/m/s breakdown as the site's formatFullReadingTime -- every unit below the largest present
+ *  one is always shown (no rounding to a single unit). */
+private fun formatDuration(totalSeconds: Double): String {
+    val whole = totalSeconds.toLong()
+    val hours = whole / 3600
+    val minutes = (whole % 3600) / 60
+    val seconds = whole % 60
+
+    val parts = mutableListOf<String>()
+    if (hours > 0) parts.add("${hours}h")
+    if (hours > 0 || minutes > 0) parts.add("${minutes}m")
+    parts.add("${seconds}s")
+    return parts.joinToString(" ")
 }
 
 @OptIn(ExperimentalLayoutApi::class)

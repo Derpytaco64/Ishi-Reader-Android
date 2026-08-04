@@ -4,6 +4,7 @@ import com.ishireader.app.data.model.AdminUserResponse
 import com.ishireader.app.data.model.AdminUsersResponse
 import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.BooksResponse
+import com.ishireader.app.data.model.CompletedReadTimesResponse
 import com.ishireader.app.data.model.CreateUserRequest
 import com.ishireader.app.data.model.LibraryPrefsResponse
 import com.ishireader.app.data.model.LoginAccentColorField
@@ -69,6 +70,9 @@ interface ApiService {
 
     @GET("api/userdata/notes")
     suspend fun getNotes(@Query("manifestUrl") manifestUrl: String): Response<NotesResponse>
+
+    @GET("api/userdata/completedReadTimes")
+    suspend fun getCompletedReadTimes(@Query("manifestUrl") manifestUrl: String): Response<CompletedReadTimesResponse>
 
     @GET("api/userdata/stats")
     suspend fun stats(): Response<UserStats>
