@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.AdminUser
 import com.ishireader.app.data.network.ApiResult
+import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.AdminRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -340,9 +341,4 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             AdminViewModel(repository) as T
     }
-}
-
-private fun <T> ApiResult<T>.dataOrNull(): T? = when (this) {
-    is ApiResult.Success -> data
-    is ApiResult.Failure -> null
 }

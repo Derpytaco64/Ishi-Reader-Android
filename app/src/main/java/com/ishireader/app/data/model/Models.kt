@@ -29,6 +29,14 @@ data class PublicUser(
 @Serializable
 data class MeResponse(val user: PublicUser? = null)
 
+/** The trimmed, unauthenticated user summary the login picker fetches -- see /api/auth/users,
+ *  which deliberately strips isAdmin/needsPasswordSetup before anyone is signed in. */
+@Serializable
+data class PublicUsersResponse(val users: List<PublicUser> = emptyList())
+
+@Serializable
+data class SetupPasswordRequest(val userId: String, val password: String)
+
 @Serializable
 data class BookSeries(val name: String, val position: Double? = null)
 

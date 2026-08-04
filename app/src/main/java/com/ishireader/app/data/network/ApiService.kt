@@ -14,10 +14,12 @@ import com.ishireader.app.data.model.MeResponse
 import com.ishireader.app.data.model.NotesResponse
 import com.ishireader.app.data.model.PositionRequest
 import com.ishireader.app.data.model.PositionResponse
+import com.ishireader.app.data.model.PublicUsersResponse
 import com.ishireader.app.data.model.ReadiumPortField
 import com.ishireader.app.data.model.ReadiumPortRequest
 import com.ishireader.app.data.model.ReadiumUrlField
 import com.ishireader.app.data.model.ResetPasswordRequest
+import com.ishireader.app.data.model.SetupPasswordRequest
 import com.ishireader.app.data.model.UserDataFolderField
 import com.ishireader.app.data.model.UserStats
 import kotlinx.serialization.json.JsonObject
@@ -41,6 +43,13 @@ interface ApiService {
 
     @GET("api/auth/me")
     suspend fun me(): Response<MeResponse>
+
+    /** Public and unauthenticated -- the login picker needs this before any session exists. */
+    @GET("api/auth/users")
+    suspend fun publicUsers(): Response<PublicUsersResponse>
+
+    @POST("api/auth/setup-password")
+    suspend fun setupPassword(@Body request: SetupPasswordRequest): Response<LoginResponse>
 
     @GET("api/books")
     suspend fun books(): Response<BooksResponse>

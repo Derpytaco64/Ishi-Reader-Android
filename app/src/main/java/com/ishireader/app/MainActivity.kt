@@ -73,7 +73,12 @@ class MainActivity : ComponentActivity() {
                             val viewModel: LoginViewModel = viewModel(
                                 factory = LoginViewModel.Factory(app.preferences, app.network, app.authRepository)
                             )
-                            IshiReaderTheme(darkTheme = true, dynamicColor = false) {
+                            val loginState by viewModel.uiState.collectAsState()
+                            IshiReaderTheme(
+                                darkTheme = loginState.themeMode == "dark",
+                                dynamicColor = false,
+                                accentColor = parseAccentColor(loginState.accentColor)
+                            ) {
                                 LoginScreen(
                                     viewModel = viewModel,
                                     onLoggedIn = {
