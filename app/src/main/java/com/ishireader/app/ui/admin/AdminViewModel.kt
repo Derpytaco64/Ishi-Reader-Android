@@ -172,10 +172,11 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
             // failed save (expired session, network blip) would leave the switch/picker showing the
             // new value indefinitely -- only reverting silently the next time something reloaded the
             // real server value (e.g. the login screen), looking like the setting "didn't stick".
-            if (repository.setLoginAccentColor(hex) is ApiResult.Failure) {
+            val result = repository.setLoginAccentColor(hex)
+            if (result is ApiResult.Failure) {
                 _uiState.value = _uiState.value.copy(
                     loginAccentColor = previous,
-                    appearanceError = "Couldn't save accent color"
+                    appearanceError = result.message
                 )
             }
         }
@@ -185,10 +186,11 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
         val previous = _uiState.value.loginThemeMode
         _uiState.value = _uiState.value.copy(loginThemeMode = mode, appearanceError = null)
         viewModelScope.launch {
-            if (repository.setLoginThemeMode(mode) is ApiResult.Failure) {
+            val result = repository.setLoginThemeMode(mode)
+            if (result is ApiResult.Failure) {
                 _uiState.value = _uiState.value.copy(
                     loginThemeMode = previous,
-                    appearanceError = "Couldn't save theme mode"
+                    appearanceError = result.message
                 )
             }
         }
