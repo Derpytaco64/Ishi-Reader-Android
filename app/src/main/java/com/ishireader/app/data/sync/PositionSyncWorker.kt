@@ -40,31 +40,35 @@ class PositionSyncWorker(
         return if (anyFailed) Result.retry() else Result.success()
     }
 
-    private suspend fun syncOne(local: PositionEntity): Boolean = try {
-        val response = network.api.getPosition(local.manifestUrl)
-        val serverLocator = response.takeIf { it.isSuccessful }?.body()?.locator
-        val serverProgression = totalProgressionOf(serverLocator)
+    private suspend fun syncOne(local: PositionEntity): Boolean {
+        return try {
+            val response = network.api.getPosition(local.manifestUrl)
+            val serverLocator = response.takeIf { it.isSuccessful }?.body()?.locator
+            val serverProgression = totalProgressionOf(serverLocator)
 
-        if (serverLocator != null && serverProgression != null &&
-            (local.progression == null || serverProgression > local.progression)
-        ) {
-            // Server is further along -- adopt it locally instead of overwriting server progress.
-            positionDao.upsert(
-                local.copy(
-                    locatorJson = serverLocator.toString(),
-                    progression = serverProgression,
-                    pendingSync = false
+            if (serverLocator != null && serverProgression != null &&
+                (local.progression == null || serverProgression > local.progression)
+            ) {
+                // Server is further along -- adopt it locally instead of overwriting server progress.
+                positionDao.upsert(
+                    local.copy(
+                        locatorJson = serverLocator.toString(),
+                        progression = serverProgression,
+                        pendingSync = false
+                    )
                 )
-            )
-        } else {
-            // Local is further along (or the comparison is inconclusive) -- push it.
-            val locatorElement = Json.parseToJsonElement(local.locatorJson)
-            val postResponse = network.api.setPosition(PositionRequest(local.manifestUrl, locatorElement))
-            if (!postResponse.isSuccessful) return false
-            positionDao.upsert(local.copy(pendingSync = false))
+                true
+            } else {
+                // Local is further along (or the comparison is inconclusive) -- push it.
+                val locatorElement = Json.parseToJsonElement(local.locatorJson)
+                val postResponse = network.api.setPosition(PositionRequest(local.manifestUrl, locatorElement))
+                if (postResponse.isSuccessful) {
+                    positionDao.upsert(local.copy(pendingSync = false))
+                }
+                postResponse.isSuccessful
+            }
+        } catch (e: Exception) {
+            false
         }
-        true
-    } catch (e: Exception) {
-        false
     }
 }
