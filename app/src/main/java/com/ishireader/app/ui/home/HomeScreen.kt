@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -62,8 +63,11 @@ fun HomeScreen(
         state.recentlyAdded.isEmpty() && state.myLibrary.isEmpty()
 
     // CLAUDE-ADDED: No topBar at all -- an empty TopAppBar still reserves its default height,
-    // leaving a blank bar in the same spot the redundant "Home" title used to sit.
-    Scaffold { padding ->
+    // leaving a blank bar in the same spot the redundant "Home" title used to sit. With no
+    // TopAppBar to zero out Scaffold's default systemBars content inset (like the other screens
+    // do via their TopAppBar's windowInsets), that inset has to be zeroed here instead --
+    // MainTabsScreen's header Row already consumes the status bar height once.
+    Scaffold(contentWindowInsets = WindowInsets(0.dp)) { padding ->
         // CLAUDE-ADDED: Replaces the old explicit refresh button -- dragging down now does the
         // reload, same as a mobile browser.
         PullToRefreshBox(
