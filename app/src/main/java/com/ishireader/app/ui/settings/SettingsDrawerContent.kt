@@ -32,9 +32,10 @@ import com.ishireader.app.data.model.AppSettings
 import com.ishireader.app.data.model.CoverSize
 import com.ishireader.app.data.model.HomeShelfId
 import com.ishireader.app.data.model.ThemeMode
+import com.ishireader.app.ui.theme.LocalDefaultAccentColor
 
 private val AccentPresets = listOf(
-    "#1976D2", "#7B1FA2", "#388E3C", "#F57C00", "#D32F2F", "#00796B", "#C2185B"
+    "#1976D2", "#7B1FA2", "#388E3C", "#F57C00", "#D32F2F", "#00796B", "#C2185B", "#F9A825"
 )
 
 @Composable
@@ -75,7 +76,7 @@ fun SettingsDrawerContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             AccentSwatch(
-                color = MaterialTheme.colorScheme.primary,
+                color = LocalDefaultAccentColor.current,
                 selected = settings.accentColor == null,
                 onClick = { onAccentColorChange(null) }
             )
