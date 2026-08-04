@@ -28,12 +28,14 @@ fun BookContextMenuSheet(
     book: Book,
     shelves: List<CustomShelf>,
     canRemoveFromContinueReading: Boolean,
+    showDeleteDownload: Boolean,
     onDismiss: () -> Unit,
     onGoToSeries: () -> Unit,
     onExportNotes: () -> Unit,
     onToggleShelf: (CustomShelf) -> Unit,
     onCreateShelf: () -> Unit,
-    onRemoveFromContinueReading: () -> Unit
+    onRemoveFromContinueReading: () -> Unit,
+    onDeleteDownload: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.padding(bottom = 24.dp)) {
@@ -50,6 +52,9 @@ fun BookContextMenuSheet(
                 MenuRow("Go to Series") { onGoToSeries(); onDismiss() }
             }
             MenuRow("Export Notes") { onExportNotes(); onDismiss() }
+            if (showDeleteDownload) {
+                MenuRow("Delete Downloaded File") { onDeleteDownload(); onDismiss() }
+            }
 
             Divider()
             Text(

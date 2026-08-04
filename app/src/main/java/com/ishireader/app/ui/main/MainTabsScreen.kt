@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.PublicUser
@@ -116,6 +117,7 @@ fun MainTabsScreen(
     var isStatsOpen by remember { mutableStateOf(false) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
     val context = LocalContext.current
+    val app = context.applicationContext as IshiReaderApp
 
     LaunchedEffect(isStatsOpen) {
         if (isStatsOpen) {
@@ -264,6 +266,11 @@ fun MainTabsScreen(
         }
 
         contextMenuBook?.let { book ->
+            // Audiobooks don't go through BookDownloadRepository (only the EPUB/PDF/CBZ reader
+            // path downloads a local copy), so there's never a downloaded file to offer deleting.
+            val isDownloaded = remember(book) {
+                !book.isAudiobook && app.bookDownloadRepository.isDownloaded(book.manifestUrl())
+            }
             BookContextMenuSheet(
                 book = book,
                 shelves = shelvesState.shelves,
@@ -272,12 +279,14 @@ fun MainTabsScreen(
                 // round trip just to decide whether to show a menu item -- worst case this is a no-op
                 // re-dismiss of a book not currently shown in Continue Reading.
                 canRemoveFromContinueReading = book.lastReadAt != null,
+                showDeleteDownload = isDownloaded,
                 onDismiss = { contextMenuBook = null },
                 onGoToSeries = { goToSeries(book) },
                 onExportNotes = { exportNotes(book) },
                 onToggleShelf = { shelf -> shelvesViewModel.toggleBookInShelf(shelf.id, book) },
                 onCreateShelf = { shelvesViewModel.openCreateModal(addBookUrl = book.url) },
-                onRemoveFromContinueReading = { homeViewModel.dismissFromContinueReading(book) }
+                onRemoveFromContinueReading = { homeViewModel.dismissFromContinueReading(book) },
+                onDeleteDownload = { app.bookDownloadRepository.delete(book.manifestUrl()) }
             )
         }
 
