@@ -76,23 +76,23 @@ fun SeriesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                // CLAUDE-ADDED: No title while on the series overview -- it used to just repeat
-                // "Series", the same text already shown by MainTabsScreen's tab strip. Once a
-                // series is selected, though, its name is real info (not a duplicate), so it's
-                // still shown here.
-                title = { if (selectedSlot != null) Text(seriesTitle(selectedSlot)) },
-                // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
-                // the true top of the window (it's always a page inside that pager).
-                windowInsets = WindowInsets(0.dp),
-                navigationIcon = {
-                    if (selectedSlot != null) {
+            // CLAUDE-ADDED: No bar at all on the series overview -- an empty TopAppBar still
+            // reserves its default height, leaving a visible divider in the same spot the
+            // redundant "Series" title used to sit. Once a series is selected, its name and the
+            // back button are real info, so the bar reappears then.
+            if (selectedSlot != null) {
+                TopAppBar(
+                    title = { Text(seriesTitle(selectedSlot)) },
+                    // Reserved once already by MainTabsScreen's tab strip -- this screen never sits
+                    // at the true top of the window (it's always a page inside that pager).
+                    windowInsets = WindowInsets(0.dp),
+                    navigationIcon = {
                         IconButton(onClick = viewModel::clearSelection) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Series")
                         }
                     }
-                }
-            )
+                )
+            }
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
