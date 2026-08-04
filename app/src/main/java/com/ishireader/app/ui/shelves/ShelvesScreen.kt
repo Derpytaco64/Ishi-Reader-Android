@@ -25,8 +25,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -36,7 +36,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,8 +68,18 @@ fun ShelvesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (selectedShelf == null) "Shelves" else "${selectedShelf.icon} ${selectedShelf.name}") },
+            // CLAUDE-ADDED: No more plain "Shelves" title -- it just repeated the "Shelves" tab
+            // directly above. "+ Shelf" takes over the now-empty (and, via CenterAlignedTopAppBar,
+            // actually centered) title slot instead of sitting off to the side in actions, same
+            // treatment as Library's sort menu.
+            CenterAlignedTopAppBar(
+                title = {
+                    if (selectedShelf == null) {
+                        TextButton(onClick = { viewModel.openCreateModal() }) { Text("+ Shelf") }
+                    } else {
+                        Text("${selectedShelf.icon} ${selectedShelf.name}")
+                    }
+                },
                 // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
                 // the true top of the window (it's always a page inside that pager).
                 windowInsets = WindowInsets(0.dp),
@@ -81,21 +91,22 @@ fun ShelvesScreen(
                     }
                 },
                 actions = {
-                    if (selectedShelf == null) {
-                        TextButton(onClick = { viewModel.openCreateModal() }) { Text("+ Shelf") }
-                    } else {
+                    if (selectedShelf != null) {
                         TextButton(onClick = viewModel::toggleManagingBooks) {
                             Text(if (state.isManagingBooks) "Done" else "Add Books")
                         }
-                    }
-                    IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
                     }
                 }
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        // CLAUDE-ADDED: Replaces the old explicit refresh button -- dragging down now does the
+        // reload, same as a mobile browser.
+        PullToRefreshBox(
+            isRefreshing = state.isLoading,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier.fillMaxSize().padding(padding)
+        ) {
             when {
                 state.isLoading && state.shelves.isEmpty() -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -112,8 +123,7 @@ fun ShelvesScreen(
                 else -> ShelfDetailGrid(
                     books = state.selectedShelfBooks,
                     onBookClick = onBookClick,
-                    onBookLongClick = onBookLongClick,
-                    viewModel = viewModel
+                    onBookLongClick = onBookLongClick
                 )
             }
         }
@@ -167,8 +177,7 @@ private fun ShelfOverviewList(shelves: List<CustomShelf>, viewModel: ShelvesView
 private fun ShelfDetailGrid(
     books: List<Book>,
     onBookClick: (Book) -> Unit,
-    onBookLongClick: (Book) -> Unit,
-    viewModel: ShelvesViewModel
+    onBookLongClick: (Book) -> Unit
 ) {
     if (books.isEmpty()) {
         Text(
@@ -186,26 +195,15 @@ private fun ShelfDetailGrid(
         modifier = Modifier.fillMaxSize()
     ) {
         items(books, key = { it.url }) { book ->
-            Box(modifier = Modifier.fillMaxWidth()) {
-                BookCoverCard(
-                    book = book,
-                    onClick = { onBookClick(book) },
-                    modifier = Modifier.fillMaxWidth(),
-                    onLongClick = { onBookLongClick(book) }
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .clickable { viewModel.removeBookFromSelectedShelf(book.url) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("✕", color = Color.White, fontSize = 12.sp)
-                }
-            }
+            // CLAUDE-ADDED: The per-cover "x" removal button is gone -- removing a book from a
+            // shelf is already reachable from the long-press context menu (toggles the shelf off),
+            // so this was a second, easy-to-fat-finger way to do the same thing.
+            BookCoverCard(
+                book = book,
+                onClick = { onBookClick(book) },
+                modifier = Modifier.fillMaxWidth(),
+                onLongClick = { onBookLongClick(book) }
+            )
         }
     }
 }

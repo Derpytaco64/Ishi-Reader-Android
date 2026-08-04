@@ -164,12 +164,6 @@ class ShelvesViewModel(
         persist(updated)
     }
 
-    /** Used by the shelf detail grid's per-cover remove button. */
-    fun removeBookFromSelectedShelf(url: String) {
-        val shelfId = _uiState.value.selectedShelfId ?: return
-        setShelfMembership(shelfId, url, inShelf = false)
-    }
-
     /** Used by the "manage books" picker grid to toggle membership for an arbitrary shelf. */
     fun toggleBookInShelf(shelfId: String, book: Book) {
         val shelf = _uiState.value.shelves.find { it.id == shelfId } ?: return

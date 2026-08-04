@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -31,6 +30,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -86,67 +86,76 @@ fun SeriesScreen(
                             Icon(Icons.Filled.ArrowBack, contentDescription = "Back to Series")
                         }
                     }
-                },
-                actions = {
-                    if (selectedSlot != null) {
-                        SortDirectionDropdown(
-                            current = state.sortDirection,
-                            onSelect = viewModel::onSortDirectionChange
-                        )
-                    }
-                    IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-                    }
                 }
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            when {
-                state.isLoading && state.slots.isEmpty() -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-                state.error != null && state.slots.isEmpty() -> {
-                    Text(
-                        text = state.error.orEmpty(),
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.align(Alignment.Center).padding(24.dp)
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // CLAUDE-ADDED: Lives in its own centered row instead of the TopAppBar's actions --
+            // that slot used to hold this plus the now-removed refresh button, both squeezed to
+            // the trailing edge. The title slot itself is taken by the series name here, so this
+            // can't just become the (centered) title the way Library's sort menu did.
+            if (selectedSlot != null) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    SortDirectionDropdown(
+                        current = state.sortDirection,
+                        onSelect = viewModel::onSortDirectionChange
                     )
                 }
-                state.slots.isEmpty() -> {
-                    Text(
-                        text = "None of your books have series information yet.",
-                        modifier = Modifier.align(Alignment.Center).padding(24.dp)
-                    )
-                }
-                selectedSlot != null -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
-                        contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(state.selectedBooks) { book ->
-                            BookCoverCard(
-                                book = book,
-                                onClick = { onBookClick(book) },
-                                modifier = Modifier.fillMaxWidth(),
-                                onLongClick = { onBookLongClick(book) }
-                            )
+            }
+            // CLAUDE-ADDED: Replaces the old explicit refresh button -- dragging down now does the
+            // reload, same as a mobile browser.
+            PullToRefreshBox(
+                isRefreshing = state.isLoading,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                when {
+                    state.isLoading && state.slots.isEmpty() -> {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    }
+                    state.error != null && state.slots.isEmpty() -> {
+                        Text(
+                            text = state.error.orEmpty(),
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.align(Alignment.Center).padding(24.dp)
+                        )
+                    }
+                    state.slots.isEmpty() -> {
+                        Text(
+                            text = "None of your books have series information yet.",
+                            modifier = Modifier.align(Alignment.Center).padding(24.dp)
+                        )
+                    }
+                    selectedSlot != null -> {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(state.selectedBooks) { book ->
+                                BookCoverCard(
+                                    book = book,
+                                    onClick = { onBookClick(book) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onLongClick = { onBookLongClick(book) }
+                                )
+                            }
                         }
                     }
-                }
-                else -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = FanGridColumnWidth),
-                        contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(state.slots) { slot ->
-                            SeriesFanCard(slot = slot, onClick = { viewModel.selectSeries(slot.key) })
+                    else -> {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = FanGridColumnWidth),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(state.slots) { slot ->
+                                SeriesFanCard(slot = slot, onClick = { viewModel.selectSeries(slot.key) })
+                            }
                         }
                     }
                 }

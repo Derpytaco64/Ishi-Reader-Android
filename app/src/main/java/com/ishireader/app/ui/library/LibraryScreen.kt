@@ -11,21 +11,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -53,12 +50,12 @@ fun LibraryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (state.tab == LibraryTab.AUDIOBOOKS) "Audiobooks" else "Books") },
-                // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
-                // the true top of the window (it's always a page inside that pager).
-                windowInsets = WindowInsets(0.dp),
-                actions = {
+            // CLAUDE-ADDED: No more title here -- it used to just repeat "Books"/"Audiobooks",
+            // the same text already shown by the tab row directly below. The sort menu takes over
+            // the now-empty (and, via CenterAlignedTopAppBar, actually centered) title slot instead
+            // of sitting off to the side in actions.
+            CenterAlignedTopAppBar(
+                title = {
                     Box {
                         TextButton(onClick = { sortMenuExpanded = true }) {
                             Text(state.sortMode.label)
@@ -75,10 +72,10 @@ fun LibraryScreen(
                             }
                         }
                     }
-                    IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-                    }
-                }
+                },
+                // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
+                // the true top of the window (it's always a page inside that pager).
+                windowInsets = WindowInsets(0.dp)
             )
         }
     ) { padding ->
@@ -96,7 +93,13 @@ fun LibraryScreen(
                 )
             }
 
-            Box(modifier = Modifier.fillMaxSize()) {
+            // CLAUDE-ADDED: Replaces the old explicit refresh button -- dragging down now does the
+            // reload, same as a mobile browser.
+            PullToRefreshBox(
+                isRefreshing = state.isLoading,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize()
+            ) {
                 when {
                     state.isLoading && state.books.isEmpty() -> {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))

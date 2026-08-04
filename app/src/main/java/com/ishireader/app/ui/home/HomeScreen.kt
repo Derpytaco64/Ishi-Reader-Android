@@ -17,18 +17,15 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -72,16 +69,17 @@ fun HomeScreen(
                 title = { Text("Home") },
                 // Reserved once already by MainTabsScreen's tab strip -- this screen never sits at
                 // the true top of the window (it's always a page inside that pager).
-                windowInsets = WindowInsets(0.dp),
-                actions = {
-                    IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-                    }
-                }
+                windowInsets = WindowInsets(0.dp)
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        // CLAUDE-ADDED: Replaces the old explicit refresh button -- dragging down now does the
+        // reload, same as a mobile browser.
+        PullToRefreshBox(
+            isRefreshing = state.isLoading,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier.fillMaxSize().padding(padding)
+        ) {
             when {
                 state.isLoading && isEmpty -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
