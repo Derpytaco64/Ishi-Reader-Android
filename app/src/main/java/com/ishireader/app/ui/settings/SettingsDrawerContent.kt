@@ -191,7 +191,7 @@ private fun AccentSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
  *  either snap the marker back on each event or (for a fully desaturated color, whose hue is
  *  undefined) fight the user's own hue choice mid-drag. */
 @Composable
-private fun ColorWheelPicker(color: Color, onColorChange: (Color) -> Unit, modifier: Modifier = Modifier) {
+fun ColorWheelPicker(color: Color, onColorChange: (Color) -> Unit, modifier: Modifier = Modifier) {
     val initialHsv = remember { colorToHsv(color) }
     var hue by remember { mutableFloatStateOf(initialHsv[0]) }
     var saturation by remember { mutableFloatStateOf(initialHsv[1]) }

@@ -103,6 +103,7 @@ fun MainTabsScreen(
     statsRepository: StatsRepository,
     avatarBaseUrl: String?,
     onBookClick: (Book) -> Unit,
+    onOpenAdmin: () -> Unit,
     onLogout: () -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { TabTitles.size })
@@ -219,6 +220,15 @@ fun MainTabsScreen(
                                 isStatsOpen = true
                             }
                         )
+                        if (user?.isAdmin == true) {
+                            DropdownMenuItem(
+                                text = { Text("Admin Settings") },
+                                onClick = {
+                                    userMenuExpanded = false
+                                    onOpenAdmin()
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Log out") },
                             leadingIcon = { Icon(Icons.Filled.ExitToApp, contentDescription = null) },

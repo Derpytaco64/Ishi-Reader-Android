@@ -113,6 +113,60 @@ data class StoredNote(
 @Serializable
 data class NotesResponse(val items: List<StoredNote> = emptyList())
 
+/** Mirrors AdminPageClient.tsx's local AdminUser shape and /api/admin/users' stripSecrets output
+ *  (passwordHash/passwordSalt stripped server-side) -- only ever fetched by an admin. */
+@Serializable
+data class AdminUser(
+    val id: String,
+    val username: String,
+    val name: String,
+    val isAdmin: Boolean = false,
+    val avatarExt: String? = null,
+    val failedAttempts: Int = 0,
+    val lockedUntil: Long? = null,
+    val createdAt: Long = 0L,
+    val disabled: Boolean = false,
+    /** Whether any of this user's sessions was active in roughly the last few minutes -- see
+     *  getActiveUserIds in the server's auth.ts. */
+    val isActive: Boolean = false
+)
+
+@Serializable
+data class AdminUsersResponse(val users: List<AdminUser> = emptyList())
+
+@Serializable
+data class AdminUserResponse(val user: AdminUser? = null)
+
+@Serializable
+data class CreateUserRequest(val username: String, val name: String, val password: String, val isAdmin: Boolean)
+
+@Serializable
+data class ResetPasswordRequest(val newPassword: String)
+
+@Serializable
+data class BookFolderField(val bookFolder: String = "")
+
+@Serializable
+data class ReadiumUrlField(val readiumUrl: String = "")
+
+/** Mirrors the server's split GET (number, e.g. `getReadiumServerPort()`) vs POST body (string,
+ *  parsed by `normalizeReadiumPort`) shape for the same field -- two classes because the wire type
+ *  differs by direction, unlike every other settings field here. */
+@Serializable
+data class ReadiumPortField(val readiumPort: Int = 0)
+
+@Serializable
+data class ReadiumPortRequest(val readiumPort: String)
+
+@Serializable
+data class UserDataFolderField(val userDataFolder: String = "")
+
+@Serializable
+data class LoginAccentColorField(val loginAccentColor: String = "#2f6fed")
+
+@Serializable
+data class LoginThemeModeField(val loginThemeMode: String = "dark")
+
 /** Mirrors the server's UserStats shape (src/lib/userData/statsTypes.ts) -- a whole-library
  *  aggregate for the current user, not per-book like everything else here. Time totals are
  *  Double (accumulated from per-session floating-point seconds), unlike the plain integer counts.

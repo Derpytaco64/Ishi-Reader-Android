@@ -5,6 +5,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.ishireader.app.data.network.NetworkModule
 import com.ishireader.app.data.prefs.AppPreferences
+import com.ishireader.app.data.repository.AdminRepository
 import com.ishireader.app.data.repository.AuthRepository
 import com.ishireader.app.data.repository.LibraryPrefsRepository
 import com.ishireader.app.data.repository.LibraryRepository
@@ -36,6 +37,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory {
         private set
     lateinit var statsRepository: StatsRepository
         private set
+    lateinit var adminRepository: AdminRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -47,6 +50,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory {
         libraryPrefsRepository = LibraryPrefsRepository(network)
         notesRepository = NotesRepository(network)
         statsRepository = StatsRepository(network)
+        adminRepository = AdminRepository(network)
     }
 
     /**

@@ -22,6 +22,8 @@ import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.ThemeMode
 import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.reader.ReaderActivity
+import com.ishireader.app.ui.admin.AdminScreen
+import com.ishireader.app.ui.admin.AdminViewModel
 import com.ishireader.app.ui.bookdetail.BookDetailScreen
 import com.ishireader.app.ui.bookdetail.BookDetailViewModel
 import com.ishireader.app.ui.home.HomeScreen
@@ -41,6 +43,7 @@ import kotlinx.coroutines.launch
 
 private const val ROUTE_LOGIN = "login"
 private const val ROUTE_HOME = "home"
+private const val ROUTE_ADMIN = "admin"
 private const val ARG_MANIFEST_URL = "manifestUrl"
 private const val ROUTE_BOOK_DETAIL = "bookDetail/{$ARG_MANIFEST_URL}"
 
@@ -108,6 +111,7 @@ class MainActivity : ComponentActivity() {
                                 statsRepository = app.statsRepository,
                                 avatarBaseUrl = app.network.baseUrl,
                                 onBookClick = { book -> openBookDetail(navController, book) },
+                                onOpenAdmin = { navController.navigate(ROUTE_ADMIN) },
                                 onLogout = {
                                     lifecycleScope.launch {
                                         app.authRepository.logout()
@@ -116,6 +120,21 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
+                            )
+                        }
+                        composable(ROUTE_ADMIN) {
+                            val adminViewModel: AdminViewModel = viewModel(
+                                factory = AdminViewModel.Factory(app.adminRepository)
+                            )
+                            val adminTopBarViewModel: TopBarViewModel = viewModel(
+                                factory = TopBarViewModel.Factory(app.authRepository)
+                            )
+                            val currentUser by adminTopBarViewModel.user.collectAsState()
+                            AdminScreen(
+                                viewModel = adminViewModel,
+                                currentUserId = currentUser?.id,
+                                avatarBaseUrl = app.network.baseUrl,
+                                onBack = { navController.popBackStack() }
                             )
                         }
                         composable(
