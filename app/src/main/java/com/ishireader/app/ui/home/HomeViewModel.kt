@@ -101,10 +101,7 @@ class HomeViewModel(
 
         candidates.map { book ->
             async {
-                val locator = when (val result = positionRepository.getPosition(book.manifestUrl())) {
-                    is ApiResult.Success -> result.data
-                    is ApiResult.Failure -> null
-                }
+                val locator = positionRepository.getPosition(book.manifestUrl())
                 ContinueReadingItem(book, percentFromLocator(locator))
             }
         }.awaitAll()

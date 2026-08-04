@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -76,6 +77,14 @@ dependencies {
     implementation(libs.readium.shared)
     implementation(libs.readium.streamer)
     implementation(libs.readium.navigator)
+
+    // Local-first offline sync layer: Room is the on-device source of truth, WorkManager drains
+    // the pending-sync outbox once connectivity returns. See the "room"/"ksp"/"workManager"
+    // version TODOs in gradle/libs.versions.toml before syncing for the first time.
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.work.runtime.ktx)
 
     coreLibraryDesugaring(libs.android.desugar.jdk.libs)
 }

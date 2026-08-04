@@ -152,11 +152,11 @@ class ReaderActivity : FragmentActivity() {
         showNavigator(publication, initialLocator)
     }
 
-    /** Bridges the JSON we get back from Retrofit (kotlinx.serialization) into the org.json
-     *  shape Locator.fromJSON expects -- Readium's own model classes parse from org.json. */
+    /** Reads the locally-saved position (never blocks on the network -- see PositionRepository)
+     *  and bridges its kotlinx.serialization JSON into the org.json shape Locator.fromJSON
+     *  expects, since Readium's own model classes parse from org.json. */
     private suspend fun fetchSavedLocator(manifestUrl: String): Locator? {
-        val result = app.positionRepository.getPosition(manifestUrl)
-        val locatorJson = (result as? ApiResult.Success)?.data ?: return null
+        val locatorJson = app.positionRepository.getPosition(manifestUrl) ?: return null
         return runCatching { Locator.fromJSON(JSONObject(locatorJson.toString())) }.getOrNull()
     }
 

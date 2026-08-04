@@ -19,6 +19,12 @@ desugarJdkLibs = "2.1.4"
 # Confirmed resolvable on Maven Central and matches the documented 3.1.x navigator API
 # (see the comment atop ReaderActivity.kt). Bump freely if a newer 3.x patch is out.
 readium = "3.1.1"
+room = "2.6.1"
+# Must be <kotlin version>-<ksp patch>; this is the KSP release published for kotlin 2.0.21 at
+# the time this was pinned. If the first sync can't resolve it, check
+# https://github.com/google/ksp/releases for the exact patch published against "kotlin = 2.0.21".
+ksp = "2.0.21-1.0.28"
+workManager = "2.9.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -52,8 +58,14 @@ readium-shared = { group = "org.readium.kotlin-toolkit", name = "readium-shared"
 readium-streamer = { group = "org.readium.kotlin-toolkit", name = "readium-streamer", version.ref = "readium" }
 readium-navigator = { group = "org.readium.kotlin-toolkit", name = "readium-navigator" , version.ref = "readium" }
 
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

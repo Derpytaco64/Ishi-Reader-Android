@@ -49,10 +49,7 @@ class BookDetailViewModel(
             val notesDeferred = async { notesRepository.getNotes(book.manifestUrl()) }
             val completedReadsDeferred = async { completedReadsRepository.getCompletedReadTimes(book.manifestUrl()) }
 
-            val locator = when (val result = locatorDeferred.await()) {
-                is ApiResult.Success -> result.data
-                is ApiResult.Failure -> null
-            }
+            val locator = locatorDeferred.await()
             val notes = when (val result = notesDeferred.await()) {
                 is ApiResult.Success -> result.data
                 is ApiResult.Failure -> emptyList()
