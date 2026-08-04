@@ -17,9 +17,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import retrofit2.Response
 
-/** Wraps /api/admin/users/* (user management) and the admin-only /api/settings/* server-config
- *  routes -- everything AdminPageClient.tsx's admin panel does, minus its 30s active-status
- *  polling (not worth it for a screen a mobile admin opens occasionally, not leaves running). */
+/** Wraps the admin/users endpoints (user management) and the admin-only settings endpoints
+ *  (server config) -- everything AdminPageClient.tsx's admin panel does, minus its 30s
+ *  active-status polling (not worth it for a screen a mobile admin opens occasionally). */
 class AdminRepository(private val network: NetworkModule) {
 
     suspend fun listUsers(): ApiResult<List<AdminUser>> = withContext(Dispatchers.IO) {

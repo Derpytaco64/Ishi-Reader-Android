@@ -61,7 +61,7 @@ import com.ishireader.app.ui.settings.toHex
 
 /** Reimplements AdminPageClient.tsx as a mobile screen -- Appearance, the four server-config
  *  fields, Add User, and the user management list (edit/toggle admin/reset password/unlock/
- *  disable/delete), all against the same /api/admin/* and /api/settings/* routes. */
+ *  disable/delete), all against the same admin and settings endpoints the site uses. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminScreen(
