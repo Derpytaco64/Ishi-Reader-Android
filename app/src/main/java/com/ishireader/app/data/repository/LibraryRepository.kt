@@ -7,6 +7,9 @@ import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.NetworkModule
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -15,7 +18,9 @@ import kotlinx.serialization.json.Json
  * Falls back to the last successful fetch (persisted in Room) when the network call fails, so a
  * server that's merely unreachable doesn't erase the library on screen -- only a genuinely empty
  * cache (nothing ever fetched, e.g. this device's very first launch offline) surfaces as a real
- * failure. Callers keep working against the same ApiResult<List<Book>> contract either way.
+ * failure. Callers keep working against the same ApiResult<List<Book>> contract either way; use
+ * [isOffline] separately when the distinction actually matters (see LocalBookAvailability, which
+ * dims books with no local download while it's true -- they can't be opened without a server).
  */
 class LibraryRepository(
     private val network: NetworkModule,
@@ -28,6 +33,9 @@ class LibraryRepository(
     @Volatile
     private var cachedBooks: List<Book> = emptyList()
 
+    private val _isOffline = MutableStateFlow(false)
+    val isOffline: StateFlow<Boolean> = _isOffline.asStateFlow()
+
     suspend fun fetchBooks(): ApiResult<List<Book>> = withContext(Dispatchers.IO) {
         try {
             val response = network.api.books()
@@ -35,6 +43,7 @@ class LibraryRepository(
             if (response.isSuccessful && body != null) {
                 cachedBooks = body.books
                 persistToLocalCache(body.books)
+                _isOffline.value = false
                 ApiResult.Success(body.books)
             } else {
                 fallBackToLocalCache("Couldn't load library (${response.code()})")
@@ -51,6 +60,7 @@ class LibraryRepository(
         if (cached.isEmpty()) return ApiResult.Failure(errorMessage)
 
         cachedBooks = cached
+        _isOffline.value = true
         return ApiResult.Success(cached)
     }
 

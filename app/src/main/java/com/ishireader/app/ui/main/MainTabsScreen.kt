@@ -1,5 +1,6 @@
 package com.ishireader.app.ui.main
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -118,6 +119,7 @@ fun MainTabsScreen(
     var stats by remember { mutableStateOf<UserStats?>(null) }
     val context = LocalContext.current
     val app = context.applicationContext as IshiReaderApp
+    val downloadsVersion by app.bookDownloadRepository.downloadsVersion.collectAsState()
 
     // MainTabsScreen's composition is torn down and rebuilt fresh every time bookDetail is popped
     // back to this destination, so this fires on the very first visit and again on every return --
@@ -149,6 +151,15 @@ fun MainTabsScreen(
         val series = book.series ?: return
         seriesViewModel.selectSeries(seriesKey(series.name, book.isAudiobook))
         scope.launch { pagerState.animateScrollToPage(2) }
+    }
+
+    fun downloadBook(book: Book) {
+        scope.launch {
+            when (val result = app.bookDownloadRepository.download(book.manifestUrl())) {
+                is ApiResult.Success -> Toast.makeText(context, "Downloaded \"${book.title}\"", Toast.LENGTH_SHORT).show()
+                is ApiResult.Failure -> Toast.makeText(context, "Couldn't download: ${result.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     fun exportNotes(book: Book) {
@@ -272,10 +283,11 @@ fun MainTabsScreen(
         }
 
         contextMenuBook?.let { book ->
-            // Audiobooks don't go through BookDownloadRepository (only the EPUB/PDF/CBZ reader
-            // path downloads a local copy), so there's never a downloaded file to offer deleting.
-            val isDownloaded = remember(book) {
-                !book.isAudiobook && app.bookDownloadRepository.isDownloaded(book.manifestUrl())
+            // Keyed on downloadsVersion too (not just book) so reopening the menu after a
+            // download/delete from elsewhere -- or from this same sheet -- reflects the change
+            // immediately instead of whatever was true the first time this book was long-pressed.
+            val isDownloaded = remember(book, downloadsVersion) {
+                app.bookDownloadRepository.isDownloaded(book.manifestUrl())
             }
             BookContextMenuSheet(
                 book = book,
@@ -285,13 +297,14 @@ fun MainTabsScreen(
                 // round trip just to decide whether to show a menu item -- worst case this is a no-op
                 // re-dismiss of a book not currently shown in Continue Reading.
                 canRemoveFromContinueReading = book.lastReadAt != null,
-                showDeleteDownload = isDownloaded,
+                isDownloaded = isDownloaded,
                 onDismiss = { contextMenuBook = null },
                 onGoToSeries = { goToSeries(book) },
                 onExportNotes = { exportNotes(book) },
                 onToggleShelf = { shelf -> shelvesViewModel.toggleBookInShelf(shelf.id, book) },
                 onCreateShelf = { shelvesViewModel.openCreateModal(addBookUrl = book.url) },
                 onRemoveFromContinueReading = { homeViewModel.dismissFromContinueReading(book) },
+                onDownloadBook = { downloadBook(book) },
                 onDeleteDownload = { app.bookDownloadRepository.delete(book.manifestUrl()) }
             )
         }

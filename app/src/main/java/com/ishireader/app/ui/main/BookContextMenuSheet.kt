@@ -21,20 +21,22 @@ import com.ishireader.app.data.model.CustomShelf
 
 /** Single shared instance, opened by long-pressing any book cover across Home/Library/Series/
  *  Shelves -- mirrors StatefulBookContextMenu.tsx's menu (right-click there, long-press here since
- *  there's no touch equivalent of a cursor-anchored popover) with the same four actions. */
+ *  there's no touch equivalent of a cursor-anchored popover) with the same four actions, plus a
+ *  download/delete-local-copy toggle the website has no equivalent of (it always streams). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookContextMenuSheet(
     book: Book,
     shelves: List<CustomShelf>,
     canRemoveFromContinueReading: Boolean,
-    showDeleteDownload: Boolean,
+    isDownloaded: Boolean,
     onDismiss: () -> Unit,
     onGoToSeries: () -> Unit,
     onExportNotes: () -> Unit,
     onToggleShelf: (CustomShelf) -> Unit,
     onCreateShelf: () -> Unit,
     onRemoveFromContinueReading: () -> Unit,
+    onDownloadBook: () -> Unit,
     onDeleteDownload: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -52,8 +54,10 @@ fun BookContextMenuSheet(
                 MenuRow("Go to Series") { onGoToSeries(); onDismiss() }
             }
             MenuRow("Export Notes") { onExportNotes(); onDismiss() }
-            if (showDeleteDownload) {
+            if (isDownloaded) {
                 MenuRow("Delete Downloaded File") { onDeleteDownload(); onDismiss() }
+            } else {
+                MenuRow("Download") { onDownloadBook(); onDismiss() }
             }
 
             Divider()

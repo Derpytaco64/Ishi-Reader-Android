@@ -4,6 +4,10 @@ import android.content.Context
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.NetworkModule
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -12,11 +16,12 @@ import java.net.URLDecoder
 import java.security.MessageDigest
 
 /**
- * Downloads a book's raw publication file (epub/pdf/cbz) to local storage so the Readium
- * Kotlin navigator can open it as a local asset instead of streaming the remote manifest
- * resource-by-resource, which is the fragile, lightly-exercised path in the toolkit and has no
- * offline support. Files live under filesDir (not cacheDir) -- these are deliberate downloads
- * the OS shouldn't reclaim on its own.
+ * Downloads a book's raw publication file (epub/pdf/cbz, or an audiobook's, since this is the
+ * same generic download used by both -- see ReaderActivity.ensureDownloaded) to local storage so
+ * the Readium Kotlin navigator can open it as a local asset instead of streaming the remote
+ * manifest resource-by-resource, which is the fragile, lightly-exercised path in the toolkit and
+ * has no offline support. Files live under filesDir (not cacheDir) -- these are deliberate
+ * downloads the OS shouldn't reclaim on its own.
  */
 class BookDownloadRepository(
     private val context: Context,
@@ -25,6 +30,12 @@ class BookDownloadRepository(
 
     private val booksDir: File
         get() = File(context.filesDir, "books").apply { mkdirs() }
+
+    /** Bumped on every successful download/delete -- isDownloaded() hits the filesystem, so
+     *  BookCoverCard caches its result per book via remember() and needs something to key off of
+     *  to know when to re-check (see LocalBookAvailability). The count itself is never read. */
+    private val _downloadsVersion = MutableStateFlow(0)
+    val downloadsVersion: StateFlow<Int> = _downloadsVersion.asStateFlow()
 
     private fun keyFor(manifestUrl: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(manifestUrl.toByteArray())
@@ -60,6 +71,7 @@ class BookDownloadRepository(
             val finalFile = File(booksDir, "${keyFor(manifestUrl)}.${extensionFor(response)}")
             localFileFor(manifestUrl)?.delete()
             tempFile.renameTo(finalFile)
+            _downloadsVersion.update { it + 1 }
             ApiResult.Success(finalFile)
         } catch (e: Exception) {
             tempFile.delete()
@@ -70,6 +82,7 @@ class BookDownloadRepository(
     /** Frees local storage; the book is re-downloaded on next read. */
     fun delete(manifestUrl: String) {
         localFileFor(manifestUrl)?.delete()
+        _downloadsVersion.update { it + 1 }
     }
 
     private fun writeToFile(body: ResponseBody, target: File, onProgress: (Long, Long) -> Unit) {
