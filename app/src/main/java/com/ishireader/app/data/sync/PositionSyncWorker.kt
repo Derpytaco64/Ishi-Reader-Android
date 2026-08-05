@@ -9,7 +9,7 @@ import com.ishireader.app.data.network.NetworkModule
 
 /**
  * Drains the position outbox: for each locally-pending book, reconciles it against the server
- * (see [PositionReconciler] for the recency-wins comparison). A failed
+ * (see [PositionReconciler] for the pending-local-write-always-wins rule). A failed
  * comparison/push leaves the row pending and returns [Result.retry], so WorkManager reschedules
  * with backoff rather than losing the change.
  */

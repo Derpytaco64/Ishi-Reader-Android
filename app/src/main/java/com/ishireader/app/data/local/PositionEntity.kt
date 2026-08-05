@@ -8,9 +8,10 @@ import androidx.room.PrimaryKey
  * the network, directly. [locatorJson] is the Locator's own toJSON() output verbatim (Readium's
  * model classes own that shape; duplicating it into typed columns would just drift). [progression]
  * is pulled out of locatorJson.locations.totalProgression at write time so callers can read a
- * percent-complete figure without re-parsing the whole locator -- it's informational only now
- * (PositionReconciler resolves sync conflicts by [updatedAtMillis] recency, not by progress, so
- * paging backwards to re-read a chapter isn't clobbered by an older, further-along save).
+ * percent-complete figure without re-parsing the whole locator -- it's informational only
+ * (PositionReconciler resolves sync conflicts by [pendingSync] -- a pending local write always
+ * wins -- not by progress, so paging backwards to re-read a chapter isn't clobbered by an older,
+ * further-along save).
  */
 @Entity(tableName = "positions")
 data class PositionEntity(

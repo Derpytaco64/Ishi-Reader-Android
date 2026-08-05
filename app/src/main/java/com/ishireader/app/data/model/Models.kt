@@ -71,13 +71,9 @@ data class BooksResponse(val books: List<Book> = emptyList())
  * Ishi-Read's server stores whatever Locator JSON the Readium navigator hands it, and the
  * Kotlin toolkit's own `Locator.toJSON()` / `Locator.fromJSON()` already define that shape.
  * Duplicating it here would just be another place for the two to drift apart.
- *
- * [updatedAt] is the position file's mtime on the server (epoch ms), null if nothing's ever been
- * saved there -- used by PositionReconciler to resolve sync conflicts by recency rather than by
- * furthest progress (see its doc comment for why that matters).
  */
 @Serializable
-data class PositionResponse(val locator: JsonElement? = null, val updatedAt: Long? = null)
+data class PositionResponse(val locator: JsonElement? = null)
 
 @Serializable
 data class PositionRequest(val manifestUrl: String, val locator: JsonElement)
