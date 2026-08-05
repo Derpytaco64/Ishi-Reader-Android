@@ -17,6 +17,9 @@ interface PositionDao {
     @Query("SELECT * FROM positions WHERE pendingSync = 1")
     suspend fun getPending(): List<PositionEntity>
 
+    @Query("SELECT * FROM positions")
+    suspend fun getAll(): List<PositionEntity>
+
     @Upsert
     suspend fun upsert(entity: PositionEntity)
 }

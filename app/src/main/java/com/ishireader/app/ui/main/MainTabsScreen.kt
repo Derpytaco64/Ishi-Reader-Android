@@ -110,6 +110,7 @@ fun MainTabsScreen(
 ) {
     val pagerState = rememberPagerState(pageCount = { TabTitles.size })
     val scope = rememberCoroutineScope()
+    val homeState by homeViewModel.uiState.collectAsState()
     val user by topBarViewModel.user.collectAsState()
     val shelvesState by shelvesViewModel.uiState.collectAsState()
     val settings by settingsViewModel.settings.collectAsState()
@@ -292,11 +293,12 @@ fun MainTabsScreen(
             BookContextMenuSheet(
                 book = book,
                 shelves = shelvesState.shelves,
-                // Simplified from the site's exact condition (started, not finished, not already
-                // dismissed) since checking "finished"/"dismissed" here would mean an extra network
-                // round trip just to decide whether to show a menu item -- worst case this is a no-op
-                // re-dismiss of a book not currently shown in Continue Reading.
-                canRemoveFromContinueReading = book.lastReadAt != null,
+                // Exact match against Home's own already-loaded state (no extra network round trip
+                // needed for this -- homeState is already collected above) rather than a lastReadAt
+                // heuristic, which used to miss books only read locally-offline so far (no server
+                // lastReadAt yet, see HomeViewModel.effectiveLastReadAt) and could also show this
+                // for books that were technically "started" but already finished or dismissed.
+                canRemoveFromContinueReading = homeState.continueReading.any { it.book.url == book.url },
                 isDownloaded = isDownloaded,
                 onDismiss = { contextMenuBook = null },
                 onGoToSeries = { goToSeries(book) },

@@ -63,6 +63,16 @@ class PositionRepository(
     suspend fun refreshFromServer(manifestUrl: String): Boolean = withContext(Dispatchers.IO) {
         withTimeoutOrNull(5_000) { reconciler.reconcile(manifestUrl) } ?: false
     }
+
+    /** manifestUrl -> when this device last saved a position for it, for every book ever opened
+     *  here. Book.lastReadAt (from /api/books) is server-truth -- the position file's mtime --
+     *  snapshotted into the Room book-list cache as of the last successful fetch; a book read
+     *  while offline advances this table but can't touch that snapshot, so Home's Continue
+     *  Reading/Last Series Read would otherwise look frozen until the next successful sync. See
+     *  HomeViewModel, which takes the max of the two per book instead of trusting lastReadAt alone. */
+    suspend fun localLastReadTimestamps(): Map<String, Long> = withContext(Dispatchers.IO) {
+        positionDao.getAll().associate { it.manifestUrl to it.updatedAtMillis }
+    }
 }
 
 private fun PositionEntity.toLocatorJson(): JsonElement? =

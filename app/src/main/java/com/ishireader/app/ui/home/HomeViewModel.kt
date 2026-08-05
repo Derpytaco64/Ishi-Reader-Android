@@ -70,11 +70,17 @@ class HomeViewModel(
 
     /** Removes a book from Continue Reading until it's read again past this point. */
     fun dismissFromContinueReading(book: Book) {
-        val lastReadAt = book.lastReadAt ?: return
         val updated = _uiState.value.continueReading.filterNot { it.book.url == book.url }
         _uiState.value = _uiState.value.copy(continueReading = updated)
 
         viewModelScope.launch {
+            // book.lastReadAt alone isn't enough: a book that only got read locally-offline so far
+            // has no server lastReadAt yet, but it can still be showing in Continue Reading (see
+            // effectiveLastReadAt) -- without checking the local timestamp too, dismissing it here
+            // would silently do nothing beyond the optimistic UI removal above.
+            val localTimestamps = positionRepository.localLastReadTimestamps()
+            val lastReadAt = effectiveLastReadAt(book, localTimestamps) ?: return@launch
+
             val dismissed = libraryPrefsRepository.getContinueReadingDismissed().toMutableMap()
             dismissed[book.url] = lastReadAt
             libraryPrefsRepository.setContinueReadingDismissed(dismissed)
@@ -83,45 +89,62 @@ class HomeViewModel(
 
     private suspend fun buildShelves(allBooks: List<Book>) {
         val dismissed = libraryPrefsRepository.getContinueReadingDismissed()
+        // Book.lastReadAt is server-truth as of the last successful /api/books fetch; a book read
+        // on this device since then (including while offline) has advanced the local Position
+        // table without touching that snapshot, so Continue Reading/Last Series Read would
+        // otherwise look frozen until the next sync -- see effectiveLastReadAt below.
+        val localTimestamps = positionRepository.localLastReadTimestamps()
 
         _uiState.value = HomeUiState(
             isLoading = false,
-            continueReading = computeContinueReading(allBooks, dismissed),
-            lastSeriesRead = computeLastSeriesRead(allBooks),
+            continueReading = computeContinueReading(allBooks, dismissed, localTimestamps),
+            lastSeriesRead = computeLastSeriesRead(allBooks, localTimestamps),
             recentlyAdded = allBooks.sortedByDescending { it.addedAt ?: 0.0 }.take(20),
             myLibrary = allBooks.sortedWith(compareBy(collator) { it.title })
         )
     }
 
+    /** The later of the server's lastReadAt and this device's own local position timestamp for
+     *  [book], or null if neither has ever been set (never read anywhere). */
+    private fun effectiveLastReadAt(book: Book, localTimestamps: Map<String, Long>): Double? {
+        val local = localTimestamps[book.manifestUrl()]?.toDouble() ?: 0.0
+        return maxOf(book.lastReadAt ?: 0.0, local).takeIf { it > 0.0 }
+    }
+
     private suspend fun computeContinueReading(
         allBooks: List<Book>,
-        dismissed: Map<String, Double>
+        dismissed: Map<String, Double>,
+        localTimestamps: Map<String, Long>
     ): List<ContinueReadingItem> = coroutineScope {
-        val candidates = allBooks.filter { it.lastReadAt != null }
+        val candidates = allBooks.mapNotNull { book ->
+            effectiveLastReadAt(book, localTimestamps)?.let { book to it }
+        }
 
-        candidates.map { book ->
+        candidates.map { (book, lastReadAt) ->
             async {
                 val locator = positionRepository.getPosition(book.manifestUrl())
-                ContinueReadingItem(book, percentFromLocator(locator))
+                Triple(book, lastReadAt, percentFromLocator(locator))
             }
         }.awaitAll()
-            .filter { item ->
-                val lastReadAt = item.book.lastReadAt!!
-                val notFinished = item.percent == null || item.percent < 100.0
-                val dismissedAt = dismissed[item.book.url]
+            .filter { (book, lastReadAt, percent) ->
+                val notFinished = percent == null || percent < 100.0
+                val dismissedAt = dismissed[book.url]
                 val notDismissed = dismissedAt == null || dismissedAt < lastReadAt
                 notFinished && notDismissed
             }
-            .sortedByDescending { it.book.lastReadAt }
+            .sortedByDescending { it.second }
             .take(5)
+            .map { (book, _, percent) -> ContinueReadingItem(book, percent) }
     }
 
-    private fun computeLastSeriesRead(allBooks: List<Book>): List<Book> {
+    private fun computeLastSeriesRead(allBooks: List<Book>, localTimestamps: Map<String, Long>): List<Book> {
         val groups = allBooks.filter { it.series != null }
             .groupBy { "${it.series!!.name}|${it.isAudiobook}" }
 
         val bestGroupKey = groups.entries
-            .mapNotNull { (key, books) -> books.mapNotNull { it.lastReadAt }.maxOrNull()?.let { key to it } }
+            .mapNotNull { (key, books) ->
+                books.mapNotNull { effectiveLastReadAt(it, localTimestamps) }.maxOrNull()?.let { key to it }
+            }
             .maxByOrNull { it.second }
             ?.first
             ?: return emptyList()
