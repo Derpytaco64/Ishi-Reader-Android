@@ -9,15 +9,19 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,7 +39,11 @@ import com.ishireader.app.R
 import com.ishireader.app.data.model.ReaderSettings
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
+import com.ishireader.app.ui.reader.AnnotationsPanelSheet
+import com.ishireader.app.ui.reader.HighlightEditDialog
+import com.ishireader.app.ui.reader.NoteEditorDialog
 import com.ishireader.app.ui.reader.ReaderSettingsSheet
+import com.ishireader.app.ui.reader.ReadingTimerSheet
 import com.ishireader.app.ui.theme.IshiReaderTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -43,6 +51,8 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
+import org.readium.r2.navigator.DecorableNavigator
+import org.readium.r2.navigator.SelectableNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
@@ -94,6 +104,29 @@ class ReaderActivity : FragmentActivity() {
      *  this the same way it would a remembered one. */
     private val readerSettingsState = mutableStateOf(ReaderSettings())
     private var navigatorFragment: EpubNavigatorFragment? = null
+
+    private val readingTimerTracker: ReadingTimerTracker by lazy {
+        ReadingTimerTracker(lifecycleScope, app.readingTimerRepository, app.completedReadsRepository)
+    }
+    private val annotationsController: AnnotationsController by lazy {
+        AnnotationsController(lifecycleScope, app.annotationsRepository, app.notesRepository)
+    }
+
+    /** Plain mutableStateOf, same reasoning as readerSettingsState -- these are written from
+     *  outside the composition (the selection ActionMode callback, the decoration-tap listener). */
+    private val pendingNewNoteLocator = mutableStateOf<Locator?>(null)
+    private val activeHighlightEditId = mutableStateOf<String?>(null)
+    private val activeNoteEditId = mutableStateOf<String?>(null)
+
+    override fun onResume() {
+        super.onResume()
+        readingTimerTracker.onResumed()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        readingTimerTracker.onPaused()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -193,7 +226,7 @@ class ReaderActivity : FragmentActivity() {
         }
 
         val initialLocator = fetchSavedLocator(manifestUrl)
-        showNavigator(publication, initialLocator)
+        showNavigator(publication, initialLocator, manifestUrl)
     }
 
     /** Reads the best-known position (PositionRepository tries a quick server refresh first, then
@@ -205,15 +238,25 @@ class ReaderActivity : FragmentActivity() {
         return runCatching { Locator.fromJSON(JSONObject(locatorJson.toString())) }.getOrNull()
     }
 
-    private fun showNavigator(publication: Publication, initialLocator: Locator?) {
+    private fun showNavigator(publication: Publication, initialLocator: Locator?, manifestUrl: String) {
         progressOverlay.visibility = View.GONE
 
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
 
+        val selectionCallback = AnnotationSelectionActionModeCallback(
+            scope = lifecycleScope,
+            navigatorProvider = { navigatorFragment as? SelectableNavigator },
+            onHighlight = { locator -> annotationsController.addHighlight(locator) },
+            onNote = { locator -> pendingNewNoteLocator.value = locator }
+        )
+
         val navigatorFactory = EpubNavigatorFactory(publication = publication)
         val fragmentFactory = navigatorFactory.createFragmentFactory(
             initialLocator = initialLocator,
-            initialPreferences = readerSettingsState.value.toEpubPreferences()
+            initialPreferences = readerSettingsState.value.toEpubPreferences(),
+            configuration = EpubNavigatorFragment.Configuration(
+                selectionActionModeCallback = selectionCallback
+            )
         )
         val fragment = fragmentFactory.instantiate(classLoader, EpubNavigatorFragment::class.java.name)
 
@@ -223,45 +266,158 @@ class ReaderActivity : FragmentActivity() {
 
         navigatorFragment = fragment as EpubNavigatorFragment
         navigatorFragment!!.currentLocator
-            .onEach { locator -> savePosition(locator) }
+            .onEach { locator ->
+                savePosition(locator)
+                readingTimerTracker.onLocatorChanged(locator)
+            }
             .launchIn(lifecycleScope)
+
+        val decorationListener = object : DecorableNavigator.Listener {
+            override fun onDecorationActivated(event: DecorableNavigator.OnActivatedEvent): Boolean {
+                when (event.group) {
+                    ANNOTATIONS_GROUP_HIGHLIGHTS -> activeHighlightEditId.value = event.decoration.id
+                    ANNOTATIONS_GROUP_NOTES -> activeNoteEditId.value = event.decoration.id
+                    else -> return false
+                }
+                return true
+            }
+        }
+        val decorableNavigator = navigatorFragment as DecorableNavigator
+        decorableNavigator.addDecorationListener(ANNOTATIONS_GROUP_HIGHLIGHTS, decorationListener)
+        decorableNavigator.addDecorationListener(ANNOTATIONS_GROUP_NOTES, decorationListener)
+
+        lifecycleScope.launch {
+            readingTimerTracker.start(manifestUrl, publication)
+            readingTimerTracker.onResumed()
+        }
+        lifecycleScope.launch { annotationsController.start(manifestUrl, decorableNavigator) }
 
         setUpSettingsOverlay()
     }
 
-    /** A small always-on-top gear button that opens [ReaderSettingsSheet]; set up once the
-     *  navigator fragment exists, since applying a change means calling submitPreferences on it.
-     *  readerSettingsState is plain mutableStateOf (not remember{}) so it's the same object
-     *  read here and written by applyReaderSettings/openBook -- one source of truth regardless of
-     *  which side changes it. */
+    /** Always-on-top gear/timer/annotations buttons, plus the sheets/dialogs they open; set up
+     *  once the navigator fragment exists, since most actions here need to reach it (submitting
+     *  preferences, jumping to a locator, reading the current selection). readerSettingsState and
+     *  the pending-note/active-edit fields are all plain mutableStateOf (not remember{}) so
+     *  they're the same objects read here and written from outside the composition -- one source
+     *  of truth regardless of which side changes it. */
     private fun setUpSettingsOverlay() {
         composeOverlay.setContent {
             IshiReaderTheme {
-                var sheetOpen by remember { mutableStateOf(false) }
+                var settingsSheetOpen by remember { mutableStateOf(false) }
+                var timerSheetOpen by remember { mutableStateOf(false) }
+                var annotationsSheetOpen by remember { mutableStateOf(false) }
                 val settings by readerSettingsState
+                val timerState by readingTimerTracker.state.collectAsState()
+                val annotationsState by annotationsController.state.collectAsState()
+                val pendingNote by pendingNewNoteLocator
+                val editingHighlightId by activeHighlightEditId
+                val editingNoteId by activeNoteEditId
 
                 Box(Modifier.fillMaxSize()) {
-                    IconButton(
-                        onClick = { sheetOpen = true },
+                    Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .statusBarsPadding()
                             .padding(8.dp)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = "Reader settings",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                        IconButton(
+                            onClick = { annotationsSheetOpen = true },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                        ) {
+                            Icon(Icons.Filled.Bookmarks, contentDescription = "Annotations", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                        IconButton(
+                            onClick = { timerSheetOpen = true },
+                            modifier = Modifier.padding(start = 8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                        ) {
+                            Icon(Icons.Filled.Timer, contentDescription = "Reading timer", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                        IconButton(
+                            onClick = { settingsSheetOpen = true },
+                            modifier = Modifier.padding(start = 8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                        ) {
+                            Icon(Icons.Filled.Settings, contentDescription = "Reader settings", tint = MaterialTheme.colorScheme.onSurface)
+                        }
                     }
                 }
 
-                if (sheetOpen) {
+                if (settingsSheetOpen) {
                     ReaderSettingsSheet(
                         settings = settings,
                         onSettingsChange = ::applyReaderSettings,
-                        onDismiss = { sheetOpen = false }
+                        onDismiss = { settingsSheetOpen = false }
+                    )
+                }
+
+                if (timerSheetOpen) {
+                    ReadingTimerSheet(
+                        state = timerState,
+                        onReset = { save -> lifecycleScope.launch { readingTimerTracker.reset(save) } },
+                        onDeleteCompleted = { id -> lifecycleScope.launch { readingTimerTracker.deleteCompletedRead(id) } },
+                        onDismiss = { timerSheetOpen = false }
+                    )
+                }
+
+                if (annotationsSheetOpen) {
+                    AnnotationsPanelSheet(
+                        state = annotationsState,
+                        onJump = { locator ->
+                            navigatorFragment?.go(locator, animated = true)
+                            annotationsSheetOpen = false
+                        },
+                        onBookmarkThisPage = {
+                            navigatorFragment?.currentLocator?.value?.let { annotationsController.addBookmark(it) }
+                        },
+                        onDeleteHighlight = annotationsController::deleteHighlight,
+                        onDeleteBookmark = annotationsController::deleteBookmark,
+                        onEditNote = annotationsController::updateNoteText,
+                        onDeleteNote = annotationsController::deleteNote,
+                        onDismiss = { annotationsSheetOpen = false }
+                    )
+                }
+
+                pendingNote?.let { locator ->
+                    NoteEditorDialog(
+                        initialText = "",
+                        isNew = true,
+                        onSave = { text ->
+                            annotationsController.addNote(locator, text)
+                            pendingNewNoteLocator.value = null
+                        },
+                        onDelete = null,
+                        onDismiss = { pendingNewNoteLocator.value = null }
+                    )
+                }
+
+                editingHighlightId?.let { id ->
+                    HighlightEditDialog(
+                        onColorSelected = { color ->
+                            annotationsController.updateHighlightColor(id, color)
+                            activeHighlightEditId.value = null
+                        },
+                        onDelete = {
+                            annotationsController.deleteHighlight(id)
+                            activeHighlightEditId.value = null
+                        },
+                        onDismiss = { activeHighlightEditId.value = null }
+                    )
+                }
+
+                editingNoteId?.let { id ->
+                    val note = annotationsController.noteById(id)
+                    NoteEditorDialog(
+                        initialText = note?.text.orEmpty(),
+                        isNew = false,
+                        onSave = { text ->
+                            annotationsController.updateNoteText(id, text)
+                            activeNoteEditId.value = null
+                        },
+                        onDelete = {
+                            annotationsController.deleteNote(id)
+                            activeNoteEditId.value = null
+                        },
+                        onDismiss = { activeNoteEditId.value = null }
                     )
                 }
             }

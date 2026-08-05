@@ -121,6 +121,40 @@ data class StoredNote(
 @Serializable
 data class NotesResponse(val items: List<StoredNote> = emptyList())
 
+@Serializable
+data class NoteUpsertRequest(val manifestUrl: String, val item: StoredNote)
+
+/** One of the fixed 5-swatch highlight colors -- see HIGHLIGHT_COLORS in the website, "yellow"/
+ *  "green"/"blue"/"pink"/"purple", stored as its id string not a hex value. */
+@Serializable
+data class StoredHighlight(
+    val id: String,
+    val locator: JsonElement? = null,
+    val color: String,
+    val createdAt: Double,
+    val chapterTitle: String? = null
+)
+
+@Serializable
+data class HighlightsResponse(val items: List<StoredHighlight> = emptyList())
+
+@Serializable
+data class HighlightUpsertRequest(val manifestUrl: String, val item: StoredHighlight)
+
+@Serializable
+data class StoredBookmark(
+    val id: String,
+    val locator: JsonElement? = null,
+    val createdAt: Double,
+    val chapterTitle: String? = null
+)
+
+@Serializable
+data class BookmarksResponse(val items: List<StoredBookmark> = emptyList())
+
+@Serializable
+data class BookmarkUpsertRequest(val manifestUrl: String, val item: StoredBookmark)
+
 /** One calendar day's reading within a completed run -- mirrors DailyReadingBucket.ts. wpm/percent
  *  are derived from seconds/words/progressionDelta at render time rather than stored precomputed. */
 @Serializable
@@ -144,6 +178,42 @@ data class StoredCompletedReadTime(
 
 @Serializable
 data class CompletedReadTimesResponse(val items: List<StoredCompletedReadTime> = emptyList())
+
+@Serializable
+data class CompletedReadTimeUpsertRequest(val manifestUrl: String, val item: StoredCompletedReadTime)
+
+/** The live per-book active-seconds counter -- overwritten wholesale on each flush, not appended
+ *  to (mirrors readingTime/<bookHash>.json being a single raw number, not an array). */
+@Serializable
+data class ReadingTimeResponse(val seconds: Double? = null)
+
+@Serializable
+data class ReadingTimeRequest(val manifestUrl: String, val seconds: Double)
+
+/** Computed once per book (whitespace-token count of every resource's body text) and persisted
+ *  forever -- never recomputed once set, mirrors useBookWordCount.ts. */
+@Serializable
+data class WordCountResponse(val wordCount: Double? = null)
+
+@Serializable
+data class WordCountRequest(val manifestUrl: String, val wordCount: Double)
+
+/** One accepted reading-speed observation between two locator-change events -- mirrors
+ *  ReadingSpeedSample.ts. Global/cross-book, not scoped to a single manifestUrl. */
+@Serializable
+data class ReadingSpeedSample(val deltaWords: Double, val deltaSeconds: Double, val timestamp: Double)
+
+@Serializable
+data class ReadingSpeedSamplesResponse(val samples: List<ReadingSpeedSample> = emptyList())
+
+@Serializable
+data class ReadingSpeedSamplesRequest(val samples: List<ReadingSpeedSample>)
+
+@Serializable
+data class DailyReadingHistoryResponse(val buckets: List<DailyReadingBucket> = emptyList())
+
+@Serializable
+data class DailyReadingHistoryRequest(val manifestUrl: String, val buckets: List<DailyReadingBucket>)
 
 /** Mirrors AdminPageClient.tsx's local AdminUser shape and /api/admin/users' stripSecrets output
  *  (passwordHash/passwordSalt stripped server-side) -- only ever fetched by an admin. */

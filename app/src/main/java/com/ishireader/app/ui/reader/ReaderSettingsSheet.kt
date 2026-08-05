@@ -102,6 +102,14 @@ fun ReaderSettingsSheet(
                 optionLabel = { it.label() },
                 onSelect = { onSettingsChange(settings.copy(lineHeight = it, publisherStyles = false)) }
             )
+            LabeledSlider(
+                label = "Margin",
+                value = (settings.pageMargins ?: 1.0).toFloat(),
+                valueRange = 0.5f..2.0f,
+                steps = 14,
+                valueLabel = settings.pageMargins?.let { "%.1fx".format(it) } ?: "Default",
+                onValueChange = { onSettingsChange(settings.copy(pageMargins = it.toDouble())) }
+            )
 
             SectionLabel("Spacing")
             Row(
@@ -252,6 +260,10 @@ private fun ReaderTheme?.label(): String = when (this) {
     ReaderTheme.LIGHT -> "Light"
     ReaderTheme.DARK -> "Dark"
     ReaderTheme.SEPIA -> "Sepia"
+    ReaderTheme.PAPER -> "Paper"
+    ReaderTheme.CONTRAST1 -> "Contrast 1"
+    ReaderTheme.CONTRAST2 -> "Contrast 2"
+    ReaderTheme.CONTRAST3 -> "Contrast 3"
 }
 
 private fun ReaderFontFamily?.label(): String = when (this) {

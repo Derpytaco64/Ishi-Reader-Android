@@ -1,0 +1,257 @@
+package com.ishireader.app.reader
+
+import com.ishireader.app.data.model.DailyReadingBucket
+import com.ishireader.app.data.model.ReadingSpeedSample
+import com.ishireader.app.data.model.StoredCompletedReadTime
+import com.ishireader.app.data.network.dataOrNull
+import com.ishireader.app.data.repository.CompletedReadsRepository
+import com.ishireader.app.data.repository.ReadingTimerRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.readium.r2.shared.publication.Locator
+import org.readium.r2.shared.publication.Publication
+import java.time.LocalDate
+import java.util.UUID
+import kotlin.math.abs
+
+data class ReadingTimerUiState(
+    val loading: Boolean = true,
+    val accumulatedSeconds: Double = 0.0,
+    val running: Boolean = false,
+    val wpm: Int? = null,
+    val secondsLeft: Double? = null,
+    val completedReads: List<StoredCompletedReadTime> = emptyList()
+)
+
+/**
+ * Ports the website's useReadingTimer/useReadingSpeedSampler (see ReadingTimer/hooks in the
+ * Ishi-Read repo) to a plain lifecycle-driven controller: [onResumed]/[onPaused] stand in for the
+ * website's Page Visibility API gating (tab hidden == Activity not resumed), a 1-second ticker
+ * accumulates active seconds only while resumed, and a 30-second cadence flushes to the server --
+ * same PERSIST_INTERVAL_MS the website uses. Network-first, no local Room buffering (see
+ * ReadingTimerRepository's doc comment) -- an unflushed partial 30s window can be lost if the
+ * process dies, same fidelity as the website losing an unsaved beforeunload race.
+ */
+class ReadingTimerTracker(
+    private val scope: CoroutineScope,
+    private val repository: ReadingTimerRepository,
+    private val completedReadsRepository: CompletedReadsRepository
+) {
+    private companion object {
+        const val PERSIST_INTERVAL_TICKS = 30
+        const val JUMP_DISCARD_THRESHOLD = 0.05
+        const val RAPID_TURN_WPM_CEILING = 2500.0
+        const val MAX_SPEED_SAMPLES = 50
+    }
+
+    private val _state = MutableStateFlow(ReadingTimerUiState())
+    val state: StateFlow<ReadingTimerUiState> = _state.asStateFlow()
+
+    private lateinit var manifestUrl: String
+    private var wordCount: Double? = null
+    private var lastTotalProgression: Double? = null
+    private var lastSampleSeconds: Double = 0.0
+    private val speedSamples = mutableListOf<ReadingSpeedSample>()
+    private val dailyBuckets = linkedMapOf<String, DailyReadingBucket>()
+
+    private var tickerJob: Job? = null
+    private var tickCount = 0
+
+    /** Loads server-side state for this book (resumes the live counter across devices/sessions,
+     *  since readingTime is a single overwritten total, not append-only) and the cross-book WPM
+     *  sample buffer. Call once when the navigator is ready, before [onResumed]. */
+    suspend fun start(manifestUrl: String, publication: Publication) {
+        this.manifestUrl = manifestUrl
+        _state.value = _state.value.copy(loading = true)
+
+        val seconds = repository.getReadingTimeSeconds(manifestUrl).dataOrNull() ?: 0.0
+        val buckets = repository.getDailyReadingHistory(manifestUrl).dataOrNull() ?: emptyList()
+        dailyBuckets.clear()
+        buckets.forEach { dailyBuckets[it.date] = it }
+        speedSamples.clear()
+        speedSamples.addAll(repository.getReadingSpeedSamples().dataOrNull() ?: emptyList())
+        lastSampleSeconds = seconds
+
+        wordCount = repository.getWordCount(manifestUrl).dataOrNull()
+        if (wordCount == null) {
+            val computed = withContext(Dispatchers.IO) { computeWordCount(publication) }
+            wordCount = computed
+            repository.setWordCount(manifestUrl, computed)
+        }
+
+        val completedReads = completedReadsRepository.getCompletedReadTimes(manifestUrl).dataOrNull() ?: emptyList()
+
+        _state.value = _state.value.copy(
+            loading = false,
+            accumulatedSeconds = seconds,
+            wpm = computeCurrentWpm(),
+            secondsLeft = computeSecondsLeft(),
+            completedReads = completedReads.sortedByDescending { it.completedAt }
+        )
+    }
+
+    /** Starts the 1s ticker -- call from the host Activity's onResume. */
+    fun onResumed() {
+        if (tickerJob?.isActive == true) return
+        tickerJob = scope.launch {
+            while (true) {
+                delay(1000)
+                tick()
+            }
+        }
+        _state.value = _state.value.copy(running = true)
+    }
+
+    /** Stops the ticker and flushes -- call from the host Activity's onPause. */
+    fun onPaused() {
+        tickerJob?.cancel()
+        tickerJob = null
+        _state.value = _state.value.copy(running = false)
+        scope.launch { flush() }
+    }
+
+    private fun tick() {
+        val next = _state.value.accumulatedSeconds + 1.0
+        _state.value = _state.value.copy(accumulatedSeconds = next, secondsLeft = computeSecondsLeft())
+        tickCount++
+        if (tickCount % PERSIST_INTERVAL_TICKS == 0) {
+            scope.launch { flush() }
+        }
+    }
+
+    private suspend fun flush() {
+        if (!::manifestUrl.isInitialized) return
+        repository.setReadingTimeSeconds(manifestUrl, _state.value.accumulatedSeconds)
+        repository.setDailyReadingHistory(manifestUrl, dailyBuckets.values.toList())
+        repository.setReadingSpeedSamples(speedSamples)
+    }
+
+    /** Feed every navigator locator change -- mirrors notifyLocatorChanged/computeReadingSpeed.ts.
+     *  Silently discards backward jumps, big TOC/search jumps, and implausibly fast "turns"
+     *  (mashing next-page) so only genuine reading contributes to the WPM estimate. */
+    fun onLocatorChanged(locator: Locator) {
+        if (!::manifestUrl.isInitialized) return
+        val totalProgression = locator.locations.totalProgression
+        val previous = lastTotalProgression
+        if (totalProgression != null) lastTotalProgression = totalProgression
+        if (previous == null || totalProgression == null) {
+            _state.value = _state.value.copy(secondsLeft = computeSecondsLeft())
+            return
+        }
+
+        val deltaProgression = totalProgression - previous
+        val nowSeconds = _state.value.accumulatedSeconds
+        val deltaSeconds = nowSeconds - lastSampleSeconds
+        lastSampleSeconds = nowSeconds
+
+        val words = wordCount
+        if (deltaProgression > 0 && deltaProgression <= JUMP_DISCARD_THRESHOLD && deltaSeconds > 0 && words != null) {
+            val deltaWords = deltaProgression * words
+            val impliedWpm = deltaWords / (deltaSeconds / 60.0)
+            if (impliedWpm <= RAPID_TURN_WPM_CEILING) {
+                speedSamples.add(ReadingSpeedSample(deltaWords, deltaSeconds, System.currentTimeMillis().toDouble()))
+                while (speedSamples.size > MAX_SPEED_SAMPLES) speedSamples.removeAt(0)
+
+                val dateKey = LocalDate.now().toString()
+                val existing = dailyBuckets[dateKey] ?: DailyReadingBucket(date = dateKey)
+                dailyBuckets[dateKey] = existing.copy(
+                    seconds = existing.seconds + deltaSeconds,
+                    words = existing.words + deltaWords,
+                    progressionDelta = existing.progressionDelta + deltaProgression
+                )
+            }
+        }
+
+        _state.value = _state.value.copy(wpm = computeCurrentWpm(), secondsLeft = computeSecondsLeft())
+    }
+
+    /** Discard: zero the live counters without archiving. Save: archive the current run as a
+     *  StoredCompletedReadTime first, then zero -- mirrors the website's single reset-confirm
+     *  dialog (Discard vs Save), not two independent actions. */
+    suspend fun reset(save: Boolean) {
+        if (save && _state.value.accumulatedSeconds > 0) {
+            val item = StoredCompletedReadTime(
+                id = UUID.randomUUID().toString(),
+                seconds = _state.value.accumulatedSeconds,
+                completedAt = System.currentTimeMillis().toDouble(),
+                dailyHistory = dailyBuckets.values.toList().takeIf { it.isNotEmpty() }
+            )
+            completedReadsRepository.saveCompletedReadTime(manifestUrl, item)
+        }
+
+        dailyBuckets.clear()
+        lastSampleSeconds = 0.0
+        _state.value = _state.value.copy(accumulatedSeconds = 0.0, secondsLeft = computeSecondsLeft())
+        repository.setReadingTimeSeconds(manifestUrl, 0.0)
+        repository.setDailyReadingHistory(manifestUrl, emptyList())
+
+        val completedReads = completedReadsRepository.getCompletedReadTimes(manifestUrl).dataOrNull() ?: emptyList()
+        _state.value = _state.value.copy(completedReads = completedReads.sortedByDescending { it.completedAt })
+    }
+
+    suspend fun deleteCompletedRead(id: String) {
+        completedReadsRepository.deleteCompletedReadTime(manifestUrl, id)
+        _state.value = _state.value.copy(completedReads = _state.value.completedReads.filterNot { it.id == id })
+    }
+
+    /** <5 samples: simple weighted rate. >=5: median/MAD outlier-trimmed weighted rate -- mirrors
+     *  computeCurrentWpm in the website's computeReadingSpeed.ts. */
+    private fun computeCurrentWpm(): Int? {
+        if (speedSamples.isEmpty()) return null
+        val survivors = if (speedSamples.size < 5) {
+            speedSamples
+        } else {
+            val rates = speedSamples.map { it.deltaWords / (it.deltaSeconds / 60.0) }
+            val median = median(rates.sorted())
+            val mad = median(rates.map { abs(it - median) }.sorted())
+            if (mad > 0) {
+                speedSamples.filterIndexed { i, _ -> abs(rates[i] - median) / mad <= 2.5 }
+            } else {
+                speedSamples
+            }
+        }
+        val totalWords = survivors.sumOf { it.deltaWords }
+        val totalMinutes = survivors.sumOf { it.deltaSeconds } / 60.0
+        return if (totalMinutes > 0) (totalWords / totalMinutes).toInt() else null
+    }
+
+    private fun median(sorted: List<Double>): Double {
+        if (sorted.isEmpty()) return 0.0
+        val mid = sorted.size / 2
+        return if (sorted.size % 2 == 1) sorted[mid] else (sorted[mid - 1] + sorted[mid]) / 2.0
+    }
+
+    private fun computeSecondsLeft(): Double? {
+        val words = wordCount ?: return null
+        val wpm = computeCurrentWpm() ?: return null
+        if (wpm <= 0) return null
+        val progression = lastTotalProgression ?: 0.0
+        val wordsRemaining = words * (1.0 - progression)
+        return wordsRemaining / wpm * 60.0
+    }
+
+    /** Whitespace-token count of every reading-order resource's text, HTML tags/entities stripped
+     *  -- mirrors useBookWordCount.ts. No layout/rendering involved, just raw text extraction. */
+    private suspend fun computeWordCount(publication: Publication): Double {
+        var total = 0.0
+        for (link in publication.readingOrder) {
+            val resource = publication.get(link) ?: continue
+            val bytes = resource.use { it.read().getOrNull() } ?: continue
+            val html = String(bytes, Charsets.UTF_8)
+            val text = html
+                .replace(Regex("<script[\\s\\S]*?</script>", RegexOption.IGNORE_CASE), " ")
+                .replace(Regex("<style[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), " ")
+                .replace(Regex("<[^>]+>"), " ")
+                .replace(Regex("&\\w+;"), " ")
+            total += text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+        }
+        return total
+    }
+}

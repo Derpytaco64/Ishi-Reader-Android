@@ -9,6 +9,7 @@ import com.ishireader.app.data.network.NetworkModule
 import com.ishireader.app.data.prefs.AppPreferences
 import com.ishireader.app.data.prefs.ReaderPreferencesStore
 import com.ishireader.app.data.repository.AdminRepository
+import com.ishireader.app.data.repository.AnnotationsRepository
 import com.ishireader.app.data.repository.AuthRepository
 import com.ishireader.app.data.repository.BookDownloadRepository
 import com.ishireader.app.data.repository.CompletedReadsRepository
@@ -16,6 +17,7 @@ import com.ishireader.app.data.repository.LibraryPrefsRepository
 import com.ishireader.app.data.repository.LibraryRepository
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
+import com.ishireader.app.data.repository.ReadingTimerRepository
 import com.ishireader.app.data.repository.StatsRepository
 import com.ishireader.app.data.sync.IshiWorkerFactory
 import com.ishireader.app.data.sync.PositionReconciler
@@ -49,7 +51,11 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         private set
     lateinit var notesRepository: NotesRepository
         private set
+    lateinit var annotationsRepository: AnnotationsRepository
+        private set
     lateinit var completedReadsRepository: CompletedReadsRepository
+        private set
+    lateinit var readingTimerRepository: ReadingTimerRepository
         private set
     lateinit var statsRepository: StatsRepository
         private set
@@ -78,7 +84,9 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
             syncScheduler
         )
         notesRepository = NotesRepository(network)
+        annotationsRepository = AnnotationsRepository(network)
         completedReadsRepository = CompletedReadsRepository(network)
+        readingTimerRepository = ReadingTimerRepository(network)
         statsRepository = StatsRepository(network, database.cachedUserStatsDao())
         adminRepository = AdminRepository(network)
     }
