@@ -41,10 +41,26 @@ class PositionReconciler(
             if (local != null && local.pendingSync) {
                 val locatorElement = Json.parseToJsonElement(local.locatorJson)
                 val postResponse = network.api.setPosition(PositionRequest(manifestUrl, locatorElement))
-                if (postResponse.isSuccessful) {
-                    positionDao.upsert(local.copy(pendingSync = false))
+                if (!postResponse.isSuccessful) {
+                    false
+                } else {
+                    // Re-read rather than blindly upserting the stale `local` snapshot: while
+                    // actively reading, ReaderActivity calls setPosition() on every locator
+                    // change, so a newer write can easily land in Room while this POST was in
+                    // flight. Clearing pendingSync off the old snapshot would silently revert
+                    // that newer row back to what we just pushed *and* mark it "synced" -- since
+                    // nothing retries a row that isn't pending, the real latest position would
+                    // never reach the server. If something changed underneath us, leave it
+                    // pending and report this as unfinished so the caller retries with whatever
+                    // is now current.
+                    val current = positionDao.get(manifestUrl)
+                    if (current != null && current.locatorJson == local.locatorJson) {
+                        positionDao.upsert(current.copy(pendingSync = false))
+                        true
+                    } else {
+                        false
+                    }
                 }
-                postResponse.isSuccessful
             } else {
                 // Nothing pending on this device -- adopt whatever the server has, if it's
                 // actually different from what's already stored locally. This check matters:
