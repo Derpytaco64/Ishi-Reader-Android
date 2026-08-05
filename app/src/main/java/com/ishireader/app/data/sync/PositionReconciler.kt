@@ -46,11 +46,18 @@ class PositionReconciler(
                 }
                 postResponse.isSuccessful
             } else {
-                // Nothing pending on this device -- adopt whatever the server has, if anything
-                // (read on another device or the website since this device's last sync).
+                // Nothing pending on this device -- adopt whatever the server has, if it's
+                // actually different from what's already stored locally. This check matters:
+                // getPosition() runs this same reconcile for every book on every Home refresh
+                // (see HomeViewModel.effectiveLastReadAt), and the server has *some* locator for
+                // any book ever read anywhere -- upserting unconditionally used to re-stamp
+                // updatedAtMillis to "now" on every single check even when nothing had changed,
+                // which made Continue Reading/Last Series Read reshuffle at random on every
+                // reload since "last read" kept jumping to whatever was checked most recently.
                 val response = network.api.getPosition(manifestUrl)
                 val serverLocator = response.takeIf { it.isSuccessful }?.body()?.locator
-                if (serverLocator != null) {
+                val localLocator = local?.locatorJson?.let { runCatching { Json.parseToJsonElement(it) }.getOrNull() }
+                if (serverLocator != null && serverLocator != localLocator) {
                     positionDao.upsert(
                         PositionEntity(
                             manifestUrl = manifestUrl,
