@@ -18,7 +18,7 @@ import kotlinx.serialization.json.JsonElement
  * reading position -- never the network directly, so opening/advancing a book never blocks on or
  * fails because of connectivity. [setPosition] queues the write for background sync instead of
  * pushing it inline; see SyncScheduler/PositionSyncWorker for how (and when) that reaches the
- * server, including the further-progress-wins conflict rule.
+ * server, including the recency-wins conflict rule.
  */
 class PositionRepository(
     private val positionDao: PositionDao,
