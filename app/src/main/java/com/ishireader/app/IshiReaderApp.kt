@@ -7,6 +7,7 @@ import coil.ImageLoaderFactory
 import com.ishireader.app.data.local.IshiReaderDatabase
 import com.ishireader.app.data.network.NetworkModule
 import com.ishireader.app.data.prefs.AppPreferences
+import com.ishireader.app.data.prefs.ReaderPreferencesStore
 import com.ishireader.app.data.repository.AdminRepository
 import com.ishireader.app.data.repository.AuthRepository
 import com.ishireader.app.data.repository.BookDownloadRepository
@@ -29,6 +30,8 @@ import okhttp3.OkHttpClient
 class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
     lateinit var preferences: AppPreferences
+        private set
+    lateinit var readerPreferencesStore: ReaderPreferencesStore
         private set
     lateinit var network: NetworkModule
         private set
@@ -56,6 +59,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
     override fun onCreate() {
         super.onCreate()
         preferences = AppPreferences(this)
+        readerPreferencesStore = ReaderPreferencesStore(this)
         network = NetworkModule(this)
         database = IshiReaderDatabase.getInstance(this)
         val syncScheduler = SyncScheduler(this)

@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalReadiumApi::class)
+
 package com.ishireader.app.reader
 
 import android.os.Bundle
@@ -5,13 +7,37 @@ import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
 import androidx.lifecycle.lifecycleScope
 import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
+import com.ishireader.app.data.model.ReaderSettings
+import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
+import com.ishireader.app.ui.reader.ReaderSettingsSheet
+import com.ishireader.app.ui.theme.IshiReaderTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -19,6 +45,7 @@ import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
+import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.AbsoluteUrl
@@ -60,6 +87,13 @@ class ReaderActivity : FragmentActivity() {
     private lateinit var progressOverlay: View
     private lateinit var progressBar: ProgressBar
     private lateinit var progressText: TextView
+    private lateinit var composeOverlay: ComposeView
+
+    /** Plain (non-remember) Compose state so it can be mutated from outside the composition --
+     *  see setUpSettingsOverlay/applyReaderSettings. Compose's snapshot system observes writes to
+     *  this the same way it would a remembered one. */
+    private val readerSettingsState = mutableStateOf(ReaderSettings())
+    private var navigatorFragment: EpubNavigatorFragment? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +103,7 @@ class ReaderActivity : FragmentActivity() {
         progressOverlay = findViewById(R.id.reader_progress_overlay)
         progressBar = findViewById(R.id.reader_progress_bar)
         progressText = findViewById(R.id.reader_progress_text)
+        composeOverlay = findViewById(R.id.reader_compose_overlay)
 
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL)
         if (manifestUrl == null) {
@@ -85,6 +120,7 @@ class ReaderActivity : FragmentActivity() {
     private fun openBook(manifestUrl: String) {
         showSyncingOverlay()
         lifecycleScope.launch {
+            readerSettingsState.value = app.readerPreferencesStore.settings.first()
             val localFile = ensureDownloaded(manifestUrl) ?: return@launch
             showSyncingOverlay()
             openPublication(localFile, manifestUrl)
@@ -175,16 +211,69 @@ class ReaderActivity : FragmentActivity() {
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
 
         val navigatorFactory = EpubNavigatorFactory(publication = publication)
-        val fragmentFactory = navigatorFactory.createFragmentFactory(initialLocator = initialLocator)
+        val fragmentFactory = navigatorFactory.createFragmentFactory(
+            initialLocator = initialLocator,
+            initialPreferences = readerSettingsState.value.toEpubPreferences()
+        )
         val fragment = fragmentFactory.instantiate(classLoader, EpubNavigatorFragment::class.java.name)
 
         supportFragmentManager.commitNow {
             replace(R.id.reader_container, fragment, NAVIGATOR_FRAGMENT_TAG)
         }
 
-        (fragment as EpubNavigatorFragment).currentLocator
+        navigatorFragment = fragment as EpubNavigatorFragment
+        navigatorFragment!!.currentLocator
             .onEach { locator -> savePosition(locator) }
             .launchIn(lifecycleScope)
+
+        setUpSettingsOverlay()
+    }
+
+    /** A small always-on-top gear button that opens [ReaderSettingsSheet]; set up once the
+     *  navigator fragment exists, since applying a change means calling submitPreferences on it.
+     *  readerSettingsState is plain mutableStateOf (not remember{}) so it's the same object
+     *  read here and written by applyReaderSettings/openBook -- one source of truth regardless of
+     *  which side changes it. */
+    private fun setUpSettingsOverlay() {
+        composeOverlay.setContent {
+            IshiReaderTheme {
+                var sheetOpen by remember { mutableStateOf(false) }
+                val settings by readerSettingsState
+
+                Box(Modifier.fillMaxSize()) {
+                    IconButton(
+                        onClick = { sheetOpen = true },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .statusBarsPadding()
+                            .padding(8.dp)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "Reader settings",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                if (sheetOpen) {
+                    ReaderSettingsSheet(
+                        settings = settings,
+                        onSettingsChange = ::applyReaderSettings,
+                        onDismiss = { sheetOpen = false }
+                    )
+                }
+            }
+        }
+    }
+
+    /** Applies a settings change live to the navigator, then persists it -- in that order, so the
+     *  reader responds instantly and a failed/slow write never delays what the user sees. */
+    private fun applyReaderSettings(updated: ReaderSettings) {
+        readerSettingsState.value = updated
+        navigatorFragment?.submitPreferences(updated.toEpubPreferences())
+        lifecycleScope.launch { app.readerPreferencesStore.save(updated) }
     }
 
     private fun savePosition(locator: Locator) {

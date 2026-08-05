@@ -1,0 +1,283 @@
+package com.ishireader.app.ui.reader
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.ishireader.app.data.model.ReaderFontFamily
+import com.ishireader.app.data.model.ReaderLayout
+import com.ishireader.app.data.model.ReaderLineHeight
+import com.ishireader.app.data.model.ReaderSettings
+import com.ishireader.app.data.model.ReaderTextAlign
+import com.ishireader.app.data.model.ReaderTheme
+import kotlin.math.roundToInt
+
+/**
+ * In-book reading preferences -- font/theme/layout/spacing -- see ReaderSettings for the exact
+ * (curated) scope. Every control writes straight back through [onSettingsChange]; the caller
+ * (ReaderActivity) is responsible for applying the result to the live navigator and persisting it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReaderSettingsSheet(
+    settings: ReaderSettings,
+    onSettingsChange: (ReaderSettings) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            Text(
+                text = "Reader Settings",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+            HorizontalDivider()
+
+            SectionLabel("Appearance")
+            SegmentedOptionRow(
+                label = "Theme",
+                options = listOf(null) + ReaderTheme.entries,
+                selected = settings.theme,
+                optionLabel = { it.label() },
+                onSelect = { onSettingsChange(settings.copy(theme = it)) }
+            )
+            SegmentedOptionRow(
+                label = "Font",
+                options = listOf(null) + ReaderFontFamily.entries,
+                selected = settings.fontFamily,
+                optionLabel = { it.label() },
+                onSelect = { onSettingsChange(settings.copy(fontFamily = it)) }
+            )
+            LabeledSlider(
+                label = "Font Size",
+                value = settings.fontSize.toFloat(),
+                valueRange = 0.7f..4.0f,
+                steps = 32,
+                valueLabel = "${(settings.fontSize * 100).roundToInt()}%",
+                onValueChange = { onSettingsChange(settings.copy(fontSize = it.toDouble())) }
+            )
+
+            SectionLabel("Layout")
+            SegmentedOptionRow(
+                label = "Layout",
+                options = ReaderLayout.entries,
+                selected = settings.layout,
+                optionLabel = { it.label() },
+                onSelect = { onSettingsChange(settings.copy(layout = it)) }
+            )
+            SegmentedOptionRow(
+                label = "Text Align",
+                options = listOf(null) + ReaderTextAlign.entries,
+                selected = settings.textAlign,
+                optionLabel = { it.label() },
+                onSelect = { onSettingsChange(settings.copy(textAlign = it, publisherStyles = false)) }
+            )
+            SegmentedOptionRow(
+                label = "Line Height",
+                options = listOf(null) + ReaderLineHeight.entries,
+                selected = settings.lineHeight,
+                optionLabel = { it.label() },
+                onSelect = { onSettingsChange(settings.copy(lineHeight = it, publisherStyles = false)) }
+            )
+
+            SectionLabel("Spacing")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Text("Use publisher styles", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = settings.publisherStyles,
+                    onCheckedChange = { checked ->
+                        onSettingsChange(
+                            if (checked) {
+                                // Mirrors the website: switching this on clears every spacing/
+                                // align/hyphen override back to "let the publisher decide" rather
+                                // than just toggling a flag while stale values linger underneath.
+                                settings.copy(
+                                    publisherStyles = true,
+                                    textAlign = null,
+                                    lineHeight = null,
+                                    paragraphSpacing = null,
+                                    paragraphIndent = null,
+                                    wordSpacing = null,
+                                    letterSpacing = null,
+                                    hyphens = null
+                                )
+                            } else {
+                                settings.copy(publisherStyles = false)
+                            }
+                        )
+                    }
+                )
+            }
+            val spacingEnabled = !settings.publisherStyles
+            LabeledSlider(
+                label = "Paragraph Spacing",
+                value = (settings.paragraphSpacing ?: 0.0).toFloat(),
+                valueRange = 0f..3f,
+                steps = 11,
+                valueLabel = formatSpacing(settings.paragraphSpacing),
+                enabled = spacingEnabled,
+                onValueChange = { onSettingsChange(settings.copy(paragraphSpacing = it.toDouble(), publisherStyles = false)) }
+            )
+            LabeledSlider(
+                label = "Paragraph Indent",
+                value = (settings.paragraphIndent ?: 0.0).toFloat(),
+                valueRange = 0f..2f,
+                steps = 7,
+                valueLabel = formatSpacing(settings.paragraphIndent),
+                enabled = spacingEnabled,
+                onValueChange = { onSettingsChange(settings.copy(paragraphIndent = it.toDouble(), publisherStyles = false)) }
+            )
+            LabeledSlider(
+                label = "Word Spacing",
+                value = (settings.wordSpacing ?: 0.0).toFloat(),
+                valueRange = 0f..1f,
+                steps = 9,
+                valueLabel = formatSpacing(settings.wordSpacing),
+                enabled = spacingEnabled,
+                onValueChange = { onSettingsChange(settings.copy(wordSpacing = it.toDouble(), publisherStyles = false)) }
+            )
+            LabeledSlider(
+                label = "Letter Spacing",
+                value = (settings.letterSpacing ?: 0.0).toFloat(),
+                valueRange = 0f..0.5f,
+                steps = 9,
+                valueLabel = formatSpacing(settings.letterSpacing),
+                enabled = spacingEnabled,
+                onValueChange = { onSettingsChange(settings.copy(letterSpacing = it.toDouble(), publisherStyles = false)) }
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Text("Hyphenate text", modifier = Modifier.weight(1f))
+                Switch(
+                    // Simplified from the site's tri-state (on/off/publisher) to a plain toggle --
+                    // unchecked maps to null (publisher/reader default) rather than an explicit
+                    // "off", which covers the common cases without a third state to explain in a
+                    // small mobile control.
+                    checked = settings.hyphens == true,
+                    onCheckedChange = { onSettingsChange(settings.copy(hyphens = if (it) true else null)) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+    )
+}
+
+/** A horizontally-scrollable row of filter chips, one per option -- used instead of a fixed-width
+ *  segmented button row since some of these (font family, theme) have enough options that a
+ *  segmented row would clip on a narrow phone. */
+@Composable
+private fun <T> SegmentedOptionRow(
+    label: String,
+    options: List<T>,
+    selected: T,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit
+) {
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(4.dp))
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { option ->
+                FilterChip(
+                    selected = option == selected,
+                    onClick = { onSelect(option) },
+                    label = { Text(optionLabel(option)) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LabeledSlider(
+    label: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    valueLabel: String,
+    enabled: Boolean = true,
+    onValueChange: (Float) -> Unit
+) {
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(valueLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Slider(value = value, onValueChange = onValueChange, valueRange = valueRange, steps = steps, enabled = enabled)
+    }
+}
+
+private fun ReaderTheme?.label(): String = when (this) {
+    null -> "Auto"
+    ReaderTheme.LIGHT -> "Light"
+    ReaderTheme.DARK -> "Dark"
+    ReaderTheme.SEPIA -> "Sepia"
+}
+
+private fun ReaderFontFamily?.label(): String = when (this) {
+    null -> "Publisher"
+    ReaderFontFamily.SERIF -> "Serif"
+    ReaderFontFamily.SANS_SERIF -> "Sans Serif"
+    ReaderFontFamily.MONOSPACE -> "Monospace"
+    ReaderFontFamily.OPEN_DYSLEXIC -> "OpenDyslexic"
+}
+
+private fun ReaderTextAlign?.label(): String = when (this) {
+    null -> "Publisher"
+    ReaderTextAlign.START -> "Start"
+    ReaderTextAlign.JUSTIFY -> "Justify"
+}
+
+private fun ReaderLineHeight?.label(): String = when (this) {
+    null -> "Publisher"
+    ReaderLineHeight.COMPACT -> "Compact"
+    ReaderLineHeight.NORMAL -> "Normal"
+    ReaderLineHeight.RELAXED -> "Relaxed"
+}
+
+private fun ReaderLayout.label(): String = when (this) {
+    ReaderLayout.PAGINATED -> "Paginated"
+    ReaderLayout.SCROLLED -> "Scrolled"
+}
+
+private fun formatSpacing(value: Double?): String = value?.let { "%.2f".format(it) } ?: "Publisher"
