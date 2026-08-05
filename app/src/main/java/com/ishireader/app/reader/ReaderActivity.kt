@@ -83,8 +83,15 @@ class ReaderActivity : FragmentActivity() {
     }
 
     private fun openBook(manifestUrl: String) {
+        showSyncingOverlay()
         lifecycleScope.launch {
             val localFile = ensureDownloaded(manifestUrl) ?: return@launch
+            // Best-effort check against the server before deciding where to open -- without this,
+            // a book that's never been read on this device has no local position to sync from
+            // (the background worker only drains *pending* rows), so it would silently start at
+            // 0% until the *next* open. Safe offline: times out and falls through to Room as-is.
+            showSyncingOverlay()
+            app.positionRepository.refreshFromServer(manifestUrl)
             openPublication(localFile, manifestUrl)
         }
     }
@@ -94,7 +101,7 @@ class ReaderActivity : FragmentActivity() {
     private suspend fun ensureDownloaded(manifestUrl: String): File? {
         app.bookDownloadRepository.localFileFor(manifestUrl)?.let { return it }
 
-        showProgressOverlay()
+        showDownloadProgress()
         val result = app.bookDownloadRepository.download(manifestUrl) { bytesRead, totalBytes ->
             runOnUiThread { updateDownloadProgress(bytesRead, totalBytes) }
         }
@@ -108,10 +115,16 @@ class ReaderActivity : FragmentActivity() {
         }
     }
 
-    private fun showProgressOverlay() {
+    private fun showDownloadProgress() {
         progressOverlay.visibility = View.VISIBLE
         progressBar.isIndeterminate = true
         progressText.setText(R.string.reader_downloading)
+    }
+
+    private fun showSyncingOverlay() {
+        progressOverlay.visibility = View.VISIBLE
+        progressBar.isIndeterminate = true
+        progressText.setText(R.string.reader_syncing)
     }
 
     private fun updateDownloadProgress(bytesRead: Long, totalBytes: Long) {

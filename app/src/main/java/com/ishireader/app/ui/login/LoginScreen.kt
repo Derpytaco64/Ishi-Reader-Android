@@ -39,6 +39,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -54,9 +56,15 @@ fun LoginScreen(
     onLoggedIn: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(state.loggedIn) {
-        if (state.loggedIn) onLoggedIn()
+        if (state.loggedIn) {
+            if (state.offline) {
+                Toast.makeText(context, "Offline — showing your downloaded library", Toast.LENGTH_LONG).show()
+            }
+            onLoggedIn()
+        }
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

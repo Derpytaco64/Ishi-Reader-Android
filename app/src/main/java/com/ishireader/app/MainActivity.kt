@@ -123,6 +123,10 @@ class MainActivity : ComponentActivity() {
                                 onLogout = {
                                     lifecycleScope.launch {
                                         app.authRepository.logout()
+                                        // Otherwise a subsequent offline launch would silently let
+                                        // this device back in without a real session -- see the
+                                        // offline-entry check in LoginViewModel.connect.
+                                        app.preferences.setWasLoggedIn(false)
                                         navController.navigate(ROUTE_LOGIN) {
                                             popUpTo(ROUTE_HOME) { inclusive = true }
                                         }

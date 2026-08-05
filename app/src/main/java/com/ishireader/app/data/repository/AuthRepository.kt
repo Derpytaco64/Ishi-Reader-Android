@@ -109,10 +109,13 @@ class AuthRepository(private val network: NetworkModule) {
             if (response.isSuccessful && user != null) {
                 ApiResult.Success(user)
             } else {
+                // Server reachable and says no -- a real "not signed in," not a connectivity issue.
                 ApiResult.Failure("Not signed in")
             }
         } catch (e: Exception) {
-            ApiResult.Failure(e.message ?: "Network error")
+            // Couldn't reach the server at all (IOException/timeout/etc.) -- see
+            // LoginViewModel.connect, which uses this to allow offline entry to a cached library.
+            ApiResult.Failure(e.message ?: "Network error", isNetworkError = true)
         }
     }
 

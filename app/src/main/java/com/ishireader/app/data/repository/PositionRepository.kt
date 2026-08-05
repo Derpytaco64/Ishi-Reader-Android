@@ -3,11 +3,13 @@ package com.ishireader.app.data.repository
 import com.ishireader.app.data.local.PositionDao
 import com.ishireader.app.data.local.PositionEntity
 import com.ishireader.app.data.local.totalProgressionOf
+import com.ishireader.app.data.sync.PositionReconciler
 import com.ishireader.app.data.sync.SyncScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
@@ -20,7 +22,8 @@ import kotlinx.serialization.json.JsonElement
  */
 class PositionRepository(
     private val positionDao: PositionDao,
-    private val syncScheduler: SyncScheduler
+    private val syncScheduler: SyncScheduler,
+    private val reconciler: PositionReconciler
 ) {
 
     fun observePosition(manifestUrl: String): Flow<JsonElement?> =
@@ -44,6 +47,16 @@ class PositionRepository(
             )
         )
         syncScheduler.schedulePositionSync()
+    }
+
+    /** Best-effort, time-boxed check against the server -- used when opening a book so a position
+     *  saved elsewhere (web, another device) shows up on the very first open, not just the second.
+     *  A book that's never been read on this device has no local row for the background sync
+     *  worker to pick up (it only drains *pending* rows), so without this eager check the reader
+     *  would silently start at position 0 until some other write created one to sync from. Safe to
+     *  call while offline: on timeout or failure this just leaves Room (and the reader) as-is. */
+    suspend fun refreshFromServer(manifestUrl: String): Boolean = withContext(Dispatchers.IO) {
+        withTimeoutOrNull(5_000) { reconciler.reconcile(manifestUrl) } ?: false
     }
 }
 

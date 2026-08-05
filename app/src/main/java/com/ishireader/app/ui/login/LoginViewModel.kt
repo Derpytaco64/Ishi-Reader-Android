@@ -41,7 +41,11 @@ data class LoginUiState(
     val accentColor: String? = null,
     val themeMode: String = "dark",
 
-    val loggedIn: Boolean = false
+    val loggedIn: Boolean = false,
+    /** True when [loggedIn] was reached without a working connection to the server -- the
+     *  server-unreachable fallback in [connect], not a real signed-in session check. Lets the UI
+     *  tell the user they're looking at a cached, downloaded-only library. */
+    val offline: Boolean = false
 )
 
 /** Mirrors the site's Jellyfin-style login flow (LoginPageClient.tsx): pick a profile, then a
@@ -90,8 +94,21 @@ class LoginViewModel(
             preferences.setServerUrl(url)
 
             // Already have a valid session cookie for this server? Skip straight to the library.
-            if (authRepository.fetchCurrentUser() is ApiResult.Success) {
+            val currentUserResult = authRepository.fetchCurrentUser()
+            if (currentUserResult is ApiResult.Success) {
+                preferences.setWasLoggedIn(true)
                 _uiState.value = _uiState.value.copy(isConnecting = false, loggedIn = true)
+                return@launch
+            }
+
+            // Couldn't reach the server at all (as opposed to a reachable server saying "not
+            // signed in") and this device was signed in before -- let the user back into their
+            // downloaded books rather than hard-blocking on connectivity. A real 401/403 from a
+            // *reachable* server never takes this path, so an actually-expired session still
+            // lands on the normal picker/login below.
+            val isNetworkUnreachable = (currentUserResult as? ApiResult.Failure)?.isNetworkError == true
+            if (isNetworkUnreachable && preferences.wasLoggedIn.first()) {
+                _uiState.value = _uiState.value.copy(isConnecting = false, loggedIn = true, offline = true)
                 return@launch
             }
 
@@ -163,7 +180,10 @@ class LoginViewModel(
         _uiState.value = state.copy(isSubmitting = true, error = null, lockedUntil = null)
         viewModelScope.launch {
             when (val result = authRepository.login(user.username, state.password)) {
-                is LoginAttemptResult.LoggedIn -> _uiState.value = _uiState.value.copy(isSubmitting = false, loggedIn = true)
+                is LoginAttemptResult.LoggedIn -> {
+                    preferences.setWasLoggedIn(true)
+                    _uiState.value = _uiState.value.copy(isSubmitting = false, loggedIn = true)
+                }
                 is LoginAttemptResult.NeedsPasswordSetup -> _uiState.value = _uiState.value.copy(
                     isSubmitting = false,
                     stage = LoginStage.SETUP,
@@ -196,7 +216,10 @@ class LoginViewModel(
         _uiState.value = state.copy(isSubmitting = true, error = null)
         viewModelScope.launch {
             when (val result = authRepository.setupPassword(user.id, state.password)) {
-                is LoginAttemptResult.LoggedIn -> _uiState.value = _uiState.value.copy(isSubmitting = false, loggedIn = true)
+                is LoginAttemptResult.LoggedIn -> {
+                    preferences.setWasLoggedIn(true)
+                    _uiState.value = _uiState.value.copy(isSubmitting = false, loggedIn = true)
+                }
                 is LoginAttemptResult.NeedsPasswordSetup -> _uiState.value = _uiState.value.copy(isSubmitting = false)
                 is LoginAttemptResult.Failed -> _uiState.value = _uiState.value.copy(isSubmitting = false, error = result.message)
             }

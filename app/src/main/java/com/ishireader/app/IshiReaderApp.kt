@@ -17,6 +17,7 @@ import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
 import com.ishireader.app.data.repository.StatsRepository
 import com.ishireader.app.data.sync.IshiWorkerFactory
+import com.ishireader.app.data.sync.PositionReconciler
 import com.ishireader.app.data.sync.SyncScheduler
 import okhttp3.OkHttpClient
 
@@ -58,8 +59,12 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         network = NetworkModule(this)
         database = IshiReaderDatabase.getInstance(this)
         authRepository = AuthRepository(network)
-        libraryRepository = LibraryRepository(network)
-        positionRepository = PositionRepository(database.positionDao(), SyncScheduler(this))
+        libraryRepository = LibraryRepository(network, database.cachedBookDao())
+        positionRepository = PositionRepository(
+            database.positionDao(),
+            SyncScheduler(this),
+            PositionReconciler(database.positionDao(), network)
+        )
         bookDownloadRepository = BookDownloadRepository(this, network)
         libraryPrefsRepository = LibraryPrefsRepository(network)
         notesRepository = NotesRepository(network)

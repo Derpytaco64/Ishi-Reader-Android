@@ -5,10 +5,15 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [PositionEntity::class], version = 1, exportSchema = false)
+@Database(
+    entities = [PositionEntity::class, CachedBookEntity::class],
+    version = 2,
+    exportSchema = false
+)
 abstract class IshiReaderDatabase : RoomDatabase() {
 
     abstract fun positionDao(): PositionDao
+    abstract fun cachedBookDao(): CachedBookDao
 
     companion object {
         @Volatile
@@ -20,7 +25,12 @@ abstract class IshiReaderDatabase : RoomDatabase() {
                     context.applicationContext,
                     IshiReaderDatabase::class.java,
                     "ishi-reader.db"
-                ).build().also { instance = it }
+                )
+                    // App is pre-release (no shipped users to preserve data for) -- destructive
+                    // fallback beats hand-writing a migration for a table that never existed in
+                    // any released version.
+                    .fallbackToDestructiveMigration()
+                    .build().also { instance = it }
             }
     }
 }
