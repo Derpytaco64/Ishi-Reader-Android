@@ -1,5 +1,7 @@
 package com.ishireader.app.data.repository
 
+import com.ishireader.app.data.local.CachedUserDao
+import com.ishireader.app.data.local.CachedUserEntity
 import com.ishireader.app.data.model.LoginRequest
 import com.ishireader.app.data.model.PublicUser
 import com.ishireader.app.data.model.SetupPasswordRequest
@@ -17,7 +19,10 @@ sealed class LoginAttemptResult {
     data class Failed(val message: String, val lockedUntil: Long? = null) : LoginAttemptResult()
 }
 
-class AuthRepository(private val network: NetworkModule) {
+class AuthRepository(
+    private val network: NetworkModule,
+    private val cachedUserDao: CachedUserDao
+) {
 
     /** Unauthenticated account picker list for the login screen -- disabled accounts and
      *  admin-only fields are already stripped server-side (see /api/auth/users). */
@@ -102,11 +107,16 @@ class AuthRepository(private val network: NetworkModule) {
         }
     }
 
+    /** Caches a successful fetch and falls back to that cache on a network error (not a real "not
+     *  signed in" response) so the top bar's name/avatar survive a server-unreachable resume
+     *  instead of reverting to the initial-letter placeholder -- see TopBarViewModel, the only
+     *  other reader of this besides the post-login flows above, which don't need offline entry. */
     suspend fun fetchCurrentUser(): ApiResult<PublicUser> = withContext(Dispatchers.IO) {
         try {
             val response = network.api.me()
             val user = response.body()?.user
             if (response.isSuccessful && user != null) {
+                cachedUserDao.set(user.toEntity())
                 ApiResult.Success(user)
             } else {
                 // Server reachable and says no -- a real "not signed in," not a connectivity issue.
@@ -115,7 +125,8 @@ class AuthRepository(private val network: NetworkModule) {
         } catch (e: Exception) {
             // Couldn't reach the server at all (IOException/timeout/etc.) -- see
             // LoginViewModel.connect, which uses this to allow offline entry to a cached library.
-            ApiResult.Failure(e.message ?: "Network error", isNetworkError = true)
+            cachedUserDao.get()?.toPublicUser()?.let { ApiResult.Success(it) }
+                ?: ApiResult.Failure(e.message ?: "Network error", isNetworkError = true)
         }
     }
 
@@ -126,3 +137,21 @@ class AuthRepository(private val network: NetworkModule) {
         }
     }
 }
+
+private fun PublicUser.toEntity() = CachedUserEntity(
+    userId = id,
+    username = username,
+    name = name,
+    isAdmin = isAdmin,
+    avatarUrl = avatarUrl,
+    needsPasswordSetup = needsPasswordSetup
+)
+
+private fun CachedUserEntity.toPublicUser() = PublicUser(
+    id = userId,
+    username = username,
+    name = name,
+    isAdmin = isAdmin,
+    avatarUrl = avatarUrl,
+    needsPasswordSetup = needsPasswordSetup
+)

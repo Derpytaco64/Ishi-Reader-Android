@@ -58,18 +58,24 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         preferences = AppPreferences(this)
         network = NetworkModule(this)
         database = IshiReaderDatabase.getInstance(this)
-        authRepository = AuthRepository(network)
+        val syncScheduler = SyncScheduler(this)
+        authRepository = AuthRepository(network, database.cachedUserDao())
         libraryRepository = LibraryRepository(network, database.cachedBookDao())
         positionRepository = PositionRepository(
             database.positionDao(),
-            SyncScheduler(this),
+            syncScheduler,
             PositionReconciler(database.positionDao(), network)
         )
         bookDownloadRepository = BookDownloadRepository(this, network)
-        libraryPrefsRepository = LibraryPrefsRepository(network)
+        libraryPrefsRepository = LibraryPrefsRepository(
+            network,
+            database.cachedLibraryPrefsDao(),
+            database.pendingLibraryPrefsPatchDao(),
+            syncScheduler
+        )
         notesRepository = NotesRepository(network)
         completedReadsRepository = CompletedReadsRepository(network)
-        statsRepository = StatsRepository(network)
+        statsRepository = StatsRepository(network, database.cachedUserStatsDao())
         adminRepository = AdminRepository(network)
     }
 
@@ -87,6 +93,13 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
      *  default auto-initializer in AndroidManifest.xml, which would otherwise win the race. */
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
-            .setWorkerFactory(IshiWorkerFactory(database.positionDao(), network))
+            .setWorkerFactory(
+                IshiWorkerFactory(
+                    database.positionDao(),
+                    database.cachedLibraryPrefsDao(),
+                    database.pendingLibraryPrefsPatchDao(),
+                    network
+                )
+            )
             .build()
 }

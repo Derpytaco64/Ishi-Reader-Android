@@ -119,6 +119,12 @@ fun MainTabsScreen(
     val context = LocalContext.current
     val app = context.applicationContext as IshiReaderApp
 
+    // MainTabsScreen's composition is torn down and rebuilt fresh every time bookDetail is popped
+    // back to this destination, so this fires on the very first visit and again on every return --
+    // including right after reading a book, so Continue Reading/Last Series Read/My Library catch
+    // up on whatever position was just synced (see PositionRepository.getPosition's reconcile).
+    LaunchedEffect(Unit) { homeViewModel.refresh() }
+
     LaunchedEffect(isStatsOpen) {
         if (isStatsOpen) {
             stats = null

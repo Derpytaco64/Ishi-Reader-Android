@@ -29,8 +29,13 @@ class PositionRepository(
     fun observePosition(manifestUrl: String): Flow<JsonElement?> =
         positionDao.observe(manifestUrl).map { it?.toLocatorJson() }
 
-    /** Returns the last saved Locator JSON for this book, or null if it's never been opened. */
+    /** Returns the best-known Locator JSON for this book, or null if it's never been opened
+     *  anywhere. Always tries a quick server refresh first (see [refreshFromServer]) so callers
+     *  showing many books at once (Home's Continue Reading, book detail) reflect a position set
+     *  elsewhere -- web, another device -- not just whatever this device happened to write itself.
+     *  Safe offline: the refresh times out quickly and this falls back to whatever's in Room. */
     suspend fun getPosition(manifestUrl: String): JsonElement? = withContext(Dispatchers.IO) {
+        refreshFromServer(manifestUrl)
         positionDao.get(manifestUrl)?.toLocatorJson()
     }
 

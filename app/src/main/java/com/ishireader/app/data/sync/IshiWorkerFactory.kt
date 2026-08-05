@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
+import com.ishireader.app.data.local.CachedLibraryPrefsDao
+import com.ishireader.app.data.local.PendingLibraryPrefsPatchDao
 import com.ishireader.app.data.local.PositionDao
 import com.ishireader.app.data.network.NetworkModule
 
@@ -16,6 +18,8 @@ import com.ishireader.app.data.network.NetworkModule
  */
 class IshiWorkerFactory(
     private val positionDao: PositionDao,
+    private val cachedLibraryPrefsDao: CachedLibraryPrefsDao,
+    private val pendingLibraryPrefsPatchDao: PendingLibraryPrefsPatchDao,
     private val network: NetworkModule
 ) : WorkerFactory() {
 
@@ -26,6 +30,8 @@ class IshiWorkerFactory(
     ): ListenableWorker? = when (workerClassName) {
         PositionSyncWorker::class.java.name ->
             PositionSyncWorker(appContext, workerParameters, positionDao, network)
+        LibraryPrefsSyncWorker::class.java.name ->
+            LibraryPrefsSyncWorker(appContext, workerParameters, cachedLibraryPrefsDao, pendingLibraryPrefsPatchDao, network)
         else -> null
     }
 }

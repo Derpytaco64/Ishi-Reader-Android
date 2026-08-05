@@ -44,6 +44,15 @@ class BookDetailViewModel(
     val uiState: StateFlow<BookDetailUiState> = _uiState.asStateFlow()
 
     init {
+        refresh()
+    }
+
+    /** Re-reads position/notes/completed-reads -- called on first load and again whenever this
+     *  screen resumes (see BookDetailScreen), since returning from ReaderActivity (a separate
+     *  Activity) doesn't otherwise re-trigger anything: it resumes the same Compose composition
+     *  rather than navigating back into it. positionRepository.getPosition already reconciles
+     *  against the server first, so this picks up whatever was just read. */
+    fun refresh() {
         viewModelScope.launch {
             val locatorDeferred = async { positionRepository.getPosition(book.manifestUrl()) }
             val notesDeferred = async { notesRepository.getNotes(book.manifestUrl()) }

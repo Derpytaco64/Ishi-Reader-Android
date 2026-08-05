@@ -6,14 +6,25 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [PositionEntity::class, CachedBookEntity::class],
-    version = 2,
+    entities = [
+        PositionEntity::class,
+        CachedBookEntity::class,
+        CachedLibraryPrefsEntity::class,
+        CachedUserStatsEntity::class,
+        CachedUserEntity::class,
+        PendingLibraryPrefsPatchEntity::class
+    ],
+    version = 4,
     exportSchema = false
 )
 abstract class IshiReaderDatabase : RoomDatabase() {
 
     abstract fun positionDao(): PositionDao
     abstract fun cachedBookDao(): CachedBookDao
+    abstract fun cachedLibraryPrefsDao(): CachedLibraryPrefsDao
+    abstract fun cachedUserStatsDao(): CachedUserStatsDao
+    abstract fun cachedUserDao(): CachedUserDao
+    abstract fun pendingLibraryPrefsPatchDao(): PendingLibraryPrefsPatchDao
 
     companion object {
         @Volatile

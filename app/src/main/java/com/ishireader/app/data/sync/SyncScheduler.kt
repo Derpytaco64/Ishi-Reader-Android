@@ -10,9 +10,9 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 /**
- * Enqueues background sync of locally-pending changes. Position is the only offline-first data
- * today; future phases (highlights, bookmarks, reading time) will add their own schedule*
- * methods here rather than their own scheduler class.
+ * Enqueues background sync of locally-pending changes. Position and library-prefs are the
+ * offline-first data today; future phases (highlights, bookmarks, reading time) will add their
+ * own schedule* methods here rather than their own scheduler class.
  *
  * Requests are coalesced with [ExistingWorkPolicy.KEEP] so repeated local writes while offline
  * don't pile up duplicate work -- WorkManager holds the single pending request until
@@ -22,12 +22,8 @@ import java.util.concurrent.TimeUnit
 class SyncScheduler(private val context: Context) {
 
     fun schedulePositionSync() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
         val request = OneTimeWorkRequestBuilder<PositionSyncWorker>()
-            .setConstraints(constraints)
+            .setConstraints(connectedConstraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
 
@@ -35,7 +31,22 @@ class SyncScheduler(private val context: Context) {
             .enqueueUniqueWork(POSITION_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
     }
 
+    fun scheduleLibraryPrefsSync() {
+        val request = OneTimeWorkRequestBuilder<LibraryPrefsSyncWorker>()
+            .setConstraints(connectedConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(LIBRARY_PREFS_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
+    private fun connectedConstraints() = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .build()
+
     companion object {
         private const val POSITION_SYNC_WORK_NAME = "position-sync"
+        private const val LIBRARY_PREFS_SYNC_WORK_NAME = "library-prefs-sync"
     }
 }

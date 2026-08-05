@@ -86,12 +86,7 @@ class ReaderActivity : FragmentActivity() {
         showSyncingOverlay()
         lifecycleScope.launch {
             val localFile = ensureDownloaded(manifestUrl) ?: return@launch
-            // Best-effort check against the server before deciding where to open -- without this,
-            // a book that's never been read on this device has no local position to sync from
-            // (the background worker only drains *pending* rows), so it would silently start at
-            // 0% until the *next* open. Safe offline: times out and falls through to Room as-is.
             showSyncingOverlay()
-            app.positionRepository.refreshFromServer(manifestUrl)
             openPublication(localFile, manifestUrl)
         }
     }
@@ -165,9 +160,10 @@ class ReaderActivity : FragmentActivity() {
         showNavigator(publication, initialLocator)
     }
 
-    /** Reads the locally-saved position (never blocks on the network -- see PositionRepository)
-     *  and bridges its kotlinx.serialization JSON into the org.json shape Locator.fromJSON
-     *  expects, since Readium's own model classes parse from org.json. */
+    /** Reads the best-known position (PositionRepository tries a quick server refresh first, then
+     *  falls back to Room -- safe offline) and bridges its kotlinx.serialization JSON into the
+     *  org.json shape Locator.fromJSON expects, since Readium's own model classes parse from
+     *  org.json. */
     private suspend fun fetchSavedLocator(manifestUrl: String): Locator? {
         val locatorJson = app.positionRepository.getPosition(manifestUrl) ?: return null
         return runCatching { Locator.fromJSON(JSONObject(locatorJson.toString())) }.getOrNull()
