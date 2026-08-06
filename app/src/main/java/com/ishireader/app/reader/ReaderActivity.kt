@@ -2,6 +2,8 @@
 
 package com.ishireader.app.reader
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.View
 import android.widget.ProgressBar
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
@@ -188,6 +191,12 @@ class ReaderActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_reader)
         title = intent.getStringExtra(EXTRA_TITLE)
+
+        // Lock rotation to whatever orientation the reader was opened in -- device tilt no
+        // longer flips the page layout underneath the reader; only the explicit rotate button
+        // (see toggleOrientationPreservingPosition) does. The manifest already declares
+        // configChanges for orientation/screenSize, so this doesn't recreate the Activity.
+        requestedOrientation = currentOrientationLock()
 
         progressOverlay = findViewById(R.id.reader_progress_overlay)
         progressBar = findViewById(R.id.reader_progress_bar)
@@ -534,6 +543,9 @@ class ReaderActivity : FragmentActivity() {
                                 IconButton(onClick = { timerSheetOpen = true }) {
                                     Icon(Icons.Filled.Timer, contentDescription = "Reading timer", tint = MaterialTheme.colorScheme.onSurface)
                                 }
+                                IconButton(onClick = { lifecycleScope.launch { toggleOrientationPreservingPosition() } }) {
+                                    Icon(Icons.Filled.ScreenRotation, contentDescription = "Rotate reader", tint = MaterialTheme.colorScheme.onSurface)
+                                }
                                 IconButton(onClick = { settingsSheetOpen = true }) {
                                     Icon(Icons.Filled.Settings, contentDescription = "Reader settings", tint = MaterialTheme.colorScheme.onSurface)
                                 }
@@ -639,24 +651,59 @@ class ReaderActivity : FragmentActivity() {
      * offset into the new layout, which can land far from the paragraph actually being read on a
      * large change (this is exactly the drift the website's useEpubNavigator.correctPositionAround
      * exists to fix, and Readium's own navigator doesn't do it automatically on either platform).
-     * Ports that fix here: capture a content-anchored locator (firstVisibleElementLocator finds
-     * the first visible block and anchors it with a DOM/text-quote locator, not a raw scroll
-     * fraction) before submitting the new preferences, then re-navigate to it once the WebView has
-     * had a moment to reflow. [preferencesApplyGeneration] discards a stale re-navigation if a
-     * newer preference change (e.g. another slider tick) has since superseded this one.
+     * [preservePositionAcross] ports that fix; this just supplies the "change" as submitting the
+     * new preferences.
+     */
+    private suspend fun applyPreferencesPreservingPosition(preferences: EpubPreferences) {
+        preservePositionAcross { navigatorFragment?.submitPreferences(preferences) }
+    }
+
+    /**
+     * Rotating the reader reflows the page exactly like a font-size/margin change does (the
+     * container's width changes under the WebView), and drifts the same way for the same reason
+     * -- so it reuses [preservePositionAcross] rather than a separate mechanism. Locking rotation
+     * to only happen through this button (see currentOrientationLock in onCreate) is what makes
+     * capturing the anchor "before" meaningful -- a device-tilt rotation would reflow before we
+     * ever got a chance to.
+     */
+    private suspend fun toggleOrientationPreservingPosition() {
+        preservePositionAcross { toggleOrientation() }
+    }
+
+    private fun toggleOrientation() {
+        requestedOrientation = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+    }
+
+    private fun currentOrientationLock(): Int =
+        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+
+    /**
+     * Captures a content-anchored locator (firstVisibleElementLocator finds the first visible
+     * block and anchors it with a DOM/text-quote locator, not a raw scroll fraction) before
+     * [change] runs, then re-navigates to it once the WebView has had a moment to reflow.
+     * [preferencesApplyGeneration] discards a stale re-navigation if a newer change (e.g. another
+     * slider tick, or a second rotation) has since superseded this one.
      *
-     * The website's own first cut of this fix had a race: submitPreferences's internal auto-snap
-     * (a ResizeObserver on the *content* WebView's own body, not driven by our corrective go() call
+     * The website's own first cut of this fix had a race: the reflow's internal auto-snap (a
+     * ResizeObserver on the *content* WebView's own body, not driven by our corrective go() call
      * at all) can still be pending when our first go() resolves, and if it fires afterward it
      * silently re-clamps to the wrong pixel offset and undoes our correction (see Ishi-Read commit
      * 831ac5fc, "font size changing fix"). The fix there -- and here -- is to re-assert the same
      * go() a second time after giving that observer a further moment to have already fired, so our
      * correction is the last word either way. Still gated by the same generation check.
      */
-    private suspend fun applyPreferencesPreservingPosition(preferences: EpubPreferences) {
+    private suspend fun preservePositionAcross(change: () -> Unit) {
         val generation = ++preferencesApplyGeneration
         val anchor = (navigatorFragment as? VisualNavigator)?.firstVisibleElementLocator()
-        navigatorFragment?.submitPreferences(preferences)
+        change()
         if (anchor == null) return
 
         delay(150)
