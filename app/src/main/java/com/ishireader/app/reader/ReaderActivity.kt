@@ -22,19 +22,24 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.automirrored.filled.Toc
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -67,6 +72,7 @@ import com.ishireader.app.ui.reader.HighlightColorPopover
 import com.ishireader.app.ui.reader.NoteEditorDialog
 import com.ishireader.app.ui.reader.ReaderSettingsSheet
 import com.ishireader.app.ui.reader.ReadingTimerSheet
+import com.ishireader.app.ui.reader.TocPanelSheet
 import com.ishireader.app.ui.theme.IshiReaderTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -164,6 +170,11 @@ class ReaderActivity : FragmentActivity() {
      *  that finishes -- the page-count indicator just waits until then. */
     private val totalPositionsState = mutableStateOf<Int?>(null)
 
+    /** The same positions() list totalPositionsState is sized from -- kept around (not just the
+     *  count) so the scrub slider can resolve a dragged-to progression fraction back to a
+     *  concrete Locator to navigate to. */
+    private val publicationPositionsState = mutableStateOf<List<Locator>?>(null)
+
     private val readingTimerTracker: ReadingTimerTracker by lazy {
         ReadingTimerTracker(lifecycleScope, app.readingTimerRepository, app.completedReadsRepository)
     }
@@ -177,8 +188,14 @@ class ReaderActivity : FragmentActivity() {
     private val pendingHighlightColorPicker = mutableStateOf<PendingHighlightPicker?>(null)
     private val activeNoteEditId = mutableStateOf<String?>(null)
 
-    /** Guards applyPreferencesPreservingPosition against rapid repeated preference submissions
-     *  (e.g. dragging a slider) racing each other -- mirrors the website's submitGenerationRef. */
+    /** Mirrors the website's returnLocator (StatefulAnnotationsContainer/StatefulReaderFooter):
+     *  the locator we were at right before jumping to an annotation from the panel, so a "return
+     *  to position" affordance can undo that jump. Cleared once the return happens -- there's no
+     *  auto-timeout, same as the website. */
+    private val returnLocatorState = mutableStateOf<Locator?>(null)
+
+    /** Guards preservePositionAcross against rapid repeated changes (e.g. dragging a slider)
+     *  racing each other -- mirrors the website's submitGenerationRef. */
     private var preferencesApplyGeneration = 0
 
     /** Moon+ Reader-style immersive reading: hidden by default, revealed by a center tap (see
@@ -362,7 +379,11 @@ class ReaderActivity : FragmentActivity() {
     private fun showNavigator(publication: Publication, initialLocator: Locator?, manifestUrl: String) {
         progressOverlay.visibility = View.GONE
         this.publication = publication
-        lifecycleScope.launch { totalPositionsState.value = publication.positions().size }
+        lifecycleScope.launch {
+            val positions = publication.positions()
+            publicationPositionsState.value = positions
+            totalPositionsState.value = positions.size
+        }
 
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
 
@@ -450,6 +471,11 @@ class ReaderActivity : FragmentActivity() {
                 var settingsSheetOpen by remember { mutableStateOf(false) }
                 var timerSheetOpen by remember { mutableStateOf(false) }
                 var annotationsSheetOpen by remember { mutableStateOf(false) }
+                var tocSheetOpen by remember { mutableStateOf(false) }
+                // Live drag value for the scrub slider -- null when not dragging, in which case
+                // the slider tracks currentLocator's own totalProgression instead. Purely local UI
+                // state (not a class field) since nothing outside the composition needs it.
+                var scrubProgress by remember { mutableStateOf<Float?>(null) }
                 val settings by readerSettingsState
                 val timerState by readingTimerTracker.state.collectAsState()
                 val annotationsState by annotationsController.state.collectAsState()
@@ -459,6 +485,8 @@ class ReaderActivity : FragmentActivity() {
                 val chromeShown by chromeVisible
                 val currentLocator by currentLocatorState
                 val totalPositions by totalPositionsState
+                val publicationPositions by publicationPositionsState
+                val returnLocator by returnLocatorState
                 val chapterTitle = currentLocator?.let { locator -> publication?.chapterTitleFor(locator) }
                 val positionText = positionDisplayText(settings.positionDisplayMode, currentLocator, totalPositions)
 
@@ -504,19 +532,14 @@ class ReaderActivity : FragmentActivity() {
                             }
                         }
 
+                        val showChapterTitleHeader = settings.showChapterTitle && chapterTitle != null
                         AnimatedVisibility(
-                            visible = settings.showChapterTitle && chapterTitle != null,
+                            visible = showChapterTitleHeader || returnLocator != null,
                             enter = fadeIn(),
                             exit = fadeOut(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = chapterTitle.orEmpty(),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = readerTextColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center,
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(readerBackgroundColor.copy(alpha = 0.85f))
@@ -527,8 +550,37 @@ class ReaderActivity : FragmentActivity() {
                                             Modifier
                                         }
                                     )
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                            )
+                                    .padding(start = 12.dp, end = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = chapterTitle.orEmpty(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = readerTextColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = if (showChapterTitleHeader) TextAlign.Center else TextAlign.Start,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(vertical = 4.dp)
+                                        .then(if (!showChapterTitleHeader) Modifier.padding(start = 12.dp) else Modifier)
+                                )
+                                // Mirrors the website's returnLocator affordance (StatefulReaderFooter):
+                                // set right before jumping to an annotation from the panel, cleared once
+                                // tapped -- no auto-timeout, persists until the user actually uses it.
+                                if (returnLocator != null) {
+                                    IconButton(onClick = {
+                                        returnLocator?.let { navigatorFragment?.go(it, animated = true) }
+                                        returnLocatorState.value = null
+                                    }) {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.Undo,
+                                            contentDescription = "Return to previous position",
+                                            tint = readerTextColor
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -576,6 +628,56 @@ class ReaderActivity : FragmentActivity() {
                             }
                         }
 
+                        // Scrub slider: drags to any point in the book by totalProgression, with
+                        // the live percentage shown to its right. Only navigates on release (not
+                        // per-tick) -- publicationPositions resolves the dragged-to fraction to a
+                        // concrete Locator, same list totalPositions is sized from.
+                        AnimatedVisibility(
+                            visible = chromeShown && publicationPositions != null,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val liveProgress = (currentLocator?.locations?.totalProgression ?: 0.0)
+                                .toFloat().coerceIn(0f, 1f)
+                            val sliderValue = scrubProgress ?: liveProgress
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                    .padding(start = 12.dp, end = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Slider(
+                                    value = sliderValue,
+                                    onValueChange = { scrubProgress = it },
+                                    onValueChangeFinished = {
+                                        val positions = publicationPositions
+                                        val fraction = scrubProgress
+                                        if (!positions.isNullOrEmpty() && fraction != null) {
+                                            val index = (fraction * (positions.size - 1)).roundToInt()
+                                                .coerceIn(0, positions.size - 1)
+                                            navigatorFragment?.go(positions[index], animated = false)
+                                        }
+                                        scrubProgress = null
+                                    },
+                                    modifier = Modifier.weight(1f).height(24.dp),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = readerTextColor,
+                                        activeTrackColor = readerTextColor,
+                                        inactiveTrackColor = readerTextColor.copy(alpha = 0.3f)
+                                    )
+                                )
+                                Text(
+                                    text = formatPercent(sliderValue.toDouble()),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = readerTextColor,
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
+                            }
+                        }
+
                         // Bottom bar: annotations/timer/settings -- moved down from the old
                         // top-right floating row so nothing sits behind a camera cutout.
                         AnimatedVisibility(
@@ -592,6 +694,9 @@ class ReaderActivity : FragmentActivity() {
                                     .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
+                                IconButton(onClick = { tocSheetOpen = true }) {
+                                    Icon(Icons.AutoMirrored.Filled.Toc, contentDescription = "Table of contents", tint = MaterialTheme.colorScheme.onSurface)
+                                }
                                 IconButton(onClick = { annotationsSheetOpen = true }) {
                                     Icon(Icons.Filled.Bookmarks, contentDescription = "Annotations", tint = MaterialTheme.colorScheme.onSurface)
                                 }
@@ -626,11 +731,25 @@ class ReaderActivity : FragmentActivity() {
                     )
                 }
 
+                if (tocSheetOpen) {
+                    publication?.let { pub ->
+                        TocPanelSheet(
+                            publication = pub,
+                            onJump = { locator ->
+                                navigatorFragment?.go(locator, animated = true)
+                                tocSheetOpen = false
+                            },
+                            onDismiss = { tocSheetOpen = false }
+                        )
+                    }
+                }
+
                 if (annotationsSheetOpen) {
                     AnnotationsPanelSheet(
                         state = annotationsState,
                         totalPositions = totalPositions,
                         onJump = { locator ->
+                            currentLocatorState.value?.let { returnLocatorState.value = it }
                             navigatorFragment?.go(locator, animated = true)
                             annotationsSheetOpen = false
                         },
@@ -704,25 +823,27 @@ class ReaderActivity : FragmentActivity() {
     }
 
     /** Applies a settings change live to the navigator, then persists it -- in that order, so the
-     *  reader responds instantly and a failed/slow write never delays what the user sees. */
+     *  reader responds instantly and a failed/slow write never delays what the user sees.
+     *
+     *  IMPORTANT: every layout-affecting piece of [updated] -- both the EpubPreferences submit
+     *  *and* [applyContainerAppearance]'s View padding (vertical margin has no EpubPreferences
+     *  counterpart, see ReaderSettings.verticalMargin) -- MUST run inside the single
+     *  [preservePositionAcross] change() below, not before it. This bit us before: calling
+     *  applyContainerAppearance synchronously ahead of the coroutine let its padding change (and
+     *  the reflow that follows) happen before the "before" anchor was even captured, silently
+     *  defeating position preservation for vertical-margin drags specifically while font-size
+     *  changes (already routed through submitPreferences inside the wrap) looked fine. If you're
+     *  adding a new kind of setting here that can change the WebView's layout, put its
+     *  application inside this same lambda -- never call it separately above/below this block. */
     private fun applyReaderSettings(updated: ReaderSettings) {
         readerSettingsState.value = updated
-        applyContainerAppearance(updated)
-        lifecycleScope.launch { applyPreferencesPreservingPosition(updated.toEpubPreferences()) }
+        lifecycleScope.launch {
+            preservePositionAcross {
+                applyContainerAppearance(updated)
+                navigatorFragment?.submitPreferences(updated.toEpubPreferences())
+            }
+        }
         lifecycleScope.launch { app.readerPreferencesStore.save(updated) }
-    }
-
-    /**
-     * Font size (and lineHeight/margins/spacing) changes reflow the page -- Readium's own
-     * post-relayout recovery in EpubNavigatorFragment just clamps the previous *pixel* scroll
-     * offset into the new layout, which can land far from the paragraph actually being read on a
-     * large change (this is exactly the drift the website's useEpubNavigator.correctPositionAround
-     * exists to fix, and Readium's own navigator doesn't do it automatically on either platform).
-     * [preservePositionAcross] ports that fix; this just supplies the "change" as submitting the
-     * new preferences.
-     */
-    private suspend fun applyPreferencesPreservingPosition(preferences: EpubPreferences) {
-        preservePositionAcross { navigatorFragment?.submitPreferences(preferences) }
     }
 
     /**
