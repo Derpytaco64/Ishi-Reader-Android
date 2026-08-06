@@ -43,7 +43,9 @@ fun BookCoverCard(book: Book, onClick: () -> Unit, modifier: Modifier = Modifier
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(2f / 3f)
+                // Audiobook cover art is conventionally distributed square (like an album/podcast
+                // cover), unlike the portrait 2:3 book-jacket ratio everything else here uses.
+                .aspectRatio(if (book.isAudiobook) 1f else 2f / 3f)
                 .padding(bottom = 4.dp)
         )
         Text(

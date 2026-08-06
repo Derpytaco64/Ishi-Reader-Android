@@ -64,6 +64,7 @@ import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
 import com.ishireader.app.data.model.PositionDisplayAlignment
 import com.ishireader.app.data.model.PositionDisplayMode
+import com.ishireader.app.data.model.ReaderLayout
 import com.ishireader.app.data.model.ReaderSettings
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
@@ -184,6 +185,12 @@ class ReaderActivity : FragmentActivity() {
      *  count) so the scrub slider can resolve a dragged-to progression fraction back to a
      *  concrete Locator to navigate to. */
     private val publicationPositionsState = mutableStateOf<List<Locator>?>(null)
+
+    /** Real, layout-aware page numbers -- see DynamicPageCountTracker's own doc comment. Built
+     *  once [publication] is known (showNavigator), since it needs the reading order; mirrored
+     *  into this Compose state from its own StateFlow the same way currentLocatorState etc. are. */
+    private var dynamicPageCountTracker: DynamicPageCountTracker? = null
+    private val dynamicPageCountState = mutableStateOf(DynamicPageCountState())
 
     private val readingTimerTracker: ReadingTimerTracker by lazy {
         ReadingTimerTracker(lifecycleScope, app.readingTimerRepository, app.completedReadsRepository)
@@ -391,10 +398,16 @@ class ReaderActivity : FragmentActivity() {
     private fun showNavigator(publication: Publication, initialLocator: Locator?, manifestUrl: String) {
         progressOverlay.visibility = View.GONE
         this.publication = publication
+
+        val pageCountTracker = DynamicPageCountTracker(publication)
+        dynamicPageCountTracker = pageCountTracker
+        pageCountTracker.state.onEach { dynamicPageCountState.value = it }.launchIn(lifecycleScope)
+
         lifecycleScope.launch {
             val positions = publication.positions()
             publicationPositionsState.value = positions
             totalPositionsState.value = positions.size
+            pageCountTracker.onPositionsLoaded(positions)
         }
 
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
@@ -416,6 +429,7 @@ class ReaderActivity : FragmentActivity() {
         val fragmentFactory = navigatorFactory.createFragmentFactory(
             initialLocator = initialLocator,
             initialPreferences = readerSettingsState.value.toEpubPreferences(),
+            paginationListener = pageCountTracker,
             configuration = EpubNavigatorFragment.Configuration(
                 selectionActionModeCallback = selectionCallback,
                 decorationTemplates = HtmlDecorationTemplates.defaultTemplates(alpha = ANNOTATION_DECORATION_ALPHA)
@@ -499,8 +513,12 @@ class ReaderActivity : FragmentActivity() {
                 val totalPositions by totalPositionsState
                 val publicationPositions by publicationPositionsState
                 val returnLocator by returnLocatorState
+                // Scroll mode has no discrete on-screen pages to count (numPages is meaningless
+                // there -- see DynamicPageCountTracker's own doc comment), same gate the website's
+                // useExactPageCount uses.
+                val dynamicPageCount = dynamicPageCountState.value.takeIf { settings.layout != ReaderLayout.SCROLLED }
                 val chapterTitle = currentLocator?.let { locator -> publication?.chapterTitleFor(locator) }
-                val positionText = positionDisplayText(settings.positionDisplayMode, currentLocator, totalPositions)
+                val positionText = positionDisplayText(settings.positionDisplayMode, currentLocator, totalPositions, dynamicPageCount)
 
                 // The chapter title/position overlays sit directly against the page, so they
                 // track the reader's own theme colors rather than the app's Material chrome
@@ -1012,18 +1030,23 @@ private fun formatPercent(totalProgression: Double): String {
 
 /** Builds the bottom position indicator's text per [mode], or null if there's nothing to show
  *  (mode is NONE, or the data it needs hasn't loaded/isn't available for this locator yet).
- *  [PositionDisplayMode.PAGE_PERCENT] uses a whole-number percent in parentheses -- distinct from
- *  the one-decimal [formatPercent] used by the standalone PERCENT mode -- per the "8 of 100 (8%)"
- *  example this was speced against. */
+ *  [dynamicPageCount], when non-null, supplies real layout-aware page numbers (see
+ *  DynamicPageCountTracker) in place of the coarse positions()-derived ones -- falls back to
+ *  those (via [totalPositions]/`locator.locations.position`) when it's null (scroll mode, or the
+ *  navigator hasn't reported an initial page yet). [PositionDisplayMode.PERCENT] and the percent
+ *  half of [PositionDisplayMode.PAGE_PERCENT] both use the same one-decimal [formatPercent] now,
+ *  so switching between the two only changes whether a page number is shown alongside it. */
 private fun positionDisplayText(
     mode: PositionDisplayMode,
     locator: Locator?,
-    totalPositions: Int?
+    totalPositions: Int?,
+    dynamicPageCount: DynamicPageCountState?
 ): String? {
     if (mode == PositionDisplayMode.NONE || locator == null) return null
 
-    val page = locator.locations.position
-    val pageText = if (page != null && totalPositions != null) "$page of $totalPositions" else null
+    val page = dynamicPageCount?.currentPage ?: locator.locations.position
+    val total = dynamicPageCount?.totalPages ?: totalPositions
+    val pageText = if (page != null && total != null) "$page of $total" else null
     val totalProgression = locator.locations.totalProgression
 
     return when (mode) {
@@ -1031,11 +1054,11 @@ private fun positionDisplayText(
         PositionDisplayMode.PAGE -> pageText
         PositionDisplayMode.PERCENT -> totalProgression?.let { formatPercent(it) }
         PositionDisplayMode.PAGE_PERCENT -> {
-            val percentWhole = totalProgression?.let { (min(1.0, max(0.0, it)) * 100).roundToInt() }
+            val percentText = totalProgression?.let { formatPercent(it) }
             when {
-                pageText != null && percentWhole != null -> "$pageText ($percentWhole%)"
+                pageText != null && percentText != null -> "$pageText ($percentText)"
                 pageText != null -> pageText
-                percentWhole != null -> "$percentWhole%"
+                percentText != null -> percentText
                 else -> null
             }
         }

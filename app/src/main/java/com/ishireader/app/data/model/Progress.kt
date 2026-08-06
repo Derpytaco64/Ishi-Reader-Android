@@ -14,10 +14,15 @@ import kotlin.math.round
  * Returns null if there's no progress yet -- callers treat that the same as 0%.
  */
 fun percentFromLocator(locator: JsonElement?): Double? {
-    val totalProgression = locator?.jsonObject
-        ?.get("locations")?.jsonObject
-        ?.get("totalProgression")?.jsonPrimitive?.doubleOrNull
-        ?: return null
+    val totalProgression = progressionFromLocator(locator) ?: return null
     val percent = round(min(1.0, max(0.0, totalProgression)) * 1000) / 10
     return percent.takeIf { it > 0 }
 }
+
+/** The raw 0..1 `locations.totalProgression` a saved Locator carries -- [percentFromLocator]'s
+ *  own 0..100/one-decimal rounding, but unrounded, for callers (like the "time left in book"
+ *  estimate) that need the fraction itself rather than a display string. */
+fun progressionFromLocator(locator: JsonElement?): Double? =
+    locator?.jsonObject
+        ?.get("locations")?.jsonObject
+        ?.get("totalProgression")?.jsonPrimitive?.doubleOrNull

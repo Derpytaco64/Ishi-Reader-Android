@@ -20,13 +20,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,8 +40,10 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -56,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -71,6 +80,7 @@ import com.ishireader.app.data.model.notesExportFilename
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.StatsRepository
+import com.ishireader.app.ui.common.BookCoverCard
 import com.ishireader.app.ui.home.HomeScreen
 import com.ishireader.app.ui.home.HomeViewModel
 import com.ishireader.app.ui.library.LibraryScreen
@@ -78,6 +88,7 @@ import com.ishireader.app.ui.library.LibraryViewModel
 import com.ishireader.app.ui.series.SeriesScreen
 import com.ishireader.app.ui.series.SeriesViewModel
 import com.ishireader.app.ui.series.seriesKey
+import com.ishireader.app.ui.settings.LocalAppSettings
 import com.ishireader.app.ui.settings.SettingsDrawerContent
 import com.ishireader.app.ui.settings.SettingsViewModel
 import com.ishireader.app.ui.shelves.ShelfFormDialog
@@ -121,6 +132,25 @@ fun MainTabsScreen(
     val context = LocalContext.current
     val app = context.applicationContext as IshiReaderApp
     val downloadsVersion by app.bookDownloadRepository.downloadsVersion.collectAsState()
+    val coverSize = LocalAppSettings.current.coverSize
+
+    // CLAUDE-ADDED: Mirrors the website's StatefulLibrarySearch -- a plain client-side filter over
+    // the whole already-fetched library (both ebooks and audiobooks, from Home's own My Library
+    // shelf, see HomeViewModel's "whole library" comment), not a server search endpoint. Matches
+    // page.tsx's predicate exactly: case-insensitive substring against title/author/series.name/any
+    // tag, OR-combined.
+    var searchQuery by remember { mutableStateOf("") }
+    val trimmedSearchQuery = searchQuery.trim()
+    val searchResults = if (trimmedSearchQuery.isBlank()) {
+        emptyList()
+    } else {
+        homeState.myLibrary.filter { book ->
+            book.title.contains(trimmedSearchQuery, ignoreCase = true) ||
+                book.author.contains(trimmedSearchQuery, ignoreCase = true) ||
+                book.series?.name?.contains(trimmedSearchQuery, ignoreCase = true) == true ||
+                book.tags.any { it.contains(trimmedSearchQuery, ignoreCase = true) }
+        }
+    }
 
     // MainTabsScreen's composition is torn down and rebuilt fresh every time bookDetail is popped
     // back to this destination, so this fires on the very first visit and again on every return --
@@ -214,6 +244,11 @@ fun MainTabsScreen(
                         .clip(CircleShape)
                         .clickable { scope.launch { drawerState.open() } }
                 )
+                LibrarySearchField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
+                )
                 Box {
                     Box(modifier = Modifier.clickable { userMenuExpanded = true }) {
                         UserAvatar(user = user, baseUrl = avatarBaseUrl)
@@ -261,24 +296,55 @@ fun MainTabsScreen(
                 }
             }
 
-            TabRow(selectedTabIndex = pagerState.currentPage) {
-                TabTitles.forEachIndexed { index, title ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        text = { Text(title) }
-                    )
+            // CLAUDE-ADDED: "Search takes over" pattern, same as the website (StatefulLibrarySearch's
+            // own comment) -- a non-empty query replaces the entire tab strip/pager with a flat
+            // results grid regardless of which tab was active, rather than filtering within it.
+            if (trimmedSearchQuery.isNotEmpty()) {
+                if (searchResults.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "No books match \"$trimmedSearchQuery\".",
+                            modifier = Modifier.padding(24.dp)
+                        )
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
+                        contentPadding = PaddingValues(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize().weight(1f)
+                    ) {
+                        items(searchResults) { book ->
+                            BookCoverCard(
+                                book = book,
+                                onClick = { onBookClick(book) },
+                                modifier = Modifier.fillMaxWidth(),
+                                onLongClick = { contextMenuBook = book }
+                            )
+                        }
+                    }
                 }
-            }
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f)
-            ) { page ->
-                when (page) {
-                    0 -> HomeScreen(viewModel = homeViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
-                    1 -> LibraryScreen(viewModel = libraryViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
-                    2 -> SeriesScreen(viewModel = seriesViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
-                    else -> ShelvesScreen(viewModel = shelvesViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
+            } else {
+                TabRow(selectedTabIndex = pagerState.currentPage) {
+                    TabTitles.forEachIndexed { index, title ->
+                        Tab(
+                            selected = pagerState.currentPage == index,
+                            onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                            text = { Text(title) }
+                        )
+                    }
+                }
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f)
+                ) { page ->
+                    when (page) {
+                        0 -> HomeScreen(viewModel = homeViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
+                        1 -> LibraryScreen(viewModel = libraryViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
+                        2 -> SeriesScreen(viewModel = seriesViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
+                        else -> ShelvesScreen(viewModel = shelvesViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
+                    }
                 }
             }
         }
@@ -329,6 +395,34 @@ fun MainTabsScreen(
             StatsDialog(stats = stats, onDismiss = { isStatsOpen = false })
         }
     }
+}
+
+/** Mirrors the website's StatefulLibrarySearch/ThFormSearchField -- a pill-shaped field with a
+ *  leading search icon (hidden once there's text, same as the site) and a trailing clear button
+ *  (shown only when non-empty). Filtering itself happens in the caller (see MainTabsScreen's own
+ *  searchResults) -- this is just the input. */
+@Composable
+private fun LibrarySearchField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        placeholder = { Text("Search title, author, genre, series", style = MaterialTheme.typography.bodySmall) },
+        textStyle = MaterialTheme.typography.bodyMedium,
+        singleLine = true,
+        shape = CircleShape,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        leadingIcon = if (value.isEmpty()) {
+            { Icon(Icons.Filled.Search, contentDescription = null) }
+        } else null,
+        trailingIcon = if (value.isNotEmpty()) {
+            {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                }
+            }
+        } else null
+    )
 }
 
 /** Mirrors the website's AvatarCircle: the user's uploaded avatar if they have one, otherwise a

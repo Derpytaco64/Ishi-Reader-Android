@@ -1,5 +1,6 @@
 package com.ishireader.app.ui.bookdetail
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -50,6 +54,7 @@ import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.DailyReadingBucket
 import com.ishireader.app.data.model.StoredNote
 import com.ishireader.app.data.model.percentFromLocator
+import com.ishireader.app.ui.reader.NoteEditorDialog
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -68,6 +73,7 @@ fun BookDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val clipboard = LocalClipboardManager.current
+    var editingNote by remember { mutableStateOf<StoredNote?>(null) }
 
     // Returning from ReaderActivity resumes this same Activity/composition rather than
     // navigating back into it, so nothing else would otherwise re-trigger a reload -- without
@@ -153,6 +159,21 @@ fun BookDetailScreen(
                 Text(description, style = MaterialTheme.typography.bodyMedium)
             }
 
+            // CLAUDE-ADDED: Point-in-time snapshot of this book's own reading pace, matching
+            // StatefulBookSheet.tsx's "Reading Timer" section -- not the reader's own live ticking
+            // counter (see BookDetailViewModel.refresh's own comment). Hidden entirely if there's
+            // no reading time logged yet, same as the site (readingStats.totalSeconds > 0 gate).
+            if ((state.totalReadingSeconds ?: 0.0) > 0) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Reading Timer", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Time read: ${formatDuration(state.totalReadingSeconds!!)}")
+                    state.wpm?.let { Chip("Pace: $it wpm") }
+                    state.secondsLeft?.let { Chip("Time left: ${formatEstimatedTime(it)}") }
+                }
+            }
+
             // CLAUDE-ADDED: The most recent entry from the reader's own Completed tab, matching
             // StatefulBookSheet.tsx's "Completed Read" card -- only the single latest run, not the
             // full history list the reader's Completed tab shows.
@@ -177,7 +198,9 @@ fun BookDetailScreen(
                 Text("Notes", style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.notes.sortedByDescending { it.createdAt }.forEach { note -> NoteCard(note) }
+                    state.notes.sortedByDescending { it.createdAt }.forEach { note ->
+                        NoteCard(note = note, onClick = { editingNote = note })
+                    }
                 }
             }
 
@@ -205,6 +228,22 @@ fun BookDetailScreen(
             if (book.language != null) {
                 ChipSection(title = "Language") { Chip(book.language) }
             }
+        }
+
+        editingNote?.let { note ->
+            NoteEditorDialog(
+                initialText = note.text,
+                isNew = false,
+                onSave = { text ->
+                    viewModel.updateNoteText(note.id, text)
+                    editingNote = null
+                },
+                onDelete = {
+                    viewModel.deleteNote(note.id)
+                    editingNote = null
+                },
+                onDismiss = { editingNote = null }
+            )
         }
     }
 }
@@ -236,16 +275,22 @@ private fun DailyHistoryRow(bucket: DailyReadingBucket) {
 }
 
 /** One note, matching the site's per-note rendering: the highlighted passage it was attached to
- *  (if any), the note's own text, then chapter/percent/timestamp chips. */
+ *  (if any), the note's own text, then chapter/percent/timestamp chips. Tapping it opens the same
+ *  edit/delete NoteEditorDialog the reader's own annotations panel uses -- mirrors
+ *  StatefulBookSheet.tsx's inline "Edit note" affordance on this same read-only list. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun NoteCard(note: StoredNote) {
+private fun NoteCard(note: StoredNote, onClick: () -> Unit) {
     val quote = (note.locator?.jsonObject
         ?.get("text")?.jsonObject
         ?.get("highlight") as? JsonPrimitive)?.contentOrNull
     val percent = percentFromLocator(note.locator)
 
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             quote?.let {
                 Text("“$it”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -283,6 +328,16 @@ private fun formatDuration(totalSeconds: Double): String {
     if (hours > 0 || minutes > 0) parts.add("${minutes}m")
     parts.add("${seconds}s")
     return parts.joinToString(" ")
+}
+
+/** h/m only, rounded to the nearest minute -- matches the site's formatEstimatedTime. Unlike
+ *  [formatDuration]'s exact elapsed-time readouts, "time left in book" is inherently approximate
+ *  (derived from a WPM estimate), so showing seconds would imply false precision. */
+private fun formatEstimatedTime(totalSeconds: Double): String {
+    val totalMinutes = Math.round(totalSeconds / 60.0)
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours == 0L) "${minutes}m" else "${hours}h ${minutes}m"
 }
 
 @OptIn(ExperimentalLayoutApi::class)

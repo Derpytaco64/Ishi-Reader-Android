@@ -3,6 +3,8 @@ package com.ishireader.app.reader
 import com.ishireader.app.data.model.DailyReadingBucket
 import com.ishireader.app.data.model.ReadingSpeedSample
 import com.ishireader.app.data.model.StoredCompletedReadTime
+import com.ishireader.app.data.model.computeCurrentWpm
+import com.ishireader.app.data.model.computeSecondsLeft
 import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.CompletedReadsRepository
 import com.ishireader.app.data.repository.ReadingTimerRepository
@@ -20,7 +22,6 @@ import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.use
 import java.time.LocalDate
 import java.util.UUID
-import kotlin.math.abs
 
 data class ReadingTimerUiState(
     val loading: Boolean = true,
@@ -92,8 +93,8 @@ class ReadingTimerTracker(
         _state.value = _state.value.copy(
             loading = false,
             accumulatedSeconds = seconds,
-            wpm = computeCurrentWpm(),
-            secondsLeft = computeSecondsLeft(),
+            wpm = computeCurrentWpm(speedSamples),
+            secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples), lastTotalProgression),
             completedReads = completedReads.sortedByDescending { it.completedAt }
         )
     }
@@ -120,7 +121,10 @@ class ReadingTimerTracker(
 
     private fun tick() {
         val next = _state.value.accumulatedSeconds + 1.0
-        _state.value = _state.value.copy(accumulatedSeconds = next, secondsLeft = computeSecondsLeft())
+        _state.value = _state.value.copy(
+            accumulatedSeconds = next,
+            secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples), lastTotalProgression)
+        )
         tickCount++
         if (tickCount % PERSIST_INTERVAL_TICKS == 0) {
             scope.launch { flush() }
@@ -143,7 +147,9 @@ class ReadingTimerTracker(
         val previous = lastTotalProgression
         if (totalProgression != null) lastTotalProgression = totalProgression
         if (previous == null || totalProgression == null) {
-            _state.value = _state.value.copy(secondsLeft = computeSecondsLeft())
+            _state.value = _state.value.copy(
+                secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples), lastTotalProgression)
+            )
             return
         }
 
@@ -170,7 +176,8 @@ class ReadingTimerTracker(
             }
         }
 
-        _state.value = _state.value.copy(wpm = computeCurrentWpm(), secondsLeft = computeSecondsLeft())
+        val wpm = computeCurrentWpm(speedSamples)
+        _state.value = _state.value.copy(wpm = wpm, secondsLeft = computeSecondsLeft(wordCount, wpm, lastTotalProgression))
     }
 
     /** Discard: zero the live counters without archiving. Save: archive the current run as a
@@ -189,7 +196,10 @@ class ReadingTimerTracker(
 
         dailyBuckets.clear()
         lastSampleSeconds = 0.0
-        _state.value = _state.value.copy(accumulatedSeconds = 0.0, secondsLeft = computeSecondsLeft())
+        _state.value = _state.value.copy(
+            accumulatedSeconds = 0.0,
+            secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples), lastTotalProgression)
+        )
         repository.setReadingTimeSeconds(manifestUrl, 0.0)
         repository.setDailyReadingHistory(manifestUrl, emptyList())
 
@@ -200,42 +210,6 @@ class ReadingTimerTracker(
     suspend fun deleteCompletedRead(id: String) {
         completedReadsRepository.deleteCompletedReadTime(manifestUrl, id)
         _state.value = _state.value.copy(completedReads = _state.value.completedReads.filterNot { it.id == id })
-    }
-
-    /** <5 samples: simple weighted rate. >=5: median/MAD outlier-trimmed weighted rate -- mirrors
-     *  computeCurrentWpm in the website's computeReadingSpeed.ts. */
-    private fun computeCurrentWpm(): Int? {
-        if (speedSamples.isEmpty()) return null
-        val survivors = if (speedSamples.size < 5) {
-            speedSamples
-        } else {
-            val rates = speedSamples.map { it.deltaWords / (it.deltaSeconds / 60.0) }
-            val median = median(rates.sorted())
-            val mad = median(rates.map { abs(it - median) }.sorted())
-            if (mad > 0) {
-                speedSamples.filterIndexed { i, _ -> abs(rates[i] - median) / mad <= 2.5 }
-            } else {
-                speedSamples
-            }
-        }
-        val totalWords = survivors.sumOf { it.deltaWords }
-        val totalMinutes = survivors.sumOf { it.deltaSeconds } / 60.0
-        return if (totalMinutes > 0) (totalWords / totalMinutes).toInt() else null
-    }
-
-    private fun median(sorted: List<Double>): Double {
-        if (sorted.isEmpty()) return 0.0
-        val mid = sorted.size / 2
-        return if (sorted.size % 2 == 1) sorted[mid] else (sorted[mid - 1] + sorted[mid]) / 2.0
-    }
-
-    private fun computeSecondsLeft(): Double? {
-        val words = wordCount ?: return null
-        val wpm = computeCurrentWpm() ?: return null
-        if (wpm <= 0) return null
-        val progression = lastTotalProgression ?: 0.0
-        val wordsRemaining = words * (1.0 - progression)
-        return wordsRemaining / wpm * 60.0
     }
 
     /** Whitespace-token count of every reading-order resource's text, HTML tags/entities stripped

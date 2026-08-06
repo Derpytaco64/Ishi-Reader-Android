@@ -6,12 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.StoredCompletedReadTime
 import com.ishireader.app.data.model.StoredNote
+import com.ishireader.app.data.model.computeCurrentWpm
+import com.ishireader.app.data.model.computeSecondsLeft
 import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.data.model.percentFromLocator
+import com.ishireader.app.data.model.progressionFromLocator
 import com.ishireader.app.data.network.ApiResult
+import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.CompletedReadsRepository
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
+import com.ishireader.app.data.repository.ReadingTimerRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,20 +29,28 @@ data class BookDetailUiState(
     val notes: List<StoredNote> = emptyList(),
     /** Most recent entry from the reader's own Completed tab -- mirrors StatefulBookSheet.tsx's
      *  lastCompletedRead (max by completedAt, not array order). */
-    val lastCompletedRead: StoredCompletedReadTime? = null
+    val lastCompletedRead: StoredCompletedReadTime? = null,
+    /** This book's own "Reading Timer" figures -- mirrors StatefulBookSheet.tsx's ReadingStats
+     *  (totalSeconds/wpm/secondsLeft), a point-in-time snapshot rather than the reader's own live
+     *  ticking counter (this screen isn't open while actually reading). Null fields hide their row. */
+    val totalReadingSeconds: Double? = null,
+    val wpm: Int? = null,
+    val secondsLeft: Double? = null
 )
 
 /**
- * Reads the saved Locator's `locations.totalProgression` to derive a percent-read figure, plus the
- * book's notes and most recent completed-read run, matching StatefulBookSheet.tsx. Highlights/
- * bookmarks and the live reading-timer aren't ported yet -- they depend on API clients this app
- * doesn't have.
+ * Reads the saved Locator's `locations.totalProgression` to derive a percent-read figure, the
+ * book's notes, its most recent completed-read run, and a point-in-time "Reading Timer" snapshot
+ * (time read so far / current pace / estimated time left) -- matching StatefulBookSheet.tsx's
+ * ReadProgressDial + "Reading Timer" section + "Completed Read" section. Highlights/bookmarks
+ * aren't ported yet -- they depend on API clients this app doesn't have.
  */
 class BookDetailViewModel(
     private val book: Book,
     private val positionRepository: PositionRepository,
     private val notesRepository: NotesRepository,
-    private val completedReadsRepository: CompletedReadsRepository
+    private val completedReadsRepository: CompletedReadsRepository,
+    private val readingTimerRepository: ReadingTimerRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BookDetailUiState())
@@ -47,16 +60,19 @@ class BookDetailViewModel(
         refresh()
     }
 
-    /** Re-reads position/notes/completed-reads -- called on first load and again whenever this
-     *  screen resumes (see BookDetailScreen), since returning from ReaderActivity (a separate
-     *  Activity) doesn't otherwise re-trigger anything: it resumes the same Compose composition
-     *  rather than navigating back into it. positionRepository.getPosition already reconciles
-     *  against the server first, so this picks up whatever was just read. */
+    /** Re-reads position/notes/completed-reads/reading-timer figures -- called on first load and
+     *  again whenever this screen resumes (see BookDetailScreen), since returning from
+     *  ReaderActivity (a separate Activity) doesn't otherwise re-trigger anything: it resumes the
+     *  same Compose composition rather than navigating back into it. positionRepository.getPosition
+     *  already reconciles against the server first, so this picks up whatever was just read. */
     fun refresh() {
         viewModelScope.launch {
             val locatorDeferred = async { positionRepository.getPosition(book.manifestUrl()) }
             val notesDeferred = async { notesRepository.getNotes(book.manifestUrl()) }
             val completedReadsDeferred = async { completedReadsRepository.getCompletedReadTimes(book.manifestUrl()) }
+            val readingSecondsDeferred = async { readingTimerRepository.getReadingTimeSeconds(book.manifestUrl()) }
+            val wordCountDeferred = async { readingTimerRepository.getWordCount(book.manifestUrl()) }
+            val speedSamplesDeferred = async { readingTimerRepository.getReadingSpeedSamples() }
 
             val locator = locatorDeferred.await()
             val notes = when (val result = notesDeferred.await()) {
@@ -70,22 +86,49 @@ class BookDetailViewModel(
                 is ApiResult.Failure -> null
             }
 
+            // CLAUDE-ADDED: Same pace/time-left math the live in-reader tracker uses (see
+            // ReadingSpeed.kt), applied here as a one-off snapshot against the server's saved
+            // sample buffer/word count/position rather than a running ticker, since this screen
+            // isn't open while the book is actually being read.
+            val wordCount = wordCountDeferred.await().dataOrNull()
+            val speedSamples = speedSamplesDeferred.await().dataOrNull() ?: emptyList()
+            val wpm = computeCurrentWpm(speedSamples)
+
             _uiState.value = BookDetailUiState(
                 percentRead = percentFromLocator(locator),
                 notes = notes,
-                lastCompletedRead = lastCompletedRead
+                lastCompletedRead = lastCompletedRead,
+                totalReadingSeconds = readingSecondsDeferred.await().dataOrNull(),
+                wpm = wpm,
+                secondsLeft = computeSecondsLeft(wordCount, wpm, progressionFromLocator(locator))
             )
         }
+    }
+
+    /** Mirrors StatefulBookSheet.tsx's saveEditingNote -- same upsert-by-id save used by the
+     *  reader's own annotations panel, just triggered from this screen instead. Optimistic local
+     *  update so the edit shows immediately rather than waiting on the round trip. */
+    fun updateNoteText(id: String, text: String) {
+        val existing = _uiState.value.notes.find { it.id == id } ?: return
+        val updated = existing.copy(text = text, updatedAt = System.currentTimeMillis().toDouble())
+        _uiState.value = _uiState.value.copy(notes = _uiState.value.notes.map { if (it.id == id) updated else it })
+        viewModelScope.launch { notesRepository.saveNote(book.manifestUrl(), updated) }
+    }
+
+    fun deleteNote(id: String) {
+        _uiState.value = _uiState.value.copy(notes = _uiState.value.notes.filterNot { it.id == id })
+        viewModelScope.launch { notesRepository.deleteNote(book.manifestUrl(), id) }
     }
 
     class Factory(
         private val book: Book,
         private val positionRepository: PositionRepository,
         private val notesRepository: NotesRepository,
-        private val completedReadsRepository: CompletedReadsRepository
+        private val completedReadsRepository: CompletedReadsRepository,
+        private val readingTimerRepository: ReadingTimerRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            BookDetailViewModel(book, positionRepository, notesRepository, completedReadsRepository) as T
+            BookDetailViewModel(book, positionRepository, notesRepository, completedReadsRepository, readingTimerRepository) as T
     }
 }
