@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -210,7 +211,7 @@ class ReaderActivity : FragmentActivity() {
         showSyncingOverlay()
         lifecycleScope.launch {
             readerSettingsState.value = app.readerPreferencesStore.settings.first()
-            applyVerticalMargin(readerSettingsState.value.verticalMargin)
+            applyContainerAppearance(readerSettingsState.value)
             val localFile = ensureDownloaded(manifestUrl) ?: return@launch
             showSyncingOverlay()
             openPublication(localFile, manifestUrl)
@@ -219,11 +220,16 @@ class ReaderActivity : FragmentActivity() {
 
     /** [ReaderSettings.verticalMargin] has no Readium preference counterpart -- applied directly
      *  as padding on the navigator's own container view instead (see ReaderSettings' doc comment
-     *  for why). Safe to call before the navigator fragment exists; padding on the container is
-     *  independent of when its child view gets attached. */
-    private fun applyVerticalMargin(marginDp: Double) {
-        val px = (marginDp * resources.displayMetrics.density).roundToInt()
+     *  for why). That padding is outside the WebView, so it doesn't pick up the page's own
+     *  background color automatically -- without this it shows through as a plain white bar
+     *  regardless of the active reader theme, so the container's own background is kept in sync
+     *  with [ReaderTheme.backgroundHex] too (falling back to white, ReadiumCSS's own default,
+     *  when theme is null/"Auto"). Safe to call before the navigator fragment exists -- padding
+     *  and background on the container are independent of when its child view gets attached. */
+    private fun applyContainerAppearance(settings: ReaderSettings) {
+        val px = (settings.verticalMargin * resources.displayMetrics.density).roundToInt()
         readerContainer.setPadding(readerContainer.paddingLeft, px, readerContainer.paddingRight, px)
+        readerContainer.setBackgroundColor(android.graphics.Color.parseColor(settings.theme?.backgroundHex ?: "#FFFFFF"))
     }
 
     /** Returns the local file for this book, downloading it first if it isn't already cached.
@@ -396,6 +402,13 @@ class ReaderActivity : FragmentActivity() {
                 val chapterTitle = currentLocator?.let { locator -> publication?.chapterTitleFor(locator) }
                 val positionText = positionDisplayText(settings.positionDisplayMode, currentLocator, totalPositions)
 
+                // The chapter title/position overlays sit directly against the page, so they
+                // track the reader's own theme colors rather than the app's Material chrome
+                // theme (unlike the tap-menu bars, which stay on the app theme). White/#121212
+                // mirrors the same "Auto" fallback as applyContainerAppearance/EpubPreferences.
+                val readerBackgroundColor = Color(android.graphics.Color.parseColor(settings.theme?.backgroundHex ?: "#FFFFFF"))
+                val readerTextColor = Color(android.graphics.Color.parseColor(settings.theme?.textHex ?: "#121212"))
+
                 Box(Modifier.fillMaxSize()) {
                     // Top: tap-menu bar (back + title) stacked above the persistent chapter-title
                     // header. When the tap-menu is hidden, the chapter title -- if enabled -- is
@@ -439,14 +452,14 @@ class ReaderActivity : FragmentActivity() {
                         ) {
                             Text(
                                 text = chapterTitle.orEmpty(),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = readerTextColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                                    .background(readerBackgroundColor.copy(alpha = 0.85f))
                                     .then(
                                         if (!chromeShown) {
                                             Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
@@ -471,7 +484,7 @@ class ReaderActivity : FragmentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                                    .background(readerBackgroundColor.copy(alpha = 0.85f))
                                     .then(
                                         if (!chromeShown) {
                                             Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
@@ -479,12 +492,15 @@ class ReaderActivity : FragmentActivity() {
                                             Modifier
                                         }
                                     )
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                                    // Extra horizontal inset (beyond the safe-drawing insets
+                                    // above) so left/right-aligned text clears the screen edge
+                                    // instead of being cut off by it.
+                                    .padding(horizontal = 24.dp, vertical = 6.dp)
                             ) {
                                 Text(
                                     text = positionText.orEmpty(),
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    color = readerTextColor,
                                     modifier = Modifier.align(
                                         when (settings.positionDisplayAlignment) {
                                             PositionDisplayAlignment.LEFT -> Alignment.CenterStart
@@ -612,7 +628,7 @@ class ReaderActivity : FragmentActivity() {
      *  reader responds instantly and a failed/slow write never delays what the user sees. */
     private fun applyReaderSettings(updated: ReaderSettings) {
         readerSettingsState.value = updated
-        applyVerticalMargin(updated.verticalMargin)
+        applyContainerAppearance(updated)
         lifecycleScope.launch { applyPreferencesPreservingPosition(updated.toEpubPreferences()) }
         lifecycleScope.launch { app.readerPreferencesStore.save(updated) }
     }
