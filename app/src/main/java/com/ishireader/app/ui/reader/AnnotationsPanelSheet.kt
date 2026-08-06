@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ishireader.app.reader.AnnotationsUiState
@@ -44,6 +45,8 @@ import com.ishireader.app.reader.HighlightColor
 import kotlinx.serialization.json.JsonElement
 import org.json.JSONObject
 import org.readium.r2.shared.publication.Locator
+import java.text.DateFormat
+import java.util.Date
 
 enum class AnnotationTab { ALL, HIGHLIGHTS, BOOKMARKS, NOTES }
 
@@ -54,6 +57,7 @@ private data class AnnotationRow(
     val type: AnnotationType,
     val locator: Locator?,
     val createdAt: Double,
+    val updatedAt: Double? = null,
     val chapterTitle: String?,
     val colorHex: String? = null,
     val noteText: String? = null,
@@ -71,6 +75,7 @@ private data class AnnotationRow(
 @Composable
 fun AnnotationsPanelSheet(
     state: AnnotationsUiState,
+    totalPositions: Int?,
     onJump: (Locator) -> Unit,
     onBookmarkThisPage: () -> Unit,
     onDeleteHighlight: (String) -> Unit,
@@ -129,6 +134,7 @@ fun AnnotationsPanelSheet(
                     items(rows, key = { it.id }) { row ->
                         AnnotationRowItem(
                             row = row,
+                            totalPositions = totalPositions,
                             onJump = { row.locator?.let(onJump) },
                             onDelete = {
                                 when (row.type) {
@@ -150,6 +156,7 @@ fun AnnotationsPanelSheet(
 @Composable
 private fun AnnotationRowItem(
     row: AnnotationRow,
+    totalPositions: Int?,
     onJump: () -> Unit,
     onDelete: () -> Unit,
     onEditNote: (String) -> Unit
@@ -170,14 +177,45 @@ private fun AnnotationRowItem(
             Box(Modifier.padding(start = 8.dp))
         }
         Column(modifier = Modifier.weight(1f)) {
-            row.chapterTitle?.let {
-                Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            val body = row.noteText ?: row.quote ?: when (row.type) {
-                AnnotationType.BOOKMARK -> "Bookmark"
-                else -> ""
+            // Mirrors AnnotationsContent.tsx: a text-less bookmark/highlight falls back to the
+            // chapter title as its own excerpt line, so the meta line below omits it in that case
+            // to avoid showing the same chapter name twice in one row.
+            val usesChapterAsExcerpt = row.type != AnnotationType.NOTE && row.quote == null && row.chapterTitle != null
+            val body = when (row.type) {
+                AnnotationType.NOTE -> row.noteText.orEmpty()
+                else -> row.quote ?: row.chapterTitle ?: row.locator?.href?.toString().orEmpty()
             }
             Text(body, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+
+            if (row.type == AnnotationType.NOTE && row.quote != null) {
+                Text(
+                    "“${row.quote}”",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontStyle = FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            val metaParts = listOfNotNull(
+                if (!usesChapterAsExcerpt) row.chapterTitle else null,
+                locationLabel(row.locator, totalPositions),
+                if (row.type == AnnotationType.NOTE) {
+                    "Last edited " + formatTimestamp(row.updatedAt ?: row.createdAt)
+                } else {
+                    formatTimestamp(row.createdAt)
+                }
+            )
+            if (metaParts.isNotEmpty()) {
+                Text(
+                    metaParts.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
         if (row.type == AnnotationType.NOTE) {
             IconButton(onClick = { showNoteDialog = true }) {
@@ -218,12 +256,14 @@ private fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending:
     }
     if (tab == AnnotationTab.ALL || tab == AnnotationTab.BOOKMARKS) {
         state.bookmarks.forEach { b ->
+            val locator = b.locator?.let(::parseLocator)
             rows += AnnotationRow(
                 id = b.id,
                 type = AnnotationType.BOOKMARK,
-                locator = b.locator?.let(::parseLocator),
+                locator = locator,
                 createdAt = b.createdAt,
-                chapterTitle = b.chapterTitle
+                chapterTitle = b.chapterTitle,
+                quote = locator?.text?.highlight
             )
         }
     }
@@ -235,6 +275,7 @@ private fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending:
                 type = AnnotationType.NOTE,
                 locator = locator,
                 createdAt = n.createdAt,
+                updatedAt = n.updatedAt,
                 chapterTitle = n.chapterTitle,
                 noteText = n.text,
                 quote = locator?.text?.highlight
@@ -254,3 +295,19 @@ private fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending:
 
 private fun parseLocator(json: JsonElement): Locator? =
     runCatching { Locator.fromJSON(JSONObject(json.toString())) }.getOrNull()
+
+/** Mirrors the website's getLocationLabel.ts: page-of-total when a page count is known for this
+ *  locator, otherwise the same one-decimal percent format used elsewhere in the app. */
+private fun locationLabel(locator: Locator?, totalPositions: Int?): String? {
+    if (locator == null) return null
+    val page = locator.locations.position
+    if (page != null && totalPositions != null) return "$page of $totalPositions"
+
+    val totalProgression = locator.locations.totalProgression ?: return null
+    val percent = kotlin.math.round(totalProgression.coerceIn(0.0, 1.0) * 1000) / 10
+    return "%.1f%%".format(percent)
+}
+
+/** Mirrors the website's formatTimestamp.ts (Intl.DateTimeFormat with medium date + short time). */
+private fun formatTimestamp(epochMillis: Double): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMillis.toLong()))

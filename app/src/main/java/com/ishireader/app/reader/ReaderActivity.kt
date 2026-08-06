@@ -82,6 +82,7 @@ import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.Selection
+import org.readium.r2.navigator.html.HtmlDecorationTemplates
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
@@ -132,6 +133,11 @@ class ReaderActivity : FragmentActivity() {
         const val EXTRA_MANIFEST_URL = "manifest_url"
         const val EXTRA_TITLE = "title"
         private const val NAVIGATOR_FRAGMENT_TAG = "epub_navigator"
+
+        /** HtmlDecorationTemplate always renders a tinted decoration's background at *this* alpha,
+         *  overriding whatever alpha channel the tint color itself carries -- so this is the only
+         *  place highlight/note fill opacity can actually be controlled from. */
+        private const val ANNOTATION_DECORATION_ALPHA = 0.45
     }
 
     private val app: IshiReaderApp by lazy { application as IshiReaderApp }
@@ -378,7 +384,8 @@ class ReaderActivity : FragmentActivity() {
             initialLocator = initialLocator,
             initialPreferences = readerSettingsState.value.toEpubPreferences(),
             configuration = EpubNavigatorFragment.Configuration(
-                selectionActionModeCallback = selectionCallback
+                selectionActionModeCallback = selectionCallback,
+                decorationTemplates = HtmlDecorationTemplates.defaultTemplates(alpha = ANNOTATION_DECORATION_ALPHA)
             )
         )
         val fragment = fragmentFactory.instantiate(classLoader, EpubNavigatorFragment::class.java.name)
@@ -622,6 +629,7 @@ class ReaderActivity : FragmentActivity() {
                 if (annotationsSheetOpen) {
                     AnnotationsPanelSheet(
                         state = annotationsState,
+                        totalPositions = totalPositions,
                         onJump = { locator ->
                             navigatorFragment?.go(locator, animated = true)
                             annotationsSheetOpen = false
