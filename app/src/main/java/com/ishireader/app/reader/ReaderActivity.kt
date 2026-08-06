@@ -663,16 +663,21 @@ class ReaderActivity : FragmentActivity() {
                                         scrubProgress = null
                                     },
                                     modifier = Modifier.weight(1f).height(24.dp),
+                                    // This row sits on the app's chrome surface (like the icon bar
+                                    // below it), not the reader page background -- so it needs
+                                    // onSurface contrast, not readerTextColor (which is tuned to sit
+                                    // on readerBackgroundColor and can wash out against the chrome,
+                                    // e.g. a light-on-dark reading theme against a light chrome bar).
                                     colors = SliderDefaults.colors(
-                                        thumbColor = readerTextColor,
-                                        activeTrackColor = readerTextColor,
-                                        inactiveTrackColor = readerTextColor.copy(alpha = 0.3f)
+                                        thumbColor = MaterialTheme.colorScheme.onSurface,
+                                        activeTrackColor = MaterialTheme.colorScheme.onSurface,
+                                        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                                     )
                                 )
                                 Text(
                                     text = formatPercent(sliderValue.toDouble()),
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = readerTextColor,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.padding(start = 8.dp)
                                 )
                             }
