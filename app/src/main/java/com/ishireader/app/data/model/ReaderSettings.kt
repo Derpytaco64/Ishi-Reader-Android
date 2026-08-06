@@ -34,6 +34,16 @@ enum class ReaderLineHeight(val value: Double) { COMPACT(1.35), NORMAL(1.5), REL
 
 enum class ReaderLayout { PAGINATED, SCROLLED }
 
+/** What the bottom position indicator shows, if anything. [PAGE] mirrors Readium's own
+ *  Locator.Locations.position (1-based index into Publication.positions()); [PERCENT] mirrors
+ *  the exact rounding the library screen uses for its progress percentage
+ *  (see percentFromLocator); [PAGE_PERCENT] combines both, matching the "8 of 100 (8%)" example
+ *  given for it -- a whole-number percent in parentheses, distinct from [PERCENT]'s own
+ *  one-decimal format used everywhere else in the app. */
+enum class PositionDisplayMode { NONE, PAGE, PERCENT, PAGE_PERCENT }
+
+enum class PositionDisplayAlignment { LEFT, CENTER, RIGHT }
+
 /**
  * In-book reading preferences (font/spacing/theme/layout) -- distinct from [AppSettings], which
  * is the app's own chrome theme/accent/shelf config, not anything about how a book's text renders.
@@ -62,6 +72,17 @@ enum class ReaderLayout { PAGINATED, SCROLLED }
  * from the toolkit docs' own usage example (`pageMargins = 1.5` shown as a valid value) and
  * readium-css's general convention of expressing this as a multiplier of the base gutter (the
  * upper bound was doubled from an initial 2.0 cap at user request for more room on large screens).
+ *
+ * [verticalMargin] has no Readium counterpart at all -- EpubPreferences.pageMargins is
+ * documented as "Factor applied to horizontal margins" only, and the toolkit exposes no vertical
+ * equivalent or CSS-injection hook to fake one. It's applied outside Readium entirely, as plain
+ * View padding around the navigator's container in ReaderActivity, in dp rather than a factor
+ * since there's no toolkit-side base value to multiply.
+ *
+ * [showChapterTitle]/[positionDisplayMode]/[positionDisplayAlignment] drive the reading-frame
+ * overlays (current TOC chapter title up top, page/percent indicator at the bottom) -- both are
+ * app-level Compose UI, not Readium preferences, computed from the live Locator/Publication in
+ * ReaderActivity rather than submitted to the navigator.
  */
 @Serializable
 data class ReaderSettings(
@@ -77,7 +98,11 @@ data class ReaderSettings(
     val hyphens: Boolean? = null,
     val publisherStyles: Boolean = false,
     val layout: ReaderLayout = ReaderLayout.PAGINATED,
-    val pageMargins: Double? = null
+    val pageMargins: Double? = null,
+    val verticalMargin: Double = 0.0,
+    val showChapterTitle: Boolean = false,
+    val positionDisplayMode: PositionDisplayMode = PositionDisplayMode.NONE,
+    val positionDisplayAlignment: PositionDisplayAlignment = PositionDisplayAlignment.CENTER
 )
 
 fun ReaderSettings.toEpubPreferences(): EpubPreferences {

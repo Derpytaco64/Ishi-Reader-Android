@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -39,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -50,6 +52,8 @@ import androidx.fragment.app.FragmentTransaction
 import androidx.lifecycle.lifecycleScope
 import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
+import com.ishireader.app.data.model.PositionDisplayAlignment
+import com.ishireader.app.data.model.PositionDisplayMode
 import com.ishireader.app.data.model.ReaderSettings
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
@@ -75,6 +79,7 @@ import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.services.positions
 import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.Try
 import org.readium.r2.shared.util.asset.AssetRetriever
@@ -83,6 +88,9 @@ import org.readium.r2.shared.util.toUrl
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
 import java.io.File
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Downloads a book from the Ishi-Read server (see BookDownloadRepository -- the Go readium
@@ -115,12 +123,23 @@ class ReaderActivity : FragmentActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var progressText: TextView
     private lateinit var composeOverlay: ComposeView
+    private lateinit var readerContainer: View
 
     /** Plain (non-remember) Compose state so it can be mutated from outside the composition --
      *  see setUpSettingsOverlay/applyReaderSettings. Compose's snapshot system observes writes to
      *  this the same way it would a remembered one. */
     private val readerSettingsState = mutableStateOf(ReaderSettings())
     private var navigatorFragment: EpubNavigatorFragment? = null
+    private var publication: Publication? = null
+
+    /** Drives the chapter-title header and position indicator -- updated from the navigator's
+     *  currentLocator flow alongside savePosition/readingTimerTracker below. */
+    private val currentLocatorState = mutableStateOf<Locator?>(null)
+
+    /** Publication.positions() walks every resource to build the position list, so it's computed
+     *  once (off the main thread via lifecycleScope) rather than per-recomposition. Null until
+     *  that finishes -- the page-count indicator just waits until then. */
+    private val totalPositionsState = mutableStateOf<Int?>(null)
 
     private val readingTimerTracker: ReadingTimerTracker by lazy {
         ReadingTimerTracker(lifecycleScope, app.readingTimerRepository, app.completedReadsRepository)
@@ -173,6 +192,7 @@ class ReaderActivity : FragmentActivity() {
         progressBar = findViewById(R.id.reader_progress_bar)
         progressText = findViewById(R.id.reader_progress_text)
         composeOverlay = findViewById(R.id.reader_compose_overlay)
+        readerContainer = findViewById(R.id.reader_container)
 
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL)
         if (manifestUrl == null) {
@@ -190,10 +210,20 @@ class ReaderActivity : FragmentActivity() {
         showSyncingOverlay()
         lifecycleScope.launch {
             readerSettingsState.value = app.readerPreferencesStore.settings.first()
+            applyVerticalMargin(readerSettingsState.value.verticalMargin)
             val localFile = ensureDownloaded(manifestUrl) ?: return@launch
             showSyncingOverlay()
             openPublication(localFile, manifestUrl)
         }
+    }
+
+    /** [ReaderSettings.verticalMargin] has no Readium preference counterpart -- applied directly
+     *  as padding on the navigator's own container view instead (see ReaderSettings' doc comment
+     *  for why). Safe to call before the navigator fragment exists; padding on the container is
+     *  independent of when its child view gets attached. */
+    private fun applyVerticalMargin(marginDp: Double) {
+        val px = (marginDp * resources.displayMetrics.density).roundToInt()
+        readerContainer.setPadding(readerContainer.paddingLeft, px, readerContainer.paddingRight, px)
     }
 
     /** Returns the local file for this book, downloading it first if it isn't already cached.
@@ -276,6 +306,8 @@ class ReaderActivity : FragmentActivity() {
 
     private fun showNavigator(publication: Publication, initialLocator: Locator?, manifestUrl: String) {
         progressOverlay.visibility = View.GONE
+        this.publication = publication
+        lifecycleScope.launch { totalPositionsState.value = publication.positions().size }
 
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
 
@@ -303,6 +335,7 @@ class ReaderActivity : FragmentActivity() {
         navigatorFragment = fragment as EpubNavigatorFragment
         navigatorFragment!!.currentLocator
             .onEach { locator ->
+                currentLocatorState.value = locator
                 savePosition(locator)
                 readingTimerTracker.onLocatorChanged(locator)
             }
@@ -358,62 +391,136 @@ class ReaderActivity : FragmentActivity() {
                 val editingHighlightId by activeHighlightEditId
                 val editingNoteId by activeNoteEditId
                 val chromeShown by chromeVisible
+                val currentLocator by currentLocatorState
+                val totalPositions by totalPositionsState
+                val chapterTitle = currentLocator?.let { locator -> publication?.chapterTitleFor(locator) }
+                val positionText = positionDisplayText(settings.positionDisplayMode, currentLocator, totalPositions)
 
                 Box(Modifier.fillMaxSize()) {
-                    // Top bar: back button to exit the book, plus the title -- fades in with the
-                    // rest of the chrome rather than staying pinned, same as Moon+'s reading view.
-                    AnimatedVisibility(
-                        visible = chromeShown,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                        modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                                .padding(horizontal = 4.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    // Top: tap-menu bar (back + title) stacked above the persistent chapter-title
+                    // header. When the tap-menu is hidden, the chapter title -- if enabled -- is
+                    // the topmost element and needs the safe-drawing inset itself; when the
+                    // tap-menu is shown, it already absorbed that inset so the header doesn't
+                    // need to double up on it.
+                    Column(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                        AnimatedVisibility(
+                            visible = chromeShown,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            IconButton(onClick = { finish() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close book", tint = MaterialTheme.colorScheme.onSurface)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(onClick = { finish() }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close book", tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                                Text(
+                                    text = bookTitle,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f).padding(end = 16.dp)
+                                )
                             }
+                        }
+
+                        AnimatedVisibility(
+                            visible = settings.showChapterTitle && chapterTitle != null,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Text(
-                                text = bookTitle,
-                                style = MaterialTheme.typography.titleMedium,
+                                text = chapterTitle.orEmpty(),
+                                style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f).padding(end = 16.dp)
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                                    .then(
+                                        if (!chromeShown) {
+                                            Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
                             )
                         }
                     }
 
-                    // Bottom bar: annotations/timer/settings -- moved down from the old top-right
-                    // floating row so nothing sits behind a camera cutout.
-                    AnimatedVisibility(
-                        visible = chromeShown,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                    // Bottom: position indicator stacked above the tap-menu icon bar, same
+                    // stacking/inset reasoning as the top Column above.
+                    Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                        AnimatedVisibility(
+                            visible = positionText != null,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            IconButton(onClick = { annotationsSheetOpen = true }) {
-                                Icon(Icons.Filled.Bookmarks, contentDescription = "Annotations", tint = MaterialTheme.colorScheme.onSurface)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                                    .then(
+                                        if (!chromeShown) {
+                                            Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = positionText.orEmpty(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.align(
+                                        when (settings.positionDisplayAlignment) {
+                                            PositionDisplayAlignment.LEFT -> Alignment.CenterStart
+                                            PositionDisplayAlignment.CENTER -> Alignment.Center
+                                            PositionDisplayAlignment.RIGHT -> Alignment.CenterEnd
+                                        }
+                                    )
+                                )
                             }
-                            IconButton(onClick = { timerSheetOpen = true }) {
-                                Icon(Icons.Filled.Timer, contentDescription = "Reading timer", tint = MaterialTheme.colorScheme.onSurface)
-                            }
-                            IconButton(onClick = { settingsSheetOpen = true }) {
-                                Icon(Icons.Filled.Settings, contentDescription = "Reader settings", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+
+                        // Bottom bar: annotations/timer/settings -- moved down from the old
+                        // top-right floating row so nothing sits behind a camera cutout.
+                        AnimatedVisibility(
+                            visible = chromeShown,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                IconButton(onClick = { annotationsSheetOpen = true }) {
+                                    Icon(Icons.Filled.Bookmarks, contentDescription = "Annotations", tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                                IconButton(onClick = { timerSheetOpen = true }) {
+                                    Icon(Icons.Filled.Timer, contentDescription = "Reading timer", tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                                IconButton(onClick = { settingsSheetOpen = true }) {
+                                    Icon(Icons.Filled.Settings, contentDescription = "Reader settings", tint = MaterialTheme.colorScheme.onSurface)
+                                }
                             }
                         }
                     }
@@ -505,6 +612,7 @@ class ReaderActivity : FragmentActivity() {
      *  reader responds instantly and a failed/slow write never delays what the user sees. */
     private fun applyReaderSettings(updated: ReaderSettings) {
         readerSettingsState.value = updated
+        applyVerticalMargin(updated.verticalMargin)
         lifecycleScope.launch { applyPreferencesPreservingPosition(updated.toEpubPreferences()) }
         lifecycleScope.launch { app.readerPreferencesStore.save(updated) }
     }
@@ -560,4 +668,44 @@ class ReaderActivity : FragmentActivity() {
 
 private inline fun FragmentManager.commitNow(body: FragmentTransaction.() -> Unit) {
     beginTransaction().apply(body).commitNow()
+}
+
+/** One-decimal-place percent, matching percentFromLocator's rounding (used by the library
+ *  screen) exactly, so the standalone [PositionDisplayMode.PERCENT] reads the same everywhere in
+ *  the app -- e.g. "23.2%". */
+private fun formatPercent(totalProgression: Double): String {
+    val percent = kotlin.math.round(min(1.0, max(0.0, totalProgression)) * 1000) / 10
+    return "%.1f%%".format(percent)
+}
+
+/** Builds the bottom position indicator's text per [mode], or null if there's nothing to show
+ *  (mode is NONE, or the data it needs hasn't loaded/isn't available for this locator yet).
+ *  [PositionDisplayMode.PAGE_PERCENT] uses a whole-number percent in parentheses -- distinct from
+ *  the one-decimal [formatPercent] used by the standalone PERCENT mode -- per the "8 of 100 (8%)"
+ *  example this was speced against. */
+private fun positionDisplayText(
+    mode: PositionDisplayMode,
+    locator: Locator?,
+    totalPositions: Int?
+): String? {
+    if (mode == PositionDisplayMode.NONE || locator == null) return null
+
+    val page = locator.locations.position
+    val pageText = if (page != null && totalPositions != null) "$page of $totalPositions" else null
+    val totalProgression = locator.locations.totalProgression
+
+    return when (mode) {
+        PositionDisplayMode.NONE -> null
+        PositionDisplayMode.PAGE -> pageText
+        PositionDisplayMode.PERCENT -> totalProgression?.let { formatPercent(it) }
+        PositionDisplayMode.PAGE_PERCENT -> {
+            val percentWhole = totalProgression?.let { (min(1.0, max(0.0, it)) * 100).roundToInt() }
+            when {
+                pageText != null && percentWhole != null -> "$pageText ($percentWhole%)"
+                pageText != null -> pageText
+                percentWhole != null -> "$percentWhole%"
+                else -> null
+            }
+        }
+    }
 }

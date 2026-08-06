@@ -22,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.ishireader.app.data.model.PositionDisplayAlignment
+import com.ishireader.app.data.model.PositionDisplayMode
 import com.ishireader.app.data.model.ReaderFontFamily
 import com.ishireader.app.data.model.ReaderLayout
 import com.ishireader.app.data.model.ReaderLineHeight
@@ -103,13 +105,49 @@ fun ReaderSettingsSheet(
                 onSelect = { onSettingsChange(settings.copy(lineHeight = it, publisherStyles = false)) }
             )
             LabeledSlider(
-                label = "Margin",
+                label = "Horizontal Margin",
                 value = (settings.pageMargins ?: 1.0).toFloat(),
                 valueRange = 0.5f..4.0f,
                 steps = 34,
                 valueLabel = settings.pageMargins?.let { "%.1fx".format(it) } ?: "Default",
                 onValueChange = { onSettingsChange(settings.copy(pageMargins = it.toDouble())) }
             )
+            LabeledSlider(
+                label = "Vertical Margin",
+                value = settings.verticalMargin.toFloat(),
+                valueRange = 0f..64f,
+                steps = 15,
+                valueLabel = if (settings.verticalMargin > 0) "${settings.verticalMargin.roundToInt()}dp" else "None",
+                onValueChange = { onSettingsChange(settings.copy(verticalMargin = it.toDouble())) }
+            )
+
+            SectionLabel("Display")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Text("Show chapter title", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = settings.showChapterTitle,
+                    onCheckedChange = { onSettingsChange(settings.copy(showChapterTitle = it)) }
+                )
+            }
+            SegmentedOptionRow(
+                label = "Position Indicator",
+                options = PositionDisplayMode.entries,
+                selected = settings.positionDisplayMode,
+                optionLabel = { it.label() },
+                onSelect = { onSettingsChange(settings.copy(positionDisplayMode = it)) }
+            )
+            if (settings.positionDisplayMode != PositionDisplayMode.NONE) {
+                SegmentedOptionRow(
+                    label = "Position Alignment",
+                    options = PositionDisplayAlignment.entries,
+                    selected = settings.positionDisplayAlignment,
+                    optionLabel = { it.label() },
+                    onSelect = { onSettingsChange(settings.copy(positionDisplayAlignment = it)) }
+                )
+            }
 
             SectionLabel("Spacing")
             Row(
@@ -290,6 +328,19 @@ private fun ReaderLineHeight?.label(): String = when (this) {
 private fun ReaderLayout.label(): String = when (this) {
     ReaderLayout.PAGINATED -> "Paginated"
     ReaderLayout.SCROLLED -> "Scrolled"
+}
+
+private fun PositionDisplayMode.label(): String = when (this) {
+    PositionDisplayMode.NONE -> "Off"
+    PositionDisplayMode.PAGE -> "Page"
+    PositionDisplayMode.PERCENT -> "Percent"
+    PositionDisplayMode.PAGE_PERCENT -> "Page + Percent"
+}
+
+private fun PositionDisplayAlignment.label(): String = when (this) {
+    PositionDisplayAlignment.LEFT -> "Left"
+    PositionDisplayAlignment.CENTER -> "Center"
+    PositionDisplayAlignment.RIGHT -> "Right"
 }
 
 private fun formatSpacing(value: Double?): String = value?.let { "%.2f".format(it) } ?: "Publisher"
