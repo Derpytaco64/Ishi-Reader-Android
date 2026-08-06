@@ -79,6 +79,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import org.readium.r2.navigator.DecorableNavigator
@@ -144,6 +145,15 @@ class ReaderActivity : FragmentActivity() {
          *  overriding whatever alpha channel the tint color itself carries -- so this is the only
          *  place highlight/note fill opacity can actually be controlled from. */
         private const val ANNOTATION_DECORATION_ALPHA = 0.45
+
+        /** How often [preservePositionAcross] polls currentLocator while waiting for a reflow to
+         *  settle. See that function's own doc comment for why this replaced a fixed-delay wait. */
+        private const val POSITION_PIN_POLL_INTERVAL_MS = 120L
+
+        /** Safety-valve ceiling on how long [preservePositionAcross] will keep re-snapping before
+         *  giving up -- guards against fighting a genuine user page-turn forever if the anchor can
+         *  never be reproduced (e.g. its underlying text no longer exists after some other change). */
+        private const val POSITION_PIN_TIMEOUT_MS = 3000L
     }
 
     private val app: IshiReaderApp by lazy { application as IshiReaderApp }
@@ -194,9 +204,11 @@ class ReaderActivity : FragmentActivity() {
      *  auto-timeout, same as the website. */
     private val returnLocatorState = mutableStateOf<Locator?>(null)
 
-    /** Guards preservePositionAcross against rapid repeated changes (e.g. dragging a slider)
-     *  racing each other -- mirrors the website's submitGenerationRef. */
-    private var preferencesApplyGeneration = 0
+    /** Bumped by every explicit navigation this Activity issues -- a preservePositionAcross
+     *  correction, or the user tapping TOC/scrub/annotations/return-to-position (see [navigateTo])
+     *  -- so a running correction loop can tell a newer navigation has superseded it and stop
+     *  fighting it. Mirrors the website's submitGenerationRef, broadened the same way. */
+    private var navigationGeneration = 0
 
     /** Moon+ Reader-style immersive reading: hidden by default, revealed by a center tap (see
      *  ChromeTapInputListener) -- also drives whether the system bars are shown. */
@@ -570,7 +582,7 @@ class ReaderActivity : FragmentActivity() {
                                 // tapped -- no auto-timeout, persists until the user actually uses it.
                                 if (returnLocator != null) {
                                     IconButton(onClick = {
-                                        returnLocator?.let { navigatorFragment?.go(it, animated = true) }
+                                        returnLocator?.let { navigateTo(it, animated = true) }
                                         returnLocatorState.value = null
                                     }) {
                                         Icon(
@@ -645,8 +657,12 @@ class ReaderActivity : FragmentActivity() {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    // Gap before the background so the bottom icon bar right below
+                                    // doesn't visually fuse with this one -- both use the same
+                                    // chrome surface color, so with no gap they read as one bar.
+                                    .padding(bottom = 6.dp)
                                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                    .padding(start = 12.dp, end = 16.dp),
+                                    .padding(start = 12.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Slider(
@@ -658,7 +674,7 @@ class ReaderActivity : FragmentActivity() {
                                         if (!positions.isNullOrEmpty() && fraction != null) {
                                             val index = (fraction * (positions.size - 1)).roundToInt()
                                                 .coerceIn(0, positions.size - 1)
-                                            navigatorFragment?.go(positions[index], animated = false)
+                                            navigateTo(positions[index], animated = false)
                                         }
                                         scrubProgress = null
                                     },
@@ -741,7 +757,7 @@ class ReaderActivity : FragmentActivity() {
                         TocPanelSheet(
                             publication = pub,
                             onJump = { locator ->
-                                navigatorFragment?.go(locator, animated = true)
+                                navigateTo(locator, animated = true)
                                 tocSheetOpen = false
                             },
                             onDismiss = { tocSheetOpen = false }
@@ -755,7 +771,7 @@ class ReaderActivity : FragmentActivity() {
                         totalPositions = totalPositions,
                         onJump = { locator ->
                             currentLocatorState.value?.let { returnLocatorState.value = it }
-                            navigatorFragment?.go(locator, animated = true)
+                            navigateTo(locator, animated = true)
                             annotationsSheetOpen = false
                         },
                         onBookmarkThisPage = {
@@ -863,6 +879,19 @@ class ReaderActivity : FragmentActivity() {
         preservePositionAcross { toggleOrientation() }
     }
 
+    /** [android.content.pm.ActivityInfo]-driven config changes we declare in the manifest
+     *  (screenSize/screenLayout in particular -- split-screen, a foldable's hinge angle, entering
+     *  desktop mode) can reflow the WebView without ever going through [toggleOrientation] or the
+     *  requestedOrientation lock that guards it. Without this override those reflows got zero
+     *  position correction at all, silently, since nothing else in this Activity ever saw them
+     *  happen. Routed through the same [preservePositionAcross] as every other layout-affecting
+     *  change. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!::readerContainer.isInitialized) return
+        lifecycleScope.launch { preservePositionAcross { } }
+    }
+
     private fun toggleOrientation() {
         requestedOrientation = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -878,34 +907,81 @@ class ReaderActivity : FragmentActivity() {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
 
+    /** Bumps [navigationGeneration] before navigating, so any correction loop currently running
+     *  inside [preservePositionAcross] notices on its next poll and gives up instead of fighting
+     *  a navigation the user actually asked for. Every explicit go() this Activity issues outside
+     *  of preservePositionAcross's own corrective re-snaps (TOC/scrub/annotation/return-to-position
+     *  jumps) must go through this, not navigatorFragment.go() directly. */
+    private fun navigateTo(locator: Locator, animated: Boolean) {
+        navigationGeneration++
+        navigatorFragment?.go(locator, animated = animated)
+    }
+
+    /** Roughly the same reading position: same resource, and either the same positions-list index
+     *  or (when that's unavailable) a total-progression fraction within a tight tolerance. Used to
+     *  tell whether a corrective re-snap has actually landed, without demanding byte-for-byte
+     *  locator equality (a text-anchor search can resolve to a slightly different cssSelector than
+     *  the one it started from and still be "the same place" for this purpose). */
+    private fun Locator.roughlyMatches(other: Locator): Boolean {
+        if (href != other.href) return false
+        val position = locations.position
+        val otherPosition = other.locations.position
+        if (position != null && otherPosition != null) return position == otherPosition
+        val progression = locations.totalProgression
+        val otherProgression = other.locations.totalProgression
+        return progression != null && otherProgression != null &&
+            kotlin.math.abs(progression - otherProgression) < 0.001
+    }
+
     /**
      * Captures a content-anchored locator (firstVisibleElementLocator finds the first visible
      * block and anchors it with a DOM/text-quote locator, not a raw scroll fraction) before
-     * [change] runs, then re-navigates to it once the WebView has had a moment to reflow.
-     * [preferencesApplyGeneration] discards a stale re-navigation if a newer change (e.g. another
-     * slider tick, or a second rotation) has since superseded this one.
+     * [change] runs, then keeps re-asserting it against the navigator's own currentLocator until
+     * it actually settles there -- rather than assuming a fixed delay is long enough.
      *
-     * The website's own first cut of this fix had a race: the reflow's internal auto-snap (a
-     * ResizeObserver on the *content* WebView's own body, not driven by our corrective go() call
-     * at all) can still be pending when our first go() resolves, and if it fires afterward it
-     * silently re-clamps to the wrong pixel offset and undoes our correction (see Ishi-Read commit
-     * 831ac5fc, "font size changing fix"). The fix there -- and here -- is to re-assert the same
-     * go() a second time after giving that observer a further moment to have already fired, so our
-     * correction is the last word either way. Still gated by the same generation check.
+     * This replaced an earlier version that re-asserted the anchor exactly twice, each after a
+     * fixed 150ms delay. That assumed the WebView's own internal reflow-driven auto-snap (a
+     * ResizeObserver on the *content* WebView's own body, not driven by our corrective go() call at
+     * all -- see Ishi-Read commit 831ac5fc, "font size changing fix") would always have finished
+     * re-clamping within ~300ms. It doesn't reliably: when it fires later than that, it re-derives
+     * position from the *old* pixel scroll offset against the *newly* reflowed (usually wider, for
+     * a bigger font/margin) column width, silently undoing our correction and landing much earlier
+     * in the text than before the change -- visibly "the page jumped way back in the book" after
+     * changing a setting or rotating, exactly the symptom this exists to prevent. Polling
+     * currentLocator and re-snapping on every drift -- instead of guessing how long to wait --
+     * keeps winning that race for as long as it takes. If you're tempted to go back to a fixed
+     * delay()+go() here, don't; that's the bug this replaced.
+     *
+     * [navigationGeneration] still discards a stale correction loop the moment a newer one
+     * (another slider tick, a second rotation, or the user explicitly jumping elsewhere via
+     * [navigateTo]) supersedes it, so this never fights a real user action for more than one poll
+     * interval. [POSITION_PIN_TIMEOUT_MS] is a pure safety valve for the case where the anchor can
+     * never be reproduced (its text no longer exists) -- normal settling is expected to take a
+     * handful of poll intervals at most.
      */
     private suspend fun preservePositionAcross(change: () -> Unit) {
-        val generation = ++preferencesApplyGeneration
+        val generation = ++navigationGeneration
         val anchor = (navigatorFragment as? VisualNavigator)?.firstVisibleElementLocator()
         change()
-        if (anchor == null) return
+        val fragment = navigatorFragment as? VisualNavigator
+        if (anchor == null || fragment == null) return
 
-        delay(150)
-        if (preferencesApplyGeneration != generation) return
-        navigatorFragment?.go(anchor, animated = false)
+        var stableStreak = 0
+        withTimeoutOrNull(POSITION_PIN_TIMEOUT_MS) {
+            while (true) {
+                delay(POSITION_PIN_POLL_INTERVAL_MS)
+                if (navigationGeneration != generation) return@withTimeoutOrNull
 
-        delay(150)
-        if (preferencesApplyGeneration != generation) return
-        navigatorFragment?.go(anchor, animated = false)
+                val current = fragment.currentLocator.value
+                if (current.roughlyMatches(anchor)) {
+                    stableStreak++
+                    if (stableStreak >= 2) return@withTimeoutOrNull
+                } else {
+                    stableStreak = 0
+                    fragment.go(anchor, animated = false)
+                }
+            }
+        }
     }
 
     private fun savePosition(locator: Locator) {
