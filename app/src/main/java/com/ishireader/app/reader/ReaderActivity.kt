@@ -369,7 +369,8 @@ class ReaderActivity : FragmentActivity() {
                     anchorRect = overlayRectFor(selection.rect)
                 )
             },
-            onNote = { locator -> pendingNewNoteLocator.value = locator }
+            onNote = { locator -> pendingNewNoteLocator.value = locator },
+            onBookmark = { locator -> annotationsController.addBookmark(locator) }
         )
 
         val navigatorFactory = EpubNavigatorFactory(publication = publication)

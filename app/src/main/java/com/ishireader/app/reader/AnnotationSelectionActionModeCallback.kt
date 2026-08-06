@@ -11,10 +11,13 @@ import org.readium.r2.shared.publication.Locator
 
 private const val ACTION_ID_HIGHLIGHT = 1
 private const val ACTION_ID_NOTE = 2
+private const val ACTION_ID_BOOKMARK = 3
 
 /**
- * Adds "Highlight" and "Note" items to the text-selection floating toolbar -- the hook Readium
- * Kotlin exposes for this (EpubNavigatorFragment.Configuration.selectionActionModeCallback).
+ * Adds "Highlight", "Note", and "Bookmark" items to the text-selection floating toolbar -- the
+ * hook Readium Kotlin exposes for this
+ * (EpubNavigatorFragment.Configuration.selectionActionModeCallback). Mirrors the three
+ * non-dictionary actions SelectionPopover.tsx offers for a fresh (non-existing) selection.
  * "Highlight" hands the whole [Selection] (locator + on-screen rect) back rather than just a
  * Locator, since the caller uses the rect to anchor the website's color-swatch popover
  * (HighlightColorPopover) right at the selection, mirroring SelectionPopover.tsx, instead of
@@ -34,12 +37,14 @@ class AnnotationSelectionActionModeCallback(
      *  construction time. */
     private val navigatorProvider: () -> SelectableNavigator?,
     private val onHighlight: (Selection) -> Unit,
-    private val onNote: (Locator) -> Unit
+    private val onNote: (Locator) -> Unit,
+    private val onBookmark: (Locator) -> Unit
 ) : ActionMode.Callback {
 
     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
         menu.add(Menu.NONE, ACTION_ID_HIGHLIGHT, 1, "Highlight")
         menu.add(Menu.NONE, ACTION_ID_NOTE, 2, "Note")
+        menu.add(Menu.NONE, ACTION_ID_BOOKMARK, 3, "Bookmark")
         return true
     }
 
@@ -55,6 +60,11 @@ class AnnotationSelectionActionModeCallback(
             ACTION_ID_NOTE -> scope.launch {
                 val navigator = navigatorProvider() ?: return@launch
                 navigator.currentSelection()?.locator?.let(onNote)
+                navigator.clearSelection()
+            }
+            ACTION_ID_BOOKMARK -> scope.launch {
+                val navigator = navigatorProvider() ?: return@launch
+                navigator.currentSelection()?.locator?.let(onBookmark)
                 navigator.clearSelection()
             }
             else -> return false
