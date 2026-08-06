@@ -11,19 +11,26 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -336,6 +344,8 @@ class ReaderActivity : FragmentActivity() {
      *  they're the same objects read here and written from outside the composition -- one source
      *  of truth regardless of which side changes it. */
     private fun setUpSettingsOverlay() {
+        val bookTitle = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+
         composeOverlay.setContent {
             IshiReaderTheme {
                 var settingsSheetOpen by remember { mutableStateOf(false) }
@@ -350,33 +360,59 @@ class ReaderActivity : FragmentActivity() {
                 val chromeShown by chromeVisible
 
                 Box(Modifier.fillMaxSize()) {
+                    // Top bar: back button to exit the book, plus the title -- fades in with the
+                    // rest of the chrome rather than staying pinned, same as Moon+'s reading view.
                     AnimatedVisibility(
                         visible = chromeShown,
                         enter = fadeIn(),
                         exit = fadeOut(),
-                        modifier = Modifier.align(Alignment.TopEnd)
+                        modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
-                                .safeDrawingPadding()
-                                .padding(8.dp)
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(
-                                onClick = { annotationsSheetOpen = true },
-                                modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
-                            ) {
+                            IconButton(onClick = { finish() }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close book", tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                            Text(
+                                text = bookTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f).padding(end = 16.dp)
+                            )
+                        }
+                    }
+
+                    // Bottom bar: annotations/timer/settings -- moved down from the old top-right
+                    // floating row so nothing sits behind a camera cutout.
+                    AnimatedVisibility(
+                        visible = chromeShown,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            IconButton(onClick = { annotationsSheetOpen = true }) {
                                 Icon(Icons.Filled.Bookmarks, contentDescription = "Annotations", tint = MaterialTheme.colorScheme.onSurface)
                             }
-                            IconButton(
-                                onClick = { timerSheetOpen = true },
-                                modifier = Modifier.padding(start = 8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
-                            ) {
+                            IconButton(onClick = { timerSheetOpen = true }) {
                                 Icon(Icons.Filled.Timer, contentDescription = "Reading timer", tint = MaterialTheme.colorScheme.onSurface)
                             }
-                            IconButton(
-                                onClick = { settingsSheetOpen = true },
-                                modifier = Modifier.padding(start = 8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
-                            ) {
+                            IconButton(onClick = { settingsSheetOpen = true }) {
                                 Icon(Icons.Filled.Settings, contentDescription = "Reader settings", tint = MaterialTheme.colorScheme.onSurface)
                             }
                         }
@@ -484,16 +520,28 @@ class ReaderActivity : FragmentActivity() {
      * fraction) before submitting the new preferences, then re-navigate to it once the WebView has
      * had a moment to reflow. [preferencesApplyGeneration] discards a stale re-navigation if a
      * newer preference change (e.g. another slider tick) has since superseded this one.
+     *
+     * The website's own first cut of this fix had a race: submitPreferences's internal auto-snap
+     * (a ResizeObserver on the *content* WebView's own body, not driven by our corrective go() call
+     * at all) can still be pending when our first go() resolves, and if it fires afterward it
+     * silently re-clamps to the wrong pixel offset and undoes our correction (see Ishi-Read commit
+     * 831ac5fc, "font size changing fix"). The fix there -- and here -- is to re-assert the same
+     * go() a second time after giving that observer a further moment to have already fired, so our
+     * correction is the last word either way. Still gated by the same generation check.
      */
     private suspend fun applyPreferencesPreservingPosition(preferences: EpubPreferences) {
         val generation = ++preferencesApplyGeneration
         val anchor = (navigatorFragment as? VisualNavigator)?.firstVisibleElementLocator()
         navigatorFragment?.submitPreferences(preferences)
         if (anchor == null) return
+
         delay(150)
-        if (preferencesApplyGeneration == generation) {
-            navigatorFragment?.go(anchor, animated = false)
-        }
+        if (preferencesApplyGeneration != generation) return
+        navigatorFragment?.go(anchor, animated = false)
+
+        delay(150)
+        if (preferencesApplyGeneration != generation) return
+        navigatorFragment?.go(anchor, animated = false)
     }
 
     private fun savePosition(locator: Locator) {
