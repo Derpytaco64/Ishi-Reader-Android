@@ -18,6 +18,7 @@ import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.DecorableNavigator
 import org.readium.r2.shared.publication.Locator
 import java.util.UUID
+import kotlin.math.roundToInt
 
 /** The website's fixed 5-swatch highlight palette (HIGHLIGHT_COLORS in highlightColors.ts) --
  *  colors are chosen from this set, not a free picker. */
@@ -40,6 +41,19 @@ const val ANNOTATIONS_GROUP_NOTES = "notes"
 /** Fixed neutral tint for note underlines -- NOTE_DECORATION_HEX in the website, distinct from
  *  and not part of the highlight palette (notes aren't user-colorable). */
 private const val NOTE_TINT_HEX = "#B0B0B0"
+
+/** The website's highlight decorations (toDecoration.ts) pass the swatch hex straight through at
+ *  full opacity too, but @readium/navigator's own CSS for its "boxes" highlight layout applies
+ *  further transparency/blend-mode of its own on top of that -- the Kotlin toolkit's WebView
+ *  decoration renderer doesn't, so a fully-opaque tint here renders as a solid, text-obscuring
+ *  block instead of a normal highlighter look. Baked into the tint's own alpha channel instead
+ *  since Decoration.Style.Highlight has no separate opacity knob. */
+private const val HIGHLIGHT_TINT_ALPHA = 0.55f
+
+private fun Int.withAlpha(fraction: Float): Int {
+    val alpha = (fraction.coerceIn(0f, 1f) * 255).roundToInt()
+    return (this and 0x00FFFFFF) or (alpha shl 24)
+}
 
 data class AnnotationsUiState(
     val loading: Boolean = true,
@@ -91,7 +105,7 @@ class AnnotationsController(
                 id = h.id,
                 locator = locator,
                 style = Decoration.Style.Highlight(
-                    tint = android.graphics.Color.parseColor(HighlightColor.fromId(h.color).hex),
+                    tint = android.graphics.Color.parseColor(HighlightColor.fromId(h.color).hex).withAlpha(HIGHLIGHT_TINT_ALPHA),
                     isActive = true
                 )
             )
