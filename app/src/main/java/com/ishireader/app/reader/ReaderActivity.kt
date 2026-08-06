@@ -4,6 +4,7 @@ package com.ishireader.app.reader
 
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.RectF
 import android.os.Bundle
 import android.view.View
 import android.widget.ProgressBar
@@ -62,7 +63,7 @@ import com.ishireader.app.data.model.ReaderSettings
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.ui.reader.AnnotationsPanelSheet
-import com.ishireader.app.ui.reader.HighlightEditDialog
+import com.ishireader.app.ui.reader.HighlightColorPopover
 import com.ishireader.app.ui.reader.NoteEditorDialog
 import com.ishireader.app.ui.reader.ReaderSettingsSheet
 import com.ishireader.app.ui.reader.ReadingTimerSheet
@@ -80,6 +81,7 @@ import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.r2.navigator.Selection
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
@@ -95,6 +97,17 @@ import java.io.File
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+
+/** Drives HighlightColorPopover -- [anchorRect] is already converted to the ComposeView's local
+ *  coordinate space (see ReaderActivity.overlayRectFor), null falls back to centering the popover.
+ *  [existingHighlightId] is null when picking a color for a brand-new selection, non-null when
+ *  re-coloring/deleting a highlight the user tapped (mirrors the website's SelectionPopover, which
+ *  reuses the same swatch row for both, distinguished by pendingSelection.existing). */
+private data class PendingHighlightPicker(
+    val locator: Locator,
+    val anchorRect: RectF?,
+    val existingHighlightId: String? = null
+)
 
 /**
  * Downloads a book from the Ishi-Read server (see BookDownloadRepository -- the Go readium
@@ -155,7 +168,7 @@ class ReaderActivity : FragmentActivity() {
     /** Plain mutableStateOf, same reasoning as readerSettingsState -- these are written from
      *  outside the composition (the selection ActionMode callback, the decoration-tap listener). */
     private val pendingNewNoteLocator = mutableStateOf<Locator?>(null)
-    private val activeHighlightEditId = mutableStateOf<String?>(null)
+    private val pendingHighlightColorPicker = mutableStateOf<PendingHighlightPicker?>(null)
     private val activeNoteEditId = mutableStateOf<String?>(null)
 
     /** Guards applyPreferencesPreservingPosition against rapid repeated preference submissions
@@ -239,6 +252,27 @@ class ReaderActivity : FragmentActivity() {
         val px = (settings.verticalMargin * resources.displayMetrics.density).roundToInt()
         readerContainer.setPadding(readerContainer.paddingLeft, px, readerContainer.paddingRight, px)
         readerContainer.setBackgroundColor(android.graphics.Color.parseColor(settings.theme?.backgroundHex ?: "#FFFFFF"))
+    }
+
+    /** [Selection.rect]/[DecorableNavigator.OnActivatedEvent.rect] are documented as "in the
+     *  coordinate of the navigator view" -- i.e. relative to VisualNavigator.publicationView (the
+     *  WebView pager), not this Activity's root or the ComposeView overlay HighlightColorPopover
+     *  actually draws into. composeOverlay and the navigator's container are full-size siblings in
+     *  the same root FrameLayout, so the only difference between the two coordinate spaces is
+     *  publicationView's own on-screen offset within that container (nonzero once vertical margin
+     *  padding pushes it down) -- measured fresh each call since that offset can change. */
+    private fun overlayRectFor(rect: RectF?): RectF? {
+        if (rect == null) return null
+        val publicationView = (navigatorFragment as? VisualNavigator)?.publicationView ?: return null
+
+        val navigatorLocation = IntArray(2)
+        publicationView.getLocationInWindow(navigatorLocation)
+        val overlayLocation = IntArray(2)
+        composeOverlay.getLocationInWindow(overlayLocation)
+
+        val dx = (navigatorLocation[0] - overlayLocation[0]).toFloat()
+        val dy = (navigatorLocation[1] - overlayLocation[1]).toFloat()
+        return RectF(rect.left + dx, rect.top + dy, rect.right + dx, rect.bottom + dy)
     }
 
     /** Returns the local file for this book, downloading it first if it isn't already cached.
@@ -329,7 +363,12 @@ class ReaderActivity : FragmentActivity() {
         val selectionCallback = AnnotationSelectionActionModeCallback(
             scope = lifecycleScope,
             navigatorProvider = { navigatorFragment as? SelectableNavigator },
-            onHighlight = { locator -> annotationsController.addHighlight(locator) },
+            onHighlight = { selection: Selection ->
+                pendingHighlightColorPicker.value = PendingHighlightPicker(
+                    locator = selection.locator,
+                    anchorRect = overlayRectFor(selection.rect)
+                )
+            },
             onNote = { locator -> pendingNewNoteLocator.value = locator }
         )
 
@@ -359,7 +398,11 @@ class ReaderActivity : FragmentActivity() {
         val decorationListener = object : DecorableNavigator.Listener {
             override fun onDecorationActivated(event: DecorableNavigator.OnActivatedEvent): Boolean {
                 when (event.group) {
-                    ANNOTATIONS_GROUP_HIGHLIGHTS -> activeHighlightEditId.value = event.decoration.id
+                    ANNOTATIONS_GROUP_HIGHLIGHTS -> pendingHighlightColorPicker.value = PendingHighlightPicker(
+                        locator = event.decoration.locator,
+                        anchorRect = overlayRectFor(event.rect),
+                        existingHighlightId = event.decoration.id
+                    )
                     ANNOTATIONS_GROUP_NOTES -> activeNoteEditId.value = event.decoration.id
                     else -> return false
                 }
@@ -403,7 +446,7 @@ class ReaderActivity : FragmentActivity() {
                 val timerState by readingTimerTracker.state.collectAsState()
                 val annotationsState by annotationsController.state.collectAsState()
                 val pendingNote by pendingNewNoteLocator
-                val editingHighlightId by activeHighlightEditId
+                val highlightPicker by pendingHighlightColorPicker
                 val editingNoteId by activeNoteEditId
                 val chromeShown by chromeVisible
                 val currentLocator by currentLocatorState
@@ -606,17 +649,28 @@ class ReaderActivity : FragmentActivity() {
                     )
                 }
 
-                editingHighlightId?.let { id ->
-                    HighlightEditDialog(
+                highlightPicker?.let { picker ->
+                    val existingId = picker.existingHighlightId
+                    HighlightColorPopover(
+                        anchor = picker.anchorRect,
+                        selectedColor = existingId?.let { id ->
+                            HighlightColor.fromId(annotationsController.highlightById(id)?.color)
+                        },
                         onColorSelected = { color ->
-                            annotationsController.updateHighlightColor(id, color)
-                            activeHighlightEditId.value = null
+                            if (existingId != null) {
+                                annotationsController.updateHighlightColor(existingId, color)
+                            } else {
+                                annotationsController.addHighlight(picker.locator, color)
+                            }
+                            pendingHighlightColorPicker.value = null
                         },
-                        onDelete = {
-                            annotationsController.deleteHighlight(id)
-                            activeHighlightEditId.value = null
+                        onDelete = existingId?.let { id ->
+                            {
+                                annotationsController.deleteHighlight(id)
+                                pendingHighlightColorPicker.value = null
+                            }
                         },
-                        onDismiss = { activeHighlightEditId.value = null }
+                        onDismiss = { pendingHighlightColorPicker.value = null }
                     )
                 }
 

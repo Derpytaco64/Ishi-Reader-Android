@@ -6,6 +6,7 @@ import android.view.MenuItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.SelectableNavigator
+import org.readium.r2.navigator.Selection
 import org.readium.r2.shared.publication.Locator
 
 private const val ACTION_ID_HIGHLIGHT = 1
@@ -14,9 +15,10 @@ private const val ACTION_ID_NOTE = 2
 /**
  * Adds "Highlight" and "Note" items to the text-selection floating toolbar -- the hook Readium
  * Kotlin exposes for this (EpubNavigatorFragment.Configuration.selectionActionModeCallback).
- * Mirrors the website's SelectionPopover color-swatch/note icons, simplified to two actions since
- * Android's ActionMode has little room for a 5-swatch color picker inline; a highlight's color can
- * be changed afterward by tapping the highlight it creates (see AnnotationsController).
+ * "Highlight" hands the whole [Selection] (locator + on-screen rect) back rather than just a
+ * Locator, since the caller uses the rect to anchor the website's color-swatch popover
+ * (HighlightColorPopover) right at the selection, mirroring SelectionPopover.tsx, instead of
+ * silently applying a default color the way the old single "Highlight" action used to.
  *
  * Providing a custom callback here replaces the WebView's default action mode entirely (confirmed
  * in R2BasicWebView.startActionMode -- it bypasses super.startActionMode when a custom callback is
@@ -31,7 +33,7 @@ class AnnotationSelectionActionModeCallback(
      *  SelectableNavigator) is instantiated, so there's nothing to reference yet at
      *  construction time. */
     private val navigatorProvider: () -> SelectableNavigator?,
-    private val onHighlight: (Locator) -> Unit,
+    private val onHighlight: (Selection) -> Unit,
     private val onNote: (Locator) -> Unit
 ) : ActionMode.Callback {
 
@@ -44,15 +46,18 @@ class AnnotationSelectionActionModeCallback(
     override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
 
     override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-        val handler = when (item.itemId) {
-            ACTION_ID_HIGHLIGHT -> onHighlight
-            ACTION_ID_NOTE -> onNote
+        when (item.itemId) {
+            ACTION_ID_HIGHLIGHT -> scope.launch {
+                val navigator = navigatorProvider() ?: return@launch
+                navigator.currentSelection()?.let(onHighlight)
+                navigator.clearSelection()
+            }
+            ACTION_ID_NOTE -> scope.launch {
+                val navigator = navigatorProvider() ?: return@launch
+                navigator.currentSelection()?.locator?.let(onNote)
+                navigator.clearSelection()
+            }
             else -> return false
-        }
-        scope.launch {
-            val navigator = navigatorProvider() ?: return@launch
-            navigator.currentSelection()?.locator?.let(handler)
-            navigator.clearSelection()
         }
         mode.finish()
         return true
