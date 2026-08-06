@@ -15,6 +15,11 @@ import java.io.File
 import java.net.URLDecoder
 import java.security.MessageDigest
 
+/** A single in-flight download's progress, keyed by [id] (the book's content-hash key -- see
+ *  [BookDownloadRepository.keyFor]) so the library screen's download ring can tell concurrent
+ *  downloads apart and weight each one's ring segment by [totalBytes]. */
+data class DownloadProgress(val id: String, val bytesRead: Long, val totalBytes: Long)
+
 /**
  * Downloads a book's raw publication file (epub/pdf/cbz, or an audiobook's, since this is the
  * same generic download used by both -- see ReaderActivity.ensureDownloaded) to local storage so
@@ -37,6 +42,11 @@ class BookDownloadRepository(
     private val _downloadsVersion = MutableStateFlow(0)
     val downloadsVersion: StateFlow<Int> = _downloadsVersion.asStateFlow()
 
+    /** Every currently in-flight download, keyed by [DownloadProgress.id] -- drives the library
+     *  screen's download progress ring (see MainTabsScreen's DownloadProgressRing). */
+    private val _activeDownloads = MutableStateFlow<Map<String, DownloadProgress>>(emptyMap())
+    val activeDownloads: StateFlow<Map<String, DownloadProgress>> = _activeDownloads.asStateFlow()
+
     private fun keyFor(manifestUrl: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(manifestUrl.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
@@ -58,7 +68,8 @@ class BookDownloadRepository(
         manifestUrl: String,
         onProgress: (bytesRead: Long, totalBytes: Long) -> Unit = { _, _ -> }
     ): ApiResult<File> = withContext(Dispatchers.IO) {
-        val tempFile = File(booksDir, "${keyFor(manifestUrl)}.part")
+        val key = keyFor(manifestUrl)
+        val tempFile = File(booksDir, "$key.part")
         try {
             val response = network.api.downloadBook(manifestUrl)
             val body = response.body()
@@ -66,9 +77,12 @@ class BookDownloadRepository(
                 return@withContext ApiResult.Failure("Couldn't download book (${response.code()})")
             }
 
-            writeToFile(body, tempFile, onProgress)
+            writeToFile(body, tempFile) { bytesRead, totalBytes ->
+                _activeDownloads.update { it + (key to DownloadProgress(key, bytesRead, totalBytes)) }
+                onProgress(bytesRead, totalBytes)
+            }
 
-            val finalFile = File(booksDir, "${keyFor(manifestUrl)}.${extensionFor(response)}")
+            val finalFile = File(booksDir, "$key.${extensionFor(response)}")
             localFileFor(manifestUrl)?.delete()
             tempFile.renameTo(finalFile)
             _downloadsVersion.update { it + 1 }
@@ -76,6 +90,8 @@ class BookDownloadRepository(
         } catch (e: Exception) {
             tempFile.delete()
             ApiResult.Failure(e.message ?: "Network error")
+        } finally {
+            _activeDownloads.update { it - key }
         }
     }
 

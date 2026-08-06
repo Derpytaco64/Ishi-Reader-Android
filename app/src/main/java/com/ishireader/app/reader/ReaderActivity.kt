@@ -70,6 +70,7 @@ import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.ui.reader.AnnotationsPanelSheet
 import com.ishireader.app.ui.reader.HighlightColorPopover
+import com.ishireader.app.ui.reader.ImageViewerOverlay
 import com.ishireader.app.ui.reader.NoteEditorDialog
 import com.ishireader.app.ui.reader.ReaderSettingsSheet
 import com.ishireader.app.ui.reader.ReadingTimerSheet
@@ -204,6 +205,7 @@ class ReaderActivity : FragmentActivity() {
     private val pendingNewNoteLocator = mutableStateOf<Locator?>(null)
     private val pendingHighlightColorPicker = mutableStateOf<PendingHighlightPicker?>(null)
     private val activeNoteEditId = mutableStateOf<String?>(null)
+    private val pendingImageOverlay = mutableStateOf<TappedImage?>(null)
 
     /** Mirrors the website's returnLocator (StatefulAnnotationsContainer/StatefulReaderFooter):
      *  the locator we were at right before jumping to an annotation from the panel, so a "return
@@ -442,11 +444,24 @@ class ReaderActivity : FragmentActivity() {
         }
 
         navigatorFragment = fragment as EpubNavigatorFragment
+        var lastDecoratedHref: String? = null
         navigatorFragment!!.currentLocator
             .onEach { locator ->
                 currentLocatorState.value = locator
                 savePosition(locator)
                 readingTimerTracker.onLocatorChanged(locator)
+                // Belt-and-suspenders against decorations silently missing on a chapter that
+                // wasn't the visible one yet when annotationsController.start() first fetched and
+                // applied them (Readium's own re-apply-on-load only fires for a resource the very
+                // moment its WebView finishes loading, which annotations fetched over the network
+                // can easily race) -- forcing one more applyDecorations() while this href is
+                // definitely the loaded page uses the exact same code path that already reliably
+                // decorates the chapter the reader opens on.
+                val href = locator.href.toString()
+                if (href != lastDecoratedHref) {
+                    lastDecoratedHref = href
+                    annotationsController.reapplyDecorations()
+                }
             }
             .launchIn(lifecycleScope)
 
@@ -470,7 +485,13 @@ class ReaderActivity : FragmentActivity() {
 
         val visualNavigator = navigatorFragment as VisualNavigator
         visualNavigator.addInputListener(
-            ChromeTapInputListener(visualNavigator) { setChromeVisible(!chromeVisible.value) }
+            ImageTapInputListener(
+                fragment = navigatorFragment!!,
+                publication = publication,
+                scope = lifecycleScope,
+                fallback = ChromeTapInputListener(visualNavigator) { setChromeVisible(!chromeVisible.value) },
+                onImageTapped = { pendingImageOverlay.value = it }
+            )
         )
         setChromeVisible(false)
 
@@ -856,6 +877,10 @@ class ReaderActivity : FragmentActivity() {
                         },
                         onDismiss = { activeNoteEditId.value = null }
                     )
+                }
+
+                pendingImageOverlay.value?.let { image ->
+                    ImageViewerOverlay(image = image, onClose = { pendingImageOverlay.value = null })
                 }
             }
         }

@@ -3,6 +3,13 @@ package com.ishireader.app.ui.main
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -62,6 +69,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -78,6 +88,8 @@ import com.ishireader.app.data.model.UserStats
 import com.ishireader.app.data.model.buildNotesMarkdown
 import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.data.model.notesExportFilename
+import com.ishireader.app.data.repository.DownloadProgress
+import kotlinx.coroutines.delay
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.StatsRepository
@@ -100,6 +112,9 @@ import kotlinx.coroutines.launch
 private val TabTitles = listOf("Home", "Library", "Series", "Shelves")
 private val LogoSize = 56.dp
 private val AvatarSize = 40.dp
+private val DownloadRingSize = 48.dp
+private val AvatarRingsSize = 62.dp
+private val RingStrokeWidth = 3.dp
 
 /** Home/Library/Series as swipeable pages under one tab strip, instead of separate pushed
  *  destinations -- each keeps its own ViewModel (scoped to this composable's back stack entry,
@@ -134,6 +149,9 @@ fun MainTabsScreen(
     val app = context.applicationContext as IshiReaderApp
     val downloadsVersion by app.bookDownloadRepository.downloadsVersion.collectAsState()
     val coverSize = LocalAppSettings.current.coverSize
+    val activeDownloads by app.bookDownloadRepository.activeDownloads.collectAsState()
+    val isSyncingFlow = remember { app.syncScheduler.isSyncingFlow() }
+    val isSyncing by isSyncingFlow.collectAsState(initial = false)
 
     // CLAUDE-ADDED: Mirrors the website's StatefulLibrarySearch -- a plain client-side filter over
     // the whole already-fetched library (both ebooks and audiobooks, from Home's own My Library
@@ -251,8 +269,20 @@ fun MainTabsScreen(
                     modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
                 )
                 Box {
-                    Box(modifier = Modifier.clickable { userMenuExpanded = true }) {
-                        UserAvatar(user = user, baseUrl = avatarBaseUrl)
+                    Box(
+                        modifier = Modifier.size(AvatarRingsSize),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // CLAUDE-ADDED: Outer ring circles while a background sync (position or
+                        // library-prefs) is running, then fills solid and fades out on completion.
+                        SyncProgressRing(isSyncing = isSyncing, modifier = Modifier.size(AvatarRingsSize))
+                        // CLAUDE-ADDED: Inner ring fills clockwise with download progress, one arc
+                        // segment per concurrently-downloading book, each segment's share of the
+                        // ring weighted by that book's file size.
+                        DownloadProgressRing(downloads = activeDownloads.values.toList(), modifier = Modifier.size(DownloadRingSize))
+                        Box(modifier = Modifier.clickable { userMenuExpanded = true }) {
+                            UserAvatar(user = user, baseUrl = avatarBaseUrl)
+                        }
                     }
                     DropdownMenu(expanded = userMenuExpanded, onDismissRequest = { userMenuExpanded = false }) {
                         Text(
@@ -302,15 +332,17 @@ fun MainTabsScreen(
             // results grid regardless of which tab was active, rather than filtering within it.
             if (trimmedSearchQuery.isNotEmpty()) {
                 // CLAUDE-ADDED: Matches the tab pages' own background -- each of those renders
-                // inside its own Scaffold, which paints MaterialTheme.colorScheme.background by
-                // default; this sits directly in the outer Column instead (no Scaffold of its own),
-                // so without this it fell through to the window's default background instead of
-                // following the app's Light/Dark/accent-color theme setting.
-                Box(
+                // inside its own Scaffold, which paints MaterialTheme.colorScheme.background (and,
+                // just as importantly, provides a matching LocalContentColor -- IshiReaderTheme
+                // itself is a bare MaterialTheme with no Surface, so without one here book titles
+                // fell back to Compose's hardcoded default content color instead of following the
+                // app's Light/Dark/accent-color theme setting) by default; this sits directly in the
+                // outer Column instead (no Scaffold of its own).
+                Surface(
+                    color = MaterialTheme.colorScheme.background,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(MaterialTheme.colorScheme.background)
                 ) {
                     if (searchResults.isEmpty()) {
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -465,6 +497,69 @@ private fun UserAvatar(user: PublicUser?, baseUrl: String?) {
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center
             )
+        }
+    }
+}
+
+/** Inner ring around the avatar: one arc segment per concurrently-downloading book, each
+ *  segment's share of the circle weighted by that book's total byte size (so a 400MB audiobook
+ *  claims proportionally more of the ring than a 2MB epub), filling clockwise from 12 o'clock as
+ *  that book's bytesRead/totalBytes grows. Draws nothing when nothing is downloading. */
+@Composable
+private fun DownloadProgressRing(downloads: List<DownloadProgress>, modifier: Modifier = Modifier) {
+    if (downloads.isEmpty()) return
+    val color = MaterialTheme.colorScheme.primary
+    val trackColor = color.copy(alpha = 0.25f)
+    val gapDegrees = if (downloads.size > 1) 6f else 0f
+    Canvas(modifier = modifier) {
+        val stroke = Stroke(width = RingStrokeWidth.toPx(), cap = StrokeCap.Round)
+        val totalBytes = downloads.sumOf { it.totalBytes.coerceAtLeast(1L) }.toFloat()
+        var startAngle = -90f
+        downloads.forEach { download ->
+            val segmentBytes = download.totalBytes.coerceAtLeast(1L).toFloat()
+            val segmentSweep = 360f * (segmentBytes / totalBytes)
+            val drawSweep = (segmentSweep - gapDegrees).coerceAtLeast(0f)
+            val drawStart = startAngle + gapDegrees / 2f
+            val progress = (download.bytesRead.toFloat() / segmentBytes).coerceIn(0f, 1f)
+            drawArc(color = trackColor, startAngle = drawStart, sweepAngle = drawSweep, useCenter = false, style = stroke)
+            drawArc(color = color, startAngle = drawStart, sweepAngle = drawSweep * progress, useCenter = false, style = stroke)
+            startAngle += segmentSweep
+        }
+    }
+}
+
+/** Outer ring, surrounding the download ring: circles continuously (an indeterminate arc, like
+ *  Material's spinner) while [isSyncing] is true, then -- on the transition back to false -- fills
+ *  to a complete ring and fades out, giving a clear "sync just finished" confirmation instead of
+ *  just silently vanishing. Draws nothing once idle. */
+@Composable
+private fun SyncProgressRing(isSyncing: Boolean, modifier: Modifier = Modifier) {
+    val color = MaterialTheme.colorScheme.primary
+    var wasSyncing by remember { mutableStateOf(false) }
+    val completionAlpha = remember { Animatable(0f) }
+    LaunchedEffect(isSyncing) {
+        if (!isSyncing && wasSyncing) {
+            completionAlpha.snapTo(1f)
+            delay(300)
+            completionAlpha.animateTo(0f, animationSpec = tween(500))
+        }
+        wasSyncing = isSyncing
+    }
+    val infiniteTransition = rememberInfiniteTransition(label = "syncRingRotation")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing)),
+        label = "syncRingRotationAngle"
+    )
+    Canvas(modifier = modifier) {
+        val stroke = Stroke(width = RingStrokeWidth.toPx(), cap = StrokeCap.Round)
+        if (isSyncing) {
+            rotate(rotation) {
+                drawArc(color = color, startAngle = -90f, sweepAngle = 110f, useCenter = false, style = stroke)
+            }
+        } else if (completionAlpha.value > 0f) {
+            drawArc(color = color.copy(alpha = completionAlpha.value), startAngle = -90f, sweepAngle = 360f, useCenter = false, style = stroke)
         }
     }
 }

@@ -112,6 +112,13 @@ class AnnotationsController(
         nav.applyDecorations(noteDecorations, ANNOTATIONS_GROUP_NOTES)
     }
 
+    /** Re-pushes the current highlight/note decorations to the navigator without re-fetching from
+     *  the server -- see ReaderActivity's currentLocator collector, which calls this every time the
+     *  visible chapter changes as a defense against decorations that raced the initial fetch. */
+    fun reapplyDecorations() {
+        scope.launch { applyDecorations() }
+    }
+
     fun highlightById(id: String): StoredHighlight? = _state.value.highlights.find { it.id == id }
     fun noteById(id: String): StoredNote? = _state.value.notes.find { it.id == id }
 

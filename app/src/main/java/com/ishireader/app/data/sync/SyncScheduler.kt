@@ -6,7 +6,10 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import java.util.concurrent.TimeUnit
 
 /**
@@ -44,6 +47,20 @@ class SyncScheduler(private val context: Context) {
     private fun connectedConstraints() = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
+
+    /** True while either sync worker is actively running -- drives the library screen's sync
+     *  progress ring (see MainTabsScreen's SyncProgressRing). Only [WorkInfo.State.RUNNING] counts,
+     *  not ENQUEUED: a request can sit enqueued indefinitely offline, which would otherwise spin
+     *  the ring forever instead of just while a sync is genuinely happening. */
+    fun isSyncingFlow(): Flow<Boolean> {
+        val workManager = WorkManager.getInstance(context)
+        return combine(
+            workManager.getWorkInfosForUniqueWorkFlow(POSITION_SYNC_WORK_NAME),
+            workManager.getWorkInfosForUniqueWorkFlow(LIBRARY_PREFS_SYNC_WORK_NAME)
+        ) { position, prefs ->
+            (position + prefs).any { it.state == WorkInfo.State.RUNNING }
+        }
+    }
 
     companion object {
         private const val POSITION_SYNC_WORK_NAME = "position-sync"

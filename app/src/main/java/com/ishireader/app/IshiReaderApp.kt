@@ -47,6 +47,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         private set
     lateinit var bookDownloadRepository: BookDownloadRepository
         private set
+    lateinit var syncScheduler: SyncScheduler
+        private set
     lateinit var libraryPrefsRepository: LibraryPrefsRepository
         private set
     lateinit var notesRepository: NotesRepository
@@ -68,7 +70,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         readerPreferencesStore = ReaderPreferencesStore(this)
         network = NetworkModule(this)
         database = IshiReaderDatabase.getInstance(this)
-        val syncScheduler = SyncScheduler(this)
+        syncScheduler = SyncScheduler(this)
         authRepository = AuthRepository(network, database.cachedUserDao())
         libraryRepository = LibraryRepository(network, database.cachedBookDao())
         positionRepository = PositionRepository(
