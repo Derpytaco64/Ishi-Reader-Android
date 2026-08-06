@@ -493,6 +493,10 @@ class ReaderActivity : FragmentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    // Lifts the whole bar a bit off the bottom edge -- applied
+                                    // before the background so the gap stays empty rather than
+                                    // getting filled in by it.
+                                    .padding(bottom = 8.dp)
                                     .background(readerBackgroundColor.copy(alpha = 0.85f))
                                     .then(
                                         if (!chromeShown) {
@@ -504,7 +508,7 @@ class ReaderActivity : FragmentActivity() {
                                     // Extra horizontal inset (beyond the safe-drawing insets
                                     // above) so left/right-aligned text clears the screen edge
                                     // instead of being cut off by it.
-                                    .padding(horizontal = 24.dp, vertical = 6.dp)
+                                    .padding(horizontal = 32.dp, vertical = 6.dp)
                             ) {
                                 Text(
                                     text = positionText.orEmpty(),
