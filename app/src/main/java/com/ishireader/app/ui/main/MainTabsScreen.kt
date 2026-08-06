@@ -301,28 +301,40 @@ fun MainTabsScreen(
             // own comment) -- a non-empty query replaces the entire tab strip/pager with a flat
             // results grid regardless of which tab was active, rather than filtering within it.
             if (trimmedSearchQuery.isNotEmpty()) {
-                if (searchResults.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "No books match \"$trimmedSearchQuery\".",
-                            modifier = Modifier.padding(24.dp)
-                        )
-                    }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
-                        contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize().weight(1f)
-                    ) {
-                        items(searchResults) { book ->
-                            BookCoverCard(
-                                book = book,
-                                onClick = { onBookClick(book) },
-                                modifier = Modifier.fillMaxWidth(),
-                                onLongClick = { contextMenuBook = book }
+                // CLAUDE-ADDED: Matches the tab pages' own background -- each of those renders
+                // inside its own Scaffold, which paints MaterialTheme.colorScheme.background by
+                // default; this sits directly in the outer Column instead (no Scaffold of its own),
+                // so without this it fell through to the window's default background instead of
+                // following the app's Light/Dark/accent-color theme setting.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    if (searchResults.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "No books match \"$trimmedSearchQuery\".",
+                                modifier = Modifier.padding(24.dp)
                             )
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = coverSize.minWidthDp.dp),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(searchResults) { book ->
+                                BookCoverCard(
+                                    book = book,
+                                    onClick = { onBookClick(book) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onLongClick = { contextMenuBook = book }
+                                )
+                            }
                         }
                     }
                 }
