@@ -58,9 +58,10 @@ enum class ReaderLayout { PAGINATED, SCROLLED }
  * website's workaround isn't portable here -- using the native preference is the only available
  * mechanism. Exact documented bounds for pageMargins could not be confirmed (not in the Kotlin
  * toolkit's prose docs, not in readium-css's own preference docs, and unextractable via
- * strings-on-bytecode since it's a constant-pool double literal); 0.5-2.0 default 1.0 is chosen
+ * strings-on-bytecode since it's a constant-pool double literal); 0.5-4.0 default 1.0 is chosen
  * from the toolkit docs' own usage example (`pageMargins = 1.5` shown as a valid value) and
- * readium-css's general convention of expressing this as a multiplier of the base gutter.
+ * readium-css's general convention of expressing this as a multiplier of the base gutter (the
+ * upper bound was doubled from an initial 2.0 cap at user request for more room on large screens).
  */
 @Serializable
 data class ReaderSettings(

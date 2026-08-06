@@ -7,6 +7,9 @@ import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -30,6 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
@@ -45,6 +51,7 @@ import com.ishireader.app.ui.reader.NoteEditorDialog
 import com.ishireader.app.ui.reader.ReaderSettingsSheet
 import com.ishireader.app.ui.reader.ReadingTimerSheet
 import com.ishireader.app.ui.theme.IshiReaderTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -53,8 +60,10 @@ import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import org.readium.r2.navigator.DecorableNavigator
 import org.readium.r2.navigator.SelectableNavigator
+import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
+import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
@@ -117,6 +126,25 @@ class ReaderActivity : FragmentActivity() {
     private val pendingNewNoteLocator = mutableStateOf<Locator?>(null)
     private val activeHighlightEditId = mutableStateOf<String?>(null)
     private val activeNoteEditId = mutableStateOf<String?>(null)
+
+    /** Guards applyPreferencesPreservingPosition against rapid repeated preference submissions
+     *  (e.g. dragging a slider) racing each other -- mirrors the website's submitGenerationRef. */
+    private var preferencesApplyGeneration = 0
+
+    /** Moon+ Reader-style immersive reading: hidden by default, revealed by a center tap (see
+     *  ChromeTapInputListener) -- also drives whether the system bars are shown. */
+    private val chromeVisible = mutableStateOf(false)
+
+    private fun setChromeVisible(visible: Boolean) {
+        chromeVisible.value = visible
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (visible) {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
 
     override fun onResume() {
         super.onResume()
@@ -286,6 +314,12 @@ class ReaderActivity : FragmentActivity() {
         decorableNavigator.addDecorationListener(ANNOTATIONS_GROUP_HIGHLIGHTS, decorationListener)
         decorableNavigator.addDecorationListener(ANNOTATIONS_GROUP_NOTES, decorationListener)
 
+        val visualNavigator = navigatorFragment as VisualNavigator
+        visualNavigator.addInputListener(
+            ChromeTapInputListener(visualNavigator) { setChromeVisible(!chromeVisible.value) }
+        )
+        setChromeVisible(false)
+
         lifecycleScope.launch {
             readingTimerTracker.start(manifestUrl, publication)
             readingTimerTracker.onResumed()
@@ -313,31 +347,38 @@ class ReaderActivity : FragmentActivity() {
                 val pendingNote by pendingNewNoteLocator
                 val editingHighlightId by activeHighlightEditId
                 val editingNoteId by activeNoteEditId
+                val chromeShown by chromeVisible
 
                 Box(Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .statusBarsPadding()
-                            .padding(8.dp)
+                    AnimatedVisibility(
+                        visible = chromeShown,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.align(Alignment.TopEnd)
                     ) {
-                        IconButton(
-                            onClick = { annotationsSheetOpen = true },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                        Row(
+                            modifier = Modifier
+                                .statusBarsPadding()
+                                .padding(8.dp)
                         ) {
-                            Icon(Icons.Filled.Bookmarks, contentDescription = "Annotations", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        IconButton(
-                            onClick = { timerSheetOpen = true },
-                            modifier = Modifier.padding(start = 8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
-                        ) {
-                            Icon(Icons.Filled.Timer, contentDescription = "Reading timer", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        IconButton(
-                            onClick = { settingsSheetOpen = true },
-                            modifier = Modifier.padding(start = 8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
-                        ) {
-                            Icon(Icons.Filled.Settings, contentDescription = "Reader settings", tint = MaterialTheme.colorScheme.onSurface)
+                            IconButton(
+                                onClick = { annotationsSheetOpen = true },
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                            ) {
+                                Icon(Icons.Filled.Bookmarks, contentDescription = "Annotations", tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                            IconButton(
+                                onClick = { timerSheetOpen = true },
+                                modifier = Modifier.padding(start = 8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                            ) {
+                                Icon(Icons.Filled.Timer, contentDescription = "Reading timer", tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                            IconButton(
+                                onClick = { settingsSheetOpen = true },
+                                modifier = Modifier.padding(start = 8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                            ) {
+                                Icon(Icons.Filled.Settings, contentDescription = "Reader settings", tint = MaterialTheme.colorScheme.onSurface)
+                            }
                         }
                     }
                 }
@@ -428,8 +469,31 @@ class ReaderActivity : FragmentActivity() {
      *  reader responds instantly and a failed/slow write never delays what the user sees. */
     private fun applyReaderSettings(updated: ReaderSettings) {
         readerSettingsState.value = updated
-        navigatorFragment?.submitPreferences(updated.toEpubPreferences())
+        lifecycleScope.launch { applyPreferencesPreservingPosition(updated.toEpubPreferences()) }
         lifecycleScope.launch { app.readerPreferencesStore.save(updated) }
+    }
+
+    /**
+     * Font size (and lineHeight/margins/spacing) changes reflow the page -- Readium's own
+     * post-relayout recovery in EpubNavigatorFragment just clamps the previous *pixel* scroll
+     * offset into the new layout, which can land far from the paragraph actually being read on a
+     * large change (this is exactly the drift the website's useEpubNavigator.correctPositionAround
+     * exists to fix, and Readium's own navigator doesn't do it automatically on either platform).
+     * Ports that fix here: capture a content-anchored locator (firstVisibleElementLocator finds
+     * the first visible block and anchors it with a DOM/text-quote locator, not a raw scroll
+     * fraction) before submitting the new preferences, then re-navigate to it once the WebView has
+     * had a moment to reflow. [preferencesApplyGeneration] discards a stale re-navigation if a
+     * newer preference change (e.g. another slider tick) has since superseded this one.
+     */
+    private suspend fun applyPreferencesPreservingPosition(preferences: EpubPreferences) {
+        val generation = ++preferencesApplyGeneration
+        val anchor = (navigatorFragment as? VisualNavigator)?.firstVisibleElementLocator()
+        navigatorFragment?.submitPreferences(preferences)
+        if (anchor == null) return
+        delay(150)
+        if (preferencesApplyGeneration == generation) {
+            navigatorFragment?.go(anchor, animated = false)
+        }
     }
 
     private fun savePosition(locator: Locator) {

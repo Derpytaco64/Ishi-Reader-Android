@@ -105,8 +105,8 @@ fun ReaderSettingsSheet(
             LabeledSlider(
                 label = "Margin",
                 value = (settings.pageMargins ?: 1.0).toFloat(),
-                valueRange = 0.5f..2.0f,
-                steps = 14,
+                valueRange = 0.5f..4.0f,
+                steps = 34,
                 valueLabel = settings.pageMargins?.let { "%.1fx".format(it) } ?: "Default",
                 onValueChange = { onSettingsChange(settings.copy(pageMargins = it.toDouble())) }
             )
