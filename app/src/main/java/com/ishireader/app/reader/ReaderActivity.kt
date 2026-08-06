@@ -44,7 +44,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -514,7 +513,6 @@ class ReaderActivity : FragmentActivity() {
                                 Text(
                                     text = positionText.orEmpty(),
                                     style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
                                     color = readerTextColor,
                                     modifier = Modifier.align(
                                         when (settings.positionDisplayAlignment) {
