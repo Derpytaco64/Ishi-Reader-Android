@@ -329,23 +329,47 @@ private fun ProgressSection(state: AudiobookPlayerUiState, onSeekFraction: (Floa
                 }
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(formatClock(elapsedMs), style = MaterialTheme.typography.labelSmall)
-            // CLAUDE-ADDED: Tapping toggles the whole-book/per-chapter setting -- only worth
-            // showing once there's more than one chapter to distinguish "book" from "chapter".
+        // CLAUDE-ADDED: A Box rather than a SpaceBetween Row so the toggle sits at the true centre
+        // of the bar -- with SpaceBetween it was only centred in the gap between the two clocks,
+        // so it drifted left or right whenever their widths differed (e.g. "9:59" vs "1:04:12").
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                formatClock(elapsedMs),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.align(Alignment.CenterStart)
+            )
+            // Tapping toggles the whole-book/per-chapter view -- only worth showing once there's
+            // more than one chapter to distinguish "book" from "chapter". Styled as a filled pill
+            // so it reads as a control instead of a third piece of status text; it takes the
+            // accent fill while per-chapter is on, so the current mode is visible at a glance.
             if (state.chapters.size > 1) {
                 Text(
                     if (chapterViewMode) "This chapter" else "Whole book",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { chapterViewMode = !chapterViewMode }
+                    color = if (chapterViewMode) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (chapterViewMode) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        )
+                        .clickable { chapterViewMode = !chapterViewMode }
+                        .padding(horizontal = 12.dp, vertical = 5.dp)
                 )
             }
-            Text("-" + formatClock(remainingMs), style = MaterialTheme.typography.labelSmall)
+            Text(
+                "-" + formatClock(remainingMs),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            )
         }
     }
 }
