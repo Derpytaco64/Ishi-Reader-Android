@@ -119,6 +119,8 @@ class AnnotationsController(
         // matter what the rendering side does -- log it, since a decoration that's listed in the
         // annotations panel but invisible in the text looks identical to a rendering failure.
         logDecorationCounts(highlightDecorations.size, noteDecorations.size)
+        logDecorationDetail(ANNOTATIONS_GROUP_HIGHLIGHTS, highlightDecorations)
+        logDecorationDetail(ANNOTATIONS_GROUP_NOTES, noteDecorations)
 
         if (force) {
             // CLAUDE-ADDED: applyDecorations() is a *diff* against the last list the navigator was
@@ -151,6 +153,29 @@ class AnnotationsController(
                     ""
                 }
         )
+    }
+
+    /**
+     * CLAUDE-ADDED: Readium anchors a decoration by fuzzy-searching the page's whole `textContent`
+     * for `locator.text.highlight` (see rangeFromLocator in readium-reflowable.js), and when that
+     * search comes up empty it logs "Can't locate DOM range for decoration [object Object]" --
+     * which says nothing about *which* one failed, since the object stringifies to nothing useful.
+     * This prints the same set in an identifiable form, immediately before, so the two can be read
+     * together: anything listed here without a visible decoration is one that failed to anchor,
+     * and the quote is what to look at (an empty one makes the search impossible outright; a very
+     * long one has to survive the search's `quote.length / 2` error budget).
+     */
+    private fun logDecorationDetail(group: String, decorations: List<Decoration>) {
+        decorations.forEach { decoration ->
+            val quote = decoration.locator.text.highlight
+            val quoteLength = quote?.length ?: -1
+            val preview = if (quote == null) "(none)" else quote.take(40)
+            Log.i(
+                LOG_TAG,
+                "  $group ${decoration.id.take(8)} href=${decoration.locator.href} " +
+                    "quoteLen=$quoteLength quote=[$preview]"
+            )
+        }
     }
 
     /** Re-pushes the current highlight/note decorations to the navigator without re-fetching from
