@@ -1,6 +1,7 @@
 package com.ishireader.app.ui.shelves
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -154,6 +155,7 @@ fun ShelvesScreen(
  * dragged row's own slot just moved, so the finger and the row stay glued together across the
  * swap instead of the row jumping. The reorder is only persisted once, in onDragEnd/onDragCancel.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ShelfOverviewList(shelves: List<CustomShelf>, viewModel: ShelvesViewModel) {
     if (shelves.isEmpty()) {
