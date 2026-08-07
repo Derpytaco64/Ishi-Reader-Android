@@ -52,7 +52,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -287,15 +286,6 @@ private fun ProgressSection(state: AudiobookPlayerUiState, onSeekFraction: (Floa
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(modifier = Modifier.fillMaxWidth().height(32.dp), contentAlignment = Alignment.Center) {
-            if (chapterProgress == null && state.durationMs > 0 && state.chapters.size > 1) {
-                Canvas(modifier = Modifier.fillMaxWidth().height(4.dp)) {
-                    val trackColor = Color.Gray.copy(alpha = 0.6f)
-                    state.chapters.drop(1).forEach { chapter ->
-                        val x = ((chapter.startSeconds * 1000.0 / state.durationMs).toFloat().coerceIn(0f, 1f)) * size.width
-                        drawLine(color = trackColor, start = Offset(x, 0f), end = Offset(x, size.height), strokeWidth = 3f)
-                    }
-                }
-            }
             Slider(
                 value = fraction,
                 onValueChange = { dragFraction = it },
@@ -313,6 +303,31 @@ private fun ProgressSection(state: AudiobookPlayerUiState, onSeekFraction: (Floa
                 },
                 modifier = Modifier.fillMaxWidth()
             )
+            // CLAUDE-ADDED: Drawn *over* the slider, and taller than its 4dp track, so the ticks
+            // aren't buried under the track the way they were when this sat behind it -- only the
+            // sliver showing through the thumb's cutout was visible. The Canvas has no pointer
+            // input of its own, so scrub touches still fall through to the Slider underneath.
+            // Inset by half a thumb width each side, since that's where the track itself starts
+            // and ends -- without it every tick would drift right of the position it marks.
+            if (chapterProgress == null && state.durationMs > 0 && state.chapters.size > 1) {
+                val tickColor = MaterialTheme.colorScheme.onSurfaceVariant
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp)
+                        .height(16.dp)
+                ) {
+                    state.chapters.drop(1).forEach { chapter ->
+                        val x = ((chapter.startSeconds * 1000.0 / state.durationMs).toFloat().coerceIn(0f, 1f)) * size.width
+                        drawLine(
+                            color = tickColor,
+                            start = Offset(x, 0f),
+                            end = Offset(x, size.height),
+                            strokeWidth = 2.dp.toPx()
+                        )
+                    }
+                }
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth(),

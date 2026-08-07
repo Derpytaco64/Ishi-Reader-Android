@@ -130,7 +130,13 @@ fun LibraryScreen(
                                     book = book,
                                     onClick = { onBookClick(book) },
                                     modifier = Modifier.fillMaxWidth(),
-                                    onLongClick = { onBookLongClick(book) }
+                                    onLongClick = { onBookLongClick(book) },
+                                    // CLAUDE-ADDED: Every card on this tab is a square audiobook
+                                    // cover, so there's no taller neighbour to line up with --
+                                    // reserving the portrait slot here would just band each row
+                                    // with empty space. Mixed grids (Home, shelves, search) keep
+                                    // the default.
+                                    uniformCoverSlot = state.tab != LibraryTab.AUDIOBOOKS
                                 )
                             }
                         }

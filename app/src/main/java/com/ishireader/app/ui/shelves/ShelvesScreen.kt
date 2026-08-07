@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -182,56 +181,53 @@ private fun ShelfOverviewList(shelves: List<CustomShelf>, viewModel: ShelvesView
                         if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
                     )
                     .clickable { viewModel.selectShelf(shelf.id) }
+                    // CLAUDE-ADDED: The whole row is the drag handle now -- there's no grip icon
+                    // on the left to aim at anymore. Declared after clickable so this is the
+                    // inner pointer node and wins the main pass once the long press fires; the
+                    // tap only survives while nothing has consumed the gesture.
+                    .pointerInput(shelf.id) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                draggingId = shelf.id
+                                dragOffset = 0f
+                            },
+                            onDragEnd = {
+                                draggingId = null
+                                dragOffset = 0f
+                                viewModel.persistShelfOrder()
+                            },
+                            onDragCancel = {
+                                draggingId = null
+                                dragOffset = 0f
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragOffset += dragAmount.y
+
+                                val currentOrder = viewModel.uiState.value.shelves
+                                val currentIndex = currentOrder.indexOfFirst { it.id == draggingId }
+                                val draggedInfo = listState.layoutInfo.visibleItemsInfo
+                                    .find { it.key == draggingId }
+                                if (currentIndex == -1 || draggedInfo == null) return@detectDragGesturesAfterLongPress
+
+                                val draggedCenter = draggedInfo.offset + draggedInfo.size / 2 + dragOffset
+                                val target = listState.layoutInfo.visibleItemsInfo.find { info ->
+                                    info.key != draggingId &&
+                                        draggedCenter >= info.offset &&
+                                        draggedCenter <= info.offset + info.size
+                                } ?: return@detectDragGesturesAfterLongPress
+
+                                val targetIndex = currentOrder.indexOfFirst { it.id == target.key }
+                                if (targetIndex == -1 || targetIndex == currentIndex) return@detectDragGesturesAfterLongPress
+
+                                dragOffset -= (target.offset - draggedInfo.offset).toFloat()
+                                viewModel.moveShelfLocally(currentIndex, targetIndex)
+                            }
+                        )
+                    }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Filled.DragHandle,
-                    contentDescription = "Drag to reorder",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .pointerInput(shelf.id) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    draggingId = shelf.id
-                                    dragOffset = 0f
-                                },
-                                onDragEnd = {
-                                    draggingId = null
-                                    dragOffset = 0f
-                                    viewModel.persistShelfOrder()
-                                },
-                                onDragCancel = {
-                                    draggingId = null
-                                    dragOffset = 0f
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    dragOffset += dragAmount.y
-
-                                    val currentOrder = viewModel.uiState.value.shelves
-                                    val currentIndex = currentOrder.indexOfFirst { it.id == draggingId }
-                                    val draggedInfo = listState.layoutInfo.visibleItemsInfo
-                                        .find { it.key == draggingId }
-                                    if (currentIndex == -1 || draggedInfo == null) return@detectDragGesturesAfterLongPress
-
-                                    val draggedCenter = draggedInfo.offset + draggedInfo.size / 2 + dragOffset
-                                    val target = listState.layoutInfo.visibleItemsInfo.find { info ->
-                                        info.key != draggingId &&
-                                            draggedCenter >= info.offset &&
-                                            draggedCenter <= info.offset + info.size
-                                    } ?: return@detectDragGesturesAfterLongPress
-
-                                    val targetIndex = currentOrder.indexOfFirst { it.id == target.key }
-                                    if (targetIndex == -1 || targetIndex == currentIndex) return@detectDragGesturesAfterLongPress
-
-                                    dragOffset -= (target.offset - draggedInfo.offset).toFloat()
-                                    viewModel.moveShelfLocally(currentIndex, targetIndex)
-                                }
-                            )
-                        }
-                )
                 Text(shelf.icon, fontSize = 22.sp)
                 Text(
                     text = shelf.name,
