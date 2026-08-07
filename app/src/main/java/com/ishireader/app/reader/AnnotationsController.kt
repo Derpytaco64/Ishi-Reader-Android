@@ -1,5 +1,6 @@
 package com.ishireader.app.reader
 
+import android.util.Log
 import com.ishireader.app.data.model.StoredBookmark
 import com.ishireader.app.data.model.StoredHighlight
 import com.ishireader.app.data.model.StoredNote
@@ -40,6 +41,11 @@ const val ANNOTATIONS_GROUP_NOTES = "notes"
 /** Fixed neutral tint for note decorations -- NOTE_DECORATION_HEX in the website, distinct from
  *  and not part of the highlight palette (notes aren't user-colorable). */
 private const val NOTE_TINT_HEX = "#B0B0B0"
+
+/** Grep target for the decoration diagnostics -- pairs with Readium's own "Can't locate DOM range
+ *  for decoration" log, which is what a decoration that reached the navigator but couldn't be
+ *  anchored in the page reports instead. */
+private const val LOG_TAG = "IshiAnnotations"
 
 data class AnnotationsUiState(
     val loading: Boolean = true,
@@ -82,7 +88,7 @@ class AnnotationsController(
         applyDecorations()
     }
 
-    private suspend fun applyDecorations() {
+    private suspend fun applyDecorations(force: Boolean = false) {
         val nav = navigator ?: return
 
         val highlightDecorations = _state.value.highlights.mapNotNull { h ->
@@ -96,7 +102,6 @@ class AnnotationsController(
                 )
             )
         }
-        nav.applyDecorations(highlightDecorations, ANNOTATIONS_GROUP_HIGHLIGHTS)
 
         val noteDecorations = _state.value.notes.mapNotNull { n ->
             val locator = n.locator?.let(::parseLocator) ?: return@mapNotNull null
@@ -109,14 +114,51 @@ class AnnotationsController(
                 )
             )
         }
+
+        // CLAUDE-ADDED: Anything dropped here never reaches the navigator, so it can't decorate no
+        // matter what the rendering side does -- log it, since a decoration that's listed in the
+        // annotations panel but invisible in the text looks identical to a rendering failure.
+        logDecorationCounts(highlightDecorations.size, noteDecorations.size)
+
+        if (force) {
+            // CLAUDE-ADDED: applyDecorations() is a *diff* against the last list the navigator was
+            // given for this group (EpubNavigatorViewModel keeps one per group and runs
+            // changesByHref against it), so re-submitting an identical list produces zero changes
+            // and zero JavaScript -- a plain re-push is silently a no-op. Clearing first makes the
+            // second call a genuine list of Added changes. The clear is scoped to every loaded
+            // resource and the re-add to each decoration's own href, so this only ever rebuilds
+            // what's currently on screen; chapters loaded later are decorated by Readium's own
+            // onResourceLoaded replay off the same per-group state this leaves behind.
+            nav.applyDecorations(emptyList(), ANNOTATIONS_GROUP_HIGHLIGHTS)
+            nav.applyDecorations(emptyList(), ANNOTATIONS_GROUP_NOTES)
+        }
+
+        nav.applyDecorations(highlightDecorations, ANNOTATIONS_GROUP_HIGHLIGHTS)
         nav.applyDecorations(noteDecorations, ANNOTATIONS_GROUP_NOTES)
+    }
+
+    private fun logDecorationCounts(highlights: Int, notes: Int) {
+        val skippedHighlights = _state.value.highlights.size - highlights
+        val skippedNotes = _state.value.notes.size - notes
+        Log.i(
+            LOG_TAG,
+            "decorations: $highlights/${_state.value.highlights.size} highlights, " +
+                "$notes/${_state.value.notes.size} notes" +
+                if (skippedHighlights > 0 || skippedNotes > 0) {
+                    " -- skipped $skippedHighlights highlight(s) and $skippedNotes note(s) with an " +
+                        "unusable locator"
+                } else {
+                    ""
+                }
+        )
     }
 
     /** Re-pushes the current highlight/note decorations to the navigator without re-fetching from
      *  the server -- see ReaderActivity's currentLocator collector, which calls this every time the
-     *  visible chapter changes as a defense against decorations that raced the initial fetch. */
+     *  visible chapter changes as a defense against decorations that raced the initial fetch.
+     *  Forced, because an unforced re-push of an unchanged list is a no-op (see [applyDecorations]). */
     fun reapplyDecorations() {
-        scope.launch { applyDecorations() }
+        scope.launch { applyDecorations(force = true) }
     }
 
     fun highlightById(id: String): StoredHighlight? = _state.value.highlights.find { it.id == id }
