@@ -1,5 +1,7 @@
 package com.ishireader.app.ui.bookdetail
 
+import android.content.Context
+import android.graphics.drawable.BitmapDrawable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,22 +41,33 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.request.ImageRequest
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.DailyReadingBucket
 import com.ishireader.app.data.model.StoredNote
 import com.ishireader.app.data.model.percentFromLocator
+import com.ishireader.app.reader.ReadingTimerUiState
+import com.ishireader.app.reader.TappedImage
+import com.ishireader.app.ui.reader.ImageViewerOverlay
 import com.ishireader.app.ui.reader.NoteEditorDialog
+import com.ishireader.app.ui.reader.ReadingTimerSheet
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -74,6 +87,11 @@ fun BookDetailScreen(
     val state by viewModel.uiState.collectAsState()
     val clipboard = LocalClipboardManager.current
     var editingNote by remember { mutableStateOf<StoredNote?>(null) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var coverImage by remember { mutableStateOf<TappedImage?>(null) }
+    var loadingCover by remember { mutableStateOf(false) }
+    var showTimerSheet by remember { mutableStateOf(false) }
 
     // Returning from ReaderActivity resumes this same Activity/composition rather than
     // navigating back into it, so nothing else would otherwise re-trigger a reload -- without
@@ -113,7 +131,17 @@ fun BookDetailScreen(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .width(120.dp)
-                        .aspectRatio(2f / 3f)
+                        // Audiobook cover art is conventionally square (like an album/podcast
+                        // cover), unlike the portrait 2:3 book-jacket ratio used otherwise --
+                        // see BookCoverCard's matching treatment in the library grid.
+                        .aspectRatio(if (book.isAudiobook) 1f else 2f / 3f)
+                        .clickable(enabled = !loadingCover) {
+                            coroutineScope.launch {
+                                loadingCover = true
+                                coverImage = loadCoverAsTappedImage(context, book)
+                                loadingCover = false
+                            }
+                        }
                 )
 
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -162,13 +190,20 @@ fun BookDetailScreen(
             // CLAUDE-ADDED: Point-in-time snapshot of this book's own reading pace, matching
             // StatefulBookSheet.tsx's "Reading Timer" section -- not the reader's own live ticking
             // counter (see BookDetailViewModel.refresh's own comment). Hidden entirely if there's
-            // no reading time logged yet, same as the site (readingStats.totalSeconds > 0 gate).
-            if ((state.totalReadingSeconds ?: 0.0) > 0) {
+            // no reading time logged and no completed history to manage either.
+            if ((state.totalReadingSeconds ?: 0.0) > 0 || state.completedReads.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Reading Timer", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Reading Timer", style = MaterialTheme.typography.titleSmall)
+                    TextButton(onClick = { showTimerSheet = true }) { Text("Manage") }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip("Time read: ${formatDuration(state.totalReadingSeconds!!)}")
+                    state.totalReadingSeconds?.takeIf { it > 0 }?.let { Chip("Time read: ${formatDuration(it)}") }
                     state.wpm?.let { Chip("Pace: $it wpm") }
                     state.secondsLeft?.let { Chip("Time left: ${formatEstimatedTime(it)}") }
                 }
@@ -230,6 +265,25 @@ fun BookDetailScreen(
             }
         }
 
+        coverImage?.let { image ->
+            ImageViewerOverlay(image = image, onClose = { coverImage = null })
+        }
+
+        if (showTimerSheet) {
+            ReadingTimerSheet(
+                state = ReadingTimerUiState(
+                    loading = false,
+                    accumulatedSeconds = state.totalReadingSeconds ?: 0.0,
+                    wpm = state.wpm,
+                    secondsLeft = state.secondsLeft,
+                    completedReads = state.completedReads
+                ),
+                onReset = { save -> viewModel.resetCurrentRead(save) },
+                onDeleteCompleted = { id -> viewModel.deleteCompletedRead(id) },
+                onDismiss = { showTimerSheet = false }
+            )
+        }
+
         editingNote?.let { note ->
             NoteEditorDialog(
                 initialText = note.text,
@@ -247,6 +301,22 @@ fun BookDetailScreen(
         }
     }
 }
+
+/** Fetches the book's cover art through Coil's own cookie-jarred loader (same one AsyncImage above
+ *  already uses, see IshiReaderApp.newImageLoader) rather than a bare HTTP client, since cover URLs
+ *  require the app's session cookie -- and decodes it to a plain [Bitmap] so it can be shown in the
+ *  same [ImageViewerOverlay] the reader uses for in-book images. */
+private suspend fun loadCoverAsTappedImage(context: Context, book: Book): TappedImage? =
+    withContext(Dispatchers.IO) {
+        try {
+            val request = ImageRequest.Builder(context).data(book.cover).allowHardware(false).build()
+            val result = context.imageLoader.execute(request)
+            val bitmap = (result.drawable as? BitmapDrawable)?.bitmap ?: return@withContext null
+            TappedImage(bitmap, book.title)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
 @Composable
 private fun ProgressDial(percent: Double) {

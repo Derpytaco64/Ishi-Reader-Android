@@ -45,7 +45,11 @@ fun ImageViewerOverlay(image: TappedImage, onClose: () -> Unit) {
     val transformState = rememberTransformableState { zoomChange, panChange, _ ->
         val newScale = (scale * zoomChange).coerceIn(1f, 6f)
         scale = newScale
-        offset = if (newScale <= 1f) Offset.Zero else offset + panChange
+        // panChange arrives in the transformable node's local (pre-scale) coordinate space --
+        // Compose divides raw touch movement by the layer's own zoom before reporting it here, so
+        // it must be scaled back up or the image would visibly trail behind the finger more and
+        // more as you zoom in.
+        offset = if (newScale <= 1f) Offset.Zero else offset + panChange * newScale
     }
 
     Box(

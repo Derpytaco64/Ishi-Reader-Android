@@ -30,6 +30,10 @@ data class BookDetailUiState(
     /** Most recent entry from the reader's own Completed tab -- mirrors StatefulBookSheet.tsx's
      *  lastCompletedRead (max by completedAt, not array order). */
     val lastCompletedRead: StoredCompletedReadTime? = null,
+    /** Full history, most-recent-first -- unlike [lastCompletedRead] (the single-card summary this
+     *  screen already showed before delete/reset support was added), this backs the management
+     *  sheet's Completed tab, same list shape the reader's own ReadingTimerSheet shows. */
+    val completedReads: List<StoredCompletedReadTime> = emptyList(),
     /** This book's own "Reading Timer" figures -- mirrors StatefulBookSheet.tsx's ReadingStats
      *  (totalSeconds/wpm/secondsLeft), a point-in-time snapshot rather than the reader's own live
      *  ticking counter (this screen isn't open while actually reading). Null fields hide their row. */
@@ -81,10 +85,11 @@ class BookDetailViewModel(
             }
             // CLAUDE-ADDED: Same most-recent-first logic as the site's lastCompletedRead --
             // upsertCompletedReadTime appends, so completedAt (not array order) decides "the last run".
-            val lastCompletedRead = when (val result = completedReadsDeferred.await()) {
-                is ApiResult.Success -> result.data.maxByOrNull { it.completedAt }
-                is ApiResult.Failure -> null
+            val completedReads = when (val result = completedReadsDeferred.await()) {
+                is ApiResult.Success -> result.data.sortedByDescending { it.completedAt }
+                is ApiResult.Failure -> emptyList()
             }
+            val lastCompletedRead = completedReads.firstOrNull()
 
             // CLAUDE-ADDED: Same pace/time-left math the live in-reader tracker uses (see
             // ReadingSpeed.kt), applied here as a one-off snapshot against the server's saved
@@ -98,11 +103,48 @@ class BookDetailViewModel(
                 percentRead = percentFromLocator(locator),
                 notes = notes,
                 lastCompletedRead = lastCompletedRead,
+                completedReads = completedReads,
                 totalReadingSeconds = readingSecondsDeferred.await().dataOrNull(),
                 wpm = wpm,
                 secondsLeft = computeSecondsLeft(wordCount, wpm, progressionFromLocator(locator))
             )
         }
+    }
+
+    /** Same Discard/Save semantics as the reader's own [com.ishireader.app.reader.ReadingTimerTracker.reset]
+     *  -- Discard just zeroes the running total, Save archives it as a completed run first. There's
+     *  no live in-memory daily-bucket session here (this screen isn't open while actually reading),
+     *  so the archived entry's dailyHistory comes from whatever the server already has persisted for
+     *  today's/previous sessions instead. */
+    fun resetCurrentRead(save: Boolean) {
+        viewModelScope.launch {
+            val manifestUrl = book.manifestUrl()
+            val currentSeconds = _uiState.value.totalReadingSeconds ?: 0.0
+
+            if (save && currentSeconds > 0) {
+                val dailyHistory = readingTimerRepository.getDailyReadingHistory(manifestUrl).dataOrNull()
+                val item = StoredCompletedReadTime(
+                    id = java.util.UUID.randomUUID().toString(),
+                    seconds = currentSeconds,
+                    completedAt = System.currentTimeMillis().toDouble(),
+                    dailyHistory = dailyHistory?.takeIf { it.isNotEmpty() }
+                )
+                completedReadsRepository.saveCompletedReadTime(manifestUrl, item)
+            }
+
+            readingTimerRepository.setReadingTimeSeconds(manifestUrl, 0.0)
+            readingTimerRepository.setDailyReadingHistory(manifestUrl, emptyList())
+            refresh()
+        }
+    }
+
+    fun deleteCompletedRead(id: String) {
+        val updated = _uiState.value.completedReads.filterNot { it.id == id }
+        _uiState.value = _uiState.value.copy(
+            completedReads = updated,
+            lastCompletedRead = updated.firstOrNull()
+        )
+        viewModelScope.launch { completedReadsRepository.deleteCompletedReadTime(book.manifestUrl(), id) }
     }
 
     /** Mirrors StatefulBookSheet.tsx's saveEditingNote -- same upsert-by-id save used by the

@@ -245,17 +245,49 @@ fun AudiobookPlayerScreen(
     }
 }
 
+/** [state]'s absolute-book position/duration recast in terms of just the currently playing
+ *  chapter -- chapter end is the next chapter's own start, or the book's end for the last one. */
+private data class ChapterProgress(val startMs: Long, val durationMs: Long, val positionMs: Long)
+
+private fun currentChapterProgress(state: AudiobookPlayerUiState): ChapterProgress? {
+    val chapter = state.chapters.getOrNull(state.currentChapterIndex) ?: return null
+    val startMs = (chapter.startSeconds * 1000).toLong()
+    val endMs = state.chapters.getOrNull(state.currentChapterIndex + 1)
+        ?.let { (it.startSeconds * 1000).toLong() }
+        ?: state.durationMs
+    val durationMs = (endMs - startMs).coerceAtLeast(1)
+    val positionMs = (state.positionMs - startMs).coerceIn(0, durationMs)
+    return ChapterProgress(startMs, durationMs, positionMs)
+}
+
 @Composable
 private fun ProgressSection(state: AudiobookPlayerUiState, onSeekFraction: (Float) -> Unit) {
     var dragFraction by remember { mutableStateOf<Float?>(null) }
-    val liveFraction = if (state.durationMs > 0) {
+    // CLAUDE-ADDED: Whole-book scrub bar showing chapter tick marks vs a per-chapter one showing
+    // just this chapter's own elapsed/remaining -- a local display toggle only (see
+    // currentChapterProgress), not persisted -- the underlying position/seek plumbing is always
+    // whole-book, this just changes what's rendered and remaps a chapter-relative drag back to a
+    // whole-book fraction before calling onSeekFraction.
+    var chapterViewMode by remember { mutableStateOf(false) }
+    val chapterProgress = if (chapterViewMode) currentChapterProgress(state) else null
+
+    val liveFraction = if (chapterProgress != null) {
+        (chapterProgress.positionMs.toFloat() / chapterProgress.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else if (state.durationMs > 0) {
         (state.positionMs.toFloat() / state.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
     val fraction = dragFraction ?: liveFraction
 
+    val elapsedMs = chapterProgress?.positionMs ?: state.positionMs
+    val remainingMs = if (chapterProgress != null) {
+        (chapterProgress.durationMs - chapterProgress.positionMs).coerceAtLeast(0)
+    } else {
+        (state.durationMs - state.positionMs).coerceAtLeast(0)
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(modifier = Modifier.fillMaxWidth().height(32.dp), contentAlignment = Alignment.Center) {
-            if (state.durationMs > 0 && state.chapters.size > 1) {
+            if (chapterProgress == null && state.durationMs > 0 && state.chapters.size > 1) {
                 Canvas(modifier = Modifier.fillMaxWidth().height(4.dp)) {
                     val trackColor = Color.Gray.copy(alpha = 0.6f)
                     state.chapters.drop(1).forEach { chapter ->
@@ -268,18 +300,37 @@ private fun ProgressSection(state: AudiobookPlayerUiState, onSeekFraction: (Floa
                 value = fraction,
                 onValueChange = { dragFraction = it },
                 onValueChangeFinished = {
-                    dragFraction?.let(onSeekFraction)
+                    val newFraction = dragFraction
                     dragFraction = null
+                    if (newFraction != null) {
+                        if (chapterProgress != null && state.durationMs > 0) {
+                            val absoluteMs = chapterProgress.startMs + newFraction * chapterProgress.durationMs
+                            onSeekFraction((absoluteMs / state.durationMs.toFloat()).coerceIn(0f, 1f))
+                        } else {
+                            onSeekFraction(newFraction)
+                        }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth()
             )
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatClock(state.positionMs), style = MaterialTheme.typography.labelSmall)
-            Text(
-                "-" + formatClock((state.durationMs - state.positionMs).coerceAtLeast(0)),
-                style = MaterialTheme.typography.labelSmall
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(formatClock(elapsedMs), style = MaterialTheme.typography.labelSmall)
+            // CLAUDE-ADDED: Tapping toggles the whole-book/per-chapter setting -- only worth
+            // showing once there's more than one chapter to distinguish "book" from "chapter".
+            if (state.chapters.size > 1) {
+                Text(
+                    if (chapterViewMode) "This chapter" else "Whole book",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { chapterViewMode = !chapterViewMode }
+                )
+            }
+            Text("-" + formatClock(remainingMs), style = MaterialTheme.typography.labelSmall)
         }
     }
 }
