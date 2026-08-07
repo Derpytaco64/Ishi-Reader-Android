@@ -93,5 +93,8 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.common)
 
+    // Only so IshiReaderApp can plant a debug Tree -- see the catalog entry's comment.
+    implementation(libs.timber)
+
     coreLibraryDesugaring(libs.android.desugar.jdk.libs)
 }

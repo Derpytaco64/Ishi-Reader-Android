@@ -1,6 +1,7 @@
 package com.ishireader.app
 
 import android.app.Application
+import android.content.pm.ApplicationInfo
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -24,6 +25,7 @@ import com.ishireader.app.data.sync.IshiWorkerFactory
 import com.ishireader.app.data.sync.PositionReconciler
 import com.ishireader.app.data.sync.SyncScheduler
 import okhttp3.OkHttpClient
+import timber.log.Timber
 
 /**
  * Hand-rolled service locator instead of a DI framework -- the object graph here is small
@@ -69,6 +71,15 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
 
     override fun onCreate() {
         super.onCreate()
+        // CLAUDE-ADDED: Readium routes all its own logging through Timber, and Timber drops every
+        // call until something plants a Tree -- so the toolkit's diagnostics (notably "Can't locate
+        // DOM range for decoration", which is how a highlight/note that can't be anchored in the
+        // page reports itself) have been going nowhere. Debug builds only; a release build stays
+        // silent exactly as before. Read off the manifest's debuggable flag rather than
+        // BuildConfig.DEBUG, since AGP 8 stops generating BuildConfig unless it's asked to.
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            Timber.plant(Timber.DebugTree())
+        }
         preferences = AppPreferences(this)
         readerPreferencesStore = ReaderPreferencesStore(this)
         network = NetworkModule(this)
