@@ -89,5 +89,9 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
 
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.common)
+
     coreLibraryDesugaring(libs.android.desugar.jdk.libs)
 }

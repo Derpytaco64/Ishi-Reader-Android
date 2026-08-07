@@ -15,6 +15,7 @@ import com.ishireader.app.data.repository.BookDownloadRepository
 import com.ishireader.app.data.repository.CompletedReadsRepository
 import com.ishireader.app.data.repository.LibraryPrefsRepository
 import com.ishireader.app.data.repository.LibraryRepository
+import com.ishireader.app.data.repository.ListeningTimeRepository
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
 import com.ishireader.app.data.repository.ReadingTimerRepository
@@ -59,6 +60,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         private set
     lateinit var readingTimerRepository: ReadingTimerRepository
         private set
+    lateinit var listeningTimeRepository: ListeningTimeRepository
+        private set
     lateinit var statsRepository: StatsRepository
         private set
     lateinit var adminRepository: AdminRepository
@@ -89,6 +92,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         annotationsRepository = AnnotationsRepository(network)
         completedReadsRepository = CompletedReadsRepository(network)
         readingTimerRepository = ReadingTimerRepository(network)
+        listeningTimeRepository = ListeningTimeRepository(network)
         statsRepository = StatsRepository(network, database.cachedUserStatsDao())
         adminRepository = AdminRepository(network)
     }

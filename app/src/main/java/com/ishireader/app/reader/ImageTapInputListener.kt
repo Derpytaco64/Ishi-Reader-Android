@@ -60,10 +60,16 @@ class ImageTapInputListener(
                 if (!el) return null;
                 var img = el.closest('img, image');
                 if (!img) return null;
-                var src = img.tagName.toLowerCase() === 'image'
-                    ? (img.getAttribute('xlink:href') || img.getAttribute('href'))
+                var raw = img.tagName.toLowerCase() === 'image'
+                    ? (img.getAttribute('xlink:href') || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || img.getAttribute('href'))
                     : (img.currentSrc || img.src);
-                if (!src) return null;
+                if (!raw) return null;
+                // Calibre-style cover pages wrap the cover in <svg><image xlink:href="..."/> whose
+                // href attribute is left relative (unlike <img>.currentSrc/src, which the browser
+                // always resolves to an absolute URL already) -- resolve it against the document's
+                // own base URI so it lands in the same absolute-URL shape either branch above hands
+                // back, same as the website's getClickedImage.ts does for the SVG case.
+                var src = new URL(raw, document.baseURI).toString();
                 return JSON.stringify({ src: src, alt: img.getAttribute('alt') || img.getAttribute('aria-label') || '' });
             })();
         """.trimIndent()

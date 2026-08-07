@@ -6,6 +6,8 @@ import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.BookmarkUpsertRequest
 import com.ishireader.app.data.model.BookmarksResponse
 import com.ishireader.app.data.model.BooksResponse
+import com.ishireader.app.data.model.CompletedListenUpsertRequest
+import com.ishireader.app.data.model.CompletedListensResponse
 import com.ishireader.app.data.model.CompletedReadTimeUpsertRequest
 import com.ishireader.app.data.model.CompletedReadTimesResponse
 import com.ishireader.app.data.model.CreateUserRequest
@@ -14,6 +16,8 @@ import com.ishireader.app.data.model.DailyReadingHistoryResponse
 import com.ishireader.app.data.model.HighlightUpsertRequest
 import com.ishireader.app.data.model.HighlightsResponse
 import com.ishireader.app.data.model.LibraryPrefsResponse
+import com.ishireader.app.data.model.ListeningTimeRequest
+import com.ishireader.app.data.model.ListeningTimeResponse
 import com.ishireader.app.data.model.LoginAccentColorField
 import com.ishireader.app.data.model.LoginRequest
 import com.ishireader.app.data.model.LoginResponse
@@ -133,6 +137,21 @@ interface ApiService {
 
     @POST("api/userdata/readingTime")
     suspend fun setReadingTime(@Body request: ReadingTimeRequest): Response<Unit>
+
+    @GET("api/userdata/listeningTime")
+    suspend fun getListeningTime(@Query("manifestUrl") manifestUrl: String): Response<ListeningTimeResponse>
+
+    @POST("api/userdata/listeningTime")
+    suspend fun setListeningTime(@Body request: ListeningTimeRequest): Response<Unit>
+
+    @GET("api/userdata/completedListens")
+    suspend fun getCompletedListens(@Query("manifestUrl") manifestUrl: String): Response<CompletedListensResponse>
+
+    @POST("api/userdata/completedListens")
+    suspend fun upsertCompletedListen(@Body request: CompletedListenUpsertRequest): Response<Unit>
+
+    @DELETE("api/userdata/completedListens")
+    suspend fun deleteCompletedListen(@Query("manifestUrl") manifestUrl: String, @Query("id") id: String): Response<Unit>
 
     @GET("api/userdata/wordCount")
     suspend fun getWordCount(@Query("manifestUrl") manifestUrl: String): Response<WordCountResponse>

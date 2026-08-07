@@ -269,6 +269,37 @@ data class LoginAccentColorField(val loginAccentColor: String = "#2f6fed")
 @Serializable
 data class LoginThemeModeField(val loginThemeMode: String = "dark")
 
+/** Audiobook counterpart to StoredCompletedReadTime -- deliberately simpler (no wordCount/wpm/
+ *  dailyHistory equivalent, see the website's listeningTimeTypes.ts), just when a listen-through
+ *  started and finished. */
+@Serializable
+data class StoredCompletedListen(
+    val id: String,
+    val startedAt: Double,
+    val completedAt: Double
+)
+
+@Serializable
+data class CompletedListensResponse(val items: List<StoredCompletedListen> = emptyList())
+
+@Serializable
+data class CompletedListenUpsertRequest(val manifestUrl: String, val item: StoredCompletedListen)
+
+/** accumulatedSeconds is a lifetime total for the book (never reset on completion, unlike
+ *  ReadingTimeResponse); startedAt is the current listen-through's start marker, null when
+ *  nothing is in progress -- mirrors the website's StoredListeningTime. */
+@Serializable
+data class ListeningTimeData(
+    val accumulatedSeconds: Double = 0.0,
+    val startedAt: Double? = null
+)
+
+@Serializable
+data class ListeningTimeResponse(val data: ListeningTimeData? = null)
+
+@Serializable
+data class ListeningTimeRequest(val manifestUrl: String, val accumulatedSeconds: Double, val startedAt: Double?)
+
 /** Mirrors the server's UserStats shape (src/lib/userData/statsTypes.ts) -- a whole-library
  *  aggregate for the current user, not per-book like everything else here. Time totals are
  *  Double (accumulated from per-session floating-point seconds), unlike the plain integer counts.

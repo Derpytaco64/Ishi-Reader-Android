@@ -1,10 +1,12 @@
 package com.ishireader.app.ui.reader
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -33,6 +35,11 @@ import com.ishireader.app.reader.TappedImage
  *  hand-rolled drag handler, so there's no separate zoom controller UI to build. */
 @Composable
 fun ImageViewerOverlay(image: TappedImage, onClose: () -> Unit) {
+    // Claims the system back gesture/button for as long as this overlay is on screen -- without
+    // this, back falls through to the Activity's default handling and exits the book instead of
+    // just dismissing the overlay, the same behavior the close X gives.
+    BackHandler(onBack = onClose)
+
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     val transformState = rememberTransformableState { zoomChange, panChange, _ ->
@@ -65,7 +72,11 @@ fun ImageViewerOverlay(image: TappedImage, onClose: () -> Unit) {
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(8.dp)
+                .displayCutoutPadding()
+                // Extra headroom below the status bar / cutout insets above -- a front camera
+                // punch-hole isn't always fully covered by those insets alone, and this keeps the
+                // X from sitting flush in line with it.
+                .padding(top = 24.dp, end = 8.dp)
         ) {
             Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
         }

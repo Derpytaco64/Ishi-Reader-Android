@@ -25,6 +25,7 @@ room = "2.6.1"
 # https://github.com/google/ksp/releases for the exact patch published against "kotlin = 2.0.21".
 ksp = "2.0.21-1.0.28"
 workManager = "2.9.1"
+media3 = "1.4.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -63,6 +64,13 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
+
+# Audiobook playback -- media3-session's MediaSessionService gets us the lock-screen/notification
+# transport controls (Media3's own DefaultMediaNotificationProvider) for free, without hand-rolling
+# a MediaSession + NotificationCompat.Builder ourselves.
+androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
+androidx-media3-common = { group = "androidx.media3", name = "media3-common", version.ref = "media3" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

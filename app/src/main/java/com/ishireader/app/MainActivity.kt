@@ -22,6 +22,7 @@ import androidx.navigation.navArgument
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.ThemeMode
 import com.ishireader.app.data.model.manifestUrl
+import com.ishireader.app.audiobook.AudiobookPlayerActivity
 import com.ishireader.app.reader.ReaderActivity
 import com.ishireader.app.ui.admin.AdminScreen
 import com.ishireader.app.ui.admin.AdminViewModel
@@ -194,9 +195,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openReader(book: Book) {
-        val intent = Intent(this, ReaderActivity::class.java).apply {
-            putExtra(ReaderActivity.EXTRA_MANIFEST_URL, book.manifestUrl())
-            putExtra(ReaderActivity.EXTRA_TITLE, book.title)
+        val intent = if (book.isAudiobook) {
+            Intent(this, AudiobookPlayerActivity::class.java).apply {
+                putExtra(AudiobookPlayerActivity.EXTRA_MANIFEST_URL, book.manifestUrl())
+                putExtra(AudiobookPlayerActivity.EXTRA_TITLE, book.title)
+                putExtra(AudiobookPlayerActivity.EXTRA_AUTHOR, book.author)
+                putExtra(AudiobookPlayerActivity.EXTRA_COVER_URL, book.cover)
+            }
+        } else {
+            Intent(this, ReaderActivity::class.java).apply {
+                putExtra(ReaderActivity.EXTRA_MANIFEST_URL, book.manifestUrl())
+                putExtra(ReaderActivity.EXTRA_TITLE, book.title)
+            }
         }
         startActivity(intent)
     }

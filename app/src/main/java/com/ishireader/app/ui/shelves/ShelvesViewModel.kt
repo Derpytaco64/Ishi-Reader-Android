@@ -164,6 +164,21 @@ class ShelvesViewModel(
         persist(updated)
     }
 
+    /** Reorders the shelf list in local state only, without persisting -- see ShelfOverviewList's
+     *  drag handler, which calls this on every swap mid-drag (persisting on every swap would fire
+     *  a PATCH per pixel dragged over another row) and [persistShelfOrder] once the drag ends. */
+    fun moveShelfLocally(fromIndex: Int, toIndex: Int) {
+        val current = _uiState.value.shelves
+        if (fromIndex !in current.indices || toIndex !in current.indices || fromIndex == toIndex) return
+        val updated = current.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+        _uiState.value = _uiState.value.copy(shelves = updated)
+    }
+
+    /** Persists the shelf order as it currently stands -- called once a drag-reorder gesture ends. */
+    fun persistShelfOrder() {
+        persist(_uiState.value.shelves)
+    }
+
     /** Used by the "manage books" picker grid to toggle membership for an arbitrary shelf. */
     fun toggleBookInShelf(shelfId: String, book: Book) {
         val shelf = _uiState.value.shelves.find { it.id == shelfId } ?: return
