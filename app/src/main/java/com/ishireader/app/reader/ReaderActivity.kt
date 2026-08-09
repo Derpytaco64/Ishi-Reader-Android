@@ -652,8 +652,13 @@ class ReaderActivity : FragmentActivity() {
                         }
 
                         val showChapterTitleHeader = settings.showChapterTitle && chapterTitle != null
+                        // Follows the same chromeShown fade the top/bottom bars use -- a center tap
+                        // hides this along with them (without clearing returnLocatorState, so it
+                        // reappears on the next center tap) instead of sitting over the text
+                        // permanently until the user taps Undo or the X.
+                        val showReturnLocatorBar = returnLocator != null && chromeShown
                         AnimatedVisibility(
-                            visible = showChapterTitleHeader || returnLocator != null,
+                            visible = showChapterTitleHeader || showReturnLocatorBar,
                             enter = fadeIn(),
                             exit = fadeOut(),
                             modifier = Modifier.fillMaxWidth()
@@ -687,7 +692,7 @@ class ReaderActivity : FragmentActivity() {
                                 // Mirrors the website's returnLocator affordance (StatefulReaderFooter):
                                 // set right before jumping to an annotation from the panel, cleared once
                                 // tapped -- no auto-timeout, persists until the user actually uses it.
-                                if (returnLocator != null) {
+                                if (showReturnLocatorBar) {
                                     IconButton(onClick = {
                                         returnLocator?.let { navigateTo(it, animated = true) }
                                         returnLocatorState.value = null

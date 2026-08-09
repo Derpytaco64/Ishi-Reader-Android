@@ -25,6 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -94,6 +97,7 @@ fun BookDetailScreen(
     val clipboard = LocalClipboardManager.current
     var annotationTab by remember { mutableStateOf(AnnotationTab.ALL) }
     var annotationsDescending by remember { mutableStateOf(false) }
+    var annotationsExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var coverImage by remember { mutableStateOf<TappedImage?>(null) }
@@ -170,7 +174,9 @@ fun BookDetailScreen(
 
                     // CLAUDE-ADDED: Current-read stats sit beside the dial rather than in their own
                     // section further down the page, so the "how far in" and "how it's going"
-                    // numbers read together at a glance.
+                    // numbers read together at a glance. The Manage entry point (reset current
+                    // read / delete completed history) sits right beside them as a small icon
+                    // button rather than its own titled section further down the page.
                     state.percentRead?.let { percent ->
                         Row(
                             modifier = Modifier.padding(top = 8.dp),
@@ -187,6 +193,15 @@ fun BookDetailScreen(
                                 }
                                 state.secondsLeft?.let {
                                     Text("Time left: ${formatEstimatedTime(it)}", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            if ((state.totalReadingSeconds ?: 0.0) > 0 || state.completedReads.isNotEmpty()) {
+                                IconButton(onClick = { showTimerSheet = true }, modifier = Modifier.size(28.dp)) {
+                                    Icon(
+                                        Icons.Filled.MoreVert,
+                                        contentDescription = "Manage reading timer",
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                             }
                         }
@@ -216,28 +231,14 @@ fun BookDetailScreen(
                 Text(description, style = MaterialTheme.typography.bodyMedium)
             }
 
-            // CLAUDE-ADDED: The stats themselves now sit beside the progress dial in the header
-            // above -- this just keeps the "Manage" entry point (reset current read / delete
-            // completed history) reachable. Hidden entirely if there's no reading time logged and
-            // no completed history to manage either.
-            if ((state.totalReadingSeconds ?: 0.0) > 0 || state.completedReads.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Reading Timer", style = MaterialTheme.typography.titleSmall)
-                    TextButton(onClick = { showTimerSheet = true }) { Text("Manage") }
-                }
-            }
-
             // CLAUDE-ADDED: The most recent entry from the reader's own Completed tab, matching
             // StatefulBookSheet.tsx's "Completed Read" card -- only the single latest run, not the
-            // full history list the reader's Completed tab shows.
+            // full history list the reader's own Manage sheet's Completed tab shows. Titled
+            // plural to match that sheet (and state.completedReads) now that the Manage entry
+            // point itself moved up beside the progress dial instead of heading its own section here.
             state.lastCompletedRead?.let { completedRead ->
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Completed Read", style = MaterialTheme.typography.titleSmall)
+                Text("Completed Reads", style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("Completed: ${formatTimestamp(completedRead.completedAt)}")
@@ -254,65 +255,79 @@ fun BookDetailScreen(
             // CLAUDE-ADDED: Ports the website's book detail annotations list -- same all/highlights/
             // bookmarks/notes filter and book-order sort as the in-reader AnnotationsPanelSheet
             // (shared row logic lives in AnnotationRows.kt). Tapping a row opens the reader at that
-            // exact locator rather than just the saved reading position.
+            // exact locator rather than just the saved reading position. Collapsed by default --
+            // this list can get long, and most visits to this screen don't need it open.
             if (state.highlights.isNotEmpty() || state.bookmarks.isNotEmpty() || state.notes.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { annotationsExpanded = !annotationsExpanded },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Annotations", style = MaterialTheme.typography.titleSmall)
-                    IconButton(onClick = { annotationsDescending = !annotationsDescending }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (annotationsExpanded) {
+                            IconButton(onClick = { annotationsDescending = !annotationsDescending }) {
+                                Icon(
+                                    if (annotationsDescending) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
+                                    contentDescription = "Sort order"
+                                )
+                            }
+                        }
                         Icon(
-                            if (annotationsDescending) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
-                            contentDescription = "Sort order"
+                            if (annotationsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (annotationsExpanded) "Collapse annotations" else "Expand annotations"
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AnnotationTab.entries.forEach { t ->
-                        FilterChip(
-                            selected = annotationTab == t,
-                            onClick = { annotationTab = t },
-                            label = { Text(t.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
 
-                val annotationsState = AnnotationsUiState(
-                    loading = false,
-                    highlights = state.highlights,
-                    bookmarks = state.bookmarks,
-                    notes = state.notes
-                )
-                val rows = buildRows(annotationsState, annotationTab, annotationsDescending)
-                if (rows.isEmpty()) {
-                    Text(
-                        "No annotations in this filter",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                } else {
-                    Column {
-                        rows.forEach { row ->
-                            AnnotationRowItem(
-                                row = row,
-                                totalPositions = null,
-                                onJump = { row.locator?.let(onJumpToLocator) },
-                                onDelete = {
-                                    when (row.type) {
-                                        AnnotationType.HIGHLIGHT -> viewModel.deleteHighlight(row.id)
-                                        AnnotationType.BOOKMARK -> viewModel.deleteBookmark(row.id)
-                                        AnnotationType.NOTE -> viewModel.deleteNote(row.id)
-                                    }
-                                },
-                                onEditNote = { text -> viewModel.updateNoteText(row.id, text) }
+                if (annotationsExpanded) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AnnotationTab.entries.forEach { t ->
+                            FilterChip(
+                                selected = annotationTab == t,
+                                onClick = { annotationTab = t },
+                                label = { Text(t.name.lowercase().replaceFirstChar { it.uppercase() }) }
                             )
-                            HorizontalDivider()
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val annotationsState = AnnotationsUiState(
+                        loading = false,
+                        highlights = state.highlights,
+                        bookmarks = state.bookmarks,
+                        notes = state.notes
+                    )
+                    val rows = buildRows(annotationsState, annotationTab, annotationsDescending)
+                    if (rows.isEmpty()) {
+                        Text(
+                            "No annotations in this filter",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    } else {
+                        Column {
+                            rows.forEach { row ->
+                                AnnotationRowItem(
+                                    row = row,
+                                    totalPositions = null,
+                                    onJump = { row.locator?.let(onJumpToLocator) },
+                                    onDelete = {
+                                        when (row.type) {
+                                            AnnotationType.HIGHLIGHT -> viewModel.deleteHighlight(row.id)
+                                            AnnotationType.BOOKMARK -> viewModel.deleteBookmark(row.id)
+                                            AnnotationType.NOTE -> viewModel.deleteNote(row.id)
+                                        }
+                                    },
+                                    onEditNote = { text -> viewModel.updateNoteText(row.id, text) }
+                                )
+                                HorizontalDivider()
+                            }
                         }
                     }
                 }
