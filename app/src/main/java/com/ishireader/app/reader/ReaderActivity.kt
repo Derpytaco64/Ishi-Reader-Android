@@ -5,7 +5,9 @@ package com.ishireader.app.reader
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.RectF
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -23,9 +25,12 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -41,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -760,6 +767,23 @@ class ReaderActivity : FragmentActivity() {
                                     .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
+                                // TEMP DEBUG -- diagnosing a Pixel 9a-specific bug where this bar
+                                // renders with zero/insufficient bottom inset and overlaps the
+                                // legacy 3-button nav bar. Remove once root-caused.
+                                val density = LocalDensity.current
+                                val safeDrawingBottomPx = WindowInsets.safeDrawing.getBottom(density)
+                                val systemBarsBottomPx = WindowInsets.systemBars.getBottom(density)
+                                val navigationBarsBottomPx = WindowInsets.navigationBars.getBottom(density)
+                                val tappableElementBottomPx = WindowInsets.tappableElement.getBottom(density)
+                                SideEffect {
+                                    Log.d(
+                                        "ReaderInsets",
+                                        "device=${Build.MODEL} sdk=${Build.VERSION.SDK_INT} chromeShown=$chromeShown " +
+                                            "safeDrawingBottomPx=$safeDrawingBottomPx systemBarsBottomPx=$systemBarsBottomPx " +
+                                            "navigationBarsBottomPx=$navigationBarsBottomPx tappableElementBottomPx=$tappableElementBottomPx " +
+                                            "densityDpi=${density.density}"
+                                    )
+                                }
                                 IconButton(onClick = { tocSheetOpen = true }) {
                                     Icon(Icons.AutoMirrored.Filled.Toc, contentDescription = "Table of contents", tint = MaterialTheme.colorScheme.onSurface)
                                 }
