@@ -16,9 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Size
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.manifestUrl
 
@@ -56,8 +59,18 @@ fun BookCoverCard(
                 .padding(bottom = 4.dp),
             contentAlignment = Alignment.Center
         ) {
+            val context = LocalContext.current
             AsyncImage(
-                model = book.cover,
+                // CLAUDE-ADDED: Size.ORIGINAL skips Coil's default behaviour of downsampling the
+                // decode to match this composable's (small) layout size -- covers are decoded at
+                // their full source resolution and Compose's Crop scaling does the downscale, so
+                // they stay sharp regardless of grid density or screen size.
+                model = remember(book.cover) {
+                    ImageRequest.Builder(context)
+                        .data(book.cover)
+                        .size(Size.ORIGINAL)
+                        .build()
+                },
                 contentDescription = book.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
