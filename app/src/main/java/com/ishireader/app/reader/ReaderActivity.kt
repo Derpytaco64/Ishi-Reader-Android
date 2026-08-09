@@ -2,6 +2,9 @@
 
 package com.ishireader.app.reader
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.RectF
@@ -435,7 +438,8 @@ class ReaderActivity : FragmentActivity() {
                 )
             },
             onNote = { locator -> pendingNewNoteLocator.value = locator },
-            onBookmark = { locator -> annotationsController.addBookmark(locator) }
+            onBookmark = { locator -> annotationsController.addBookmark(locator) },
+            onCopy = { locator -> copyToClipboard(locator.text.highlight) }
         )
 
         val navigatorFactory = EpubNavigatorFactory(publication = publication)
@@ -826,6 +830,7 @@ class ReaderActivity : FragmentActivity() {
                     publication?.let { pub ->
                         TocPanelSheet(
                             publication = pub,
+                            positions = publicationPositions,
                             onJump = { locator ->
                                 navigateTo(locator, animated = true)
                                 tocSheetOpen = false
@@ -843,6 +848,14 @@ class ReaderActivity : FragmentActivity() {
                             currentLocatorState.value?.let { returnLocatorState.value = it }
                             navigateTo(locator, animated = true)
                             annotationsSheetOpen = false
+                            // Gives the navigator's go() a moment to actually finish loading/
+                            // scrolling to the target chapter before the flash decoration is
+                            // pushed -- otherwise it can race a chapter change and land on a page
+                            // that hasn't rendered yet.
+                            lifecycleScope.launch {
+                                delay(350)
+                                annotationsController.flashLocator(locator)
+                            }
                         },
                         onBookmarkThisPage = {
                             navigatorFragment?.currentLocator?.value?.let { annotationsController.addBookmark(it) }
@@ -989,6 +1002,19 @@ class ReaderActivity : FragmentActivity() {
     private fun navigateTo(locator: Locator, animated: Boolean) {
         navigationGeneration++
         navigatorFragment?.go(locator, animated = animated)
+    }
+
+    /** Copies the selected passage's text -- silently a no-op for an empty/missing quote, since a
+     *  selection with no anchored text has nothing meaningful to put on the clipboard. */
+    private fun copyToClipboard(text: String?) {
+        if (text.isNullOrEmpty()) return
+        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboardManager.setPrimaryClip(ClipData.newPlainText(text, text))
+        // Android 13+ shows its own system copy confirmation; older versions don't, so this fills
+        // the gap without doubling up on newer ones.
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+            Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** Roughly the same reading position: same resource, and either the same positions-list index

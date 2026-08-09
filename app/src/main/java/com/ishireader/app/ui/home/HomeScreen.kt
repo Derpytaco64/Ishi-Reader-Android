@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -97,18 +100,23 @@ fun HomeScreen(
                             if (!settings.isShelfVisible(shelfId)) return@forEach
                             when (shelfId) {
                                 HomeShelfId.CONTINUE_READING -> if (state.continueReading.isNotEmpty()) {
-                                    ShelfGrid(title = "Continue Reading", items = state.continueReading, columns = settings.coverSize.homeGridColumns) { item ->
-                                        ContinueReadingCard(
-                                            item = item,
-                                            onClick = { onBookClick(item.book) },
-                                            onLongClick = { onBookLongClick(item.book) },
-                                            onDismiss = { viewModel.dismissFromContinueReading(item.book) },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
+                                    ContinueReadingCarousel(
+                                        items = state.continueReading,
+                                        itemWidth = settings.coverSize.minWidthDp.dp,
+                                        onBookClick = onBookClick,
+                                        onBookLongClick = onBookLongClick,
+                                        onDismiss = viewModel::dismissFromContinueReading
+                                    )
                                 }
                                 HomeShelfId.LAST_SERIES_READ -> if (state.lastSeriesRead.isNotEmpty()) {
-                                    ShelfCarousel(title = "Last Series Read", books = state.lastSeriesRead, itemWidth = settings.coverSize.minWidthDp.dp, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
+                                    ShelfCarousel(
+                                        title = "Last Series Read",
+                                        books = state.lastSeriesRead,
+                                        itemWidth = settings.coverSize.minWidthDp.dp,
+                                        onBookClick = onBookClick,
+                                        onBookLongClick = onBookLongClick,
+                                        focusBookUrl = state.lastSeriesReadFocusUrl
+                                    )
                                 }
                                 HomeShelfId.RECENTLY_ADDED -> if (state.recentlyAdded.isNotEmpty()) {
                                     ShelfCarousel(title = "Recently Added", books = state.recentlyAdded, itemWidth = settings.coverSize.minWidthDp.dp, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
@@ -132,10 +140,19 @@ fun HomeScreen(
     }
 }
 
+/** Same carousel treatment as [ShelfCarousel], but for [ContinueReadingItem]s -- each card keeps
+ *  its own progress bar and "Remove" action, which a plain [BookCoverCard] carousel has no room
+ *  for. */
 @Composable
-private fun ShelfCarousel(title: String, books: List<Book>, itemWidth: Dp, onBookClick: (Book) -> Unit, onBookLongClick: (Book) -> Unit) {
+private fun ContinueReadingCarousel(
+    items: List<ContinueReadingItem>,
+    itemWidth: Dp,
+    onBookClick: (Book) -> Unit,
+    onBookLongClick: (Book) -> Unit,
+    onDismiss: (Book) -> Unit
+) {
     Text(
-        text = title,
+        text = "Continue Reading",
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     )
@@ -143,7 +160,68 @@ private fun ShelfCarousel(title: String, books: List<Book>, itemWidth: Dp, onBoo
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(books) { book ->
+        items(items, key = { it.book.url }) { item ->
+            ContinueReadingCard(
+                item = item,
+                onClick = { onBookClick(item.book) },
+                onLongClick = { onBookLongClick(item.book) },
+                onDismiss = { onDismiss(item.book) },
+                modifier = Modifier.width(itemWidth)
+            )
+        }
+    }
+}
+
+/**
+ * [focusBookUrl] (used by the Last Series Read shelf to point at whichever volume was actually
+ * read most recently) drives an initial auto-scroll: centered in the carousel if it's a middle
+ * volume, left as-is if it's the first (nothing to reveal further left), scrolled to the end if
+ * it's the last (Compose's LazyList never leaves trailing empty space, so scrolling "to" the last
+ * item naturally lands it flush against the right edge). Other carousels (Recently Added) just
+ * pass null and get today's plain left-aligned behavior.
+ */
+@Composable
+private fun ShelfCarousel(
+    title: String,
+    books: List<Book>,
+    itemWidth: Dp,
+    onBookClick: (Book) -> Unit,
+    onBookLongClick: (Book) -> Unit,
+    focusBookUrl: String? = null
+) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(focusBookUrl, books) {
+        val targetIndex = focusBookUrl?.let { url -> books.indexOfFirst { it.url == url } } ?: -1
+        if (targetIndex <= 0 || targetIndex == books.lastIndex) {
+            // First volume (or no focus at all): the default left-aligned resting position is
+            // already correct. Last volume: scrollToItem still needs to run so the list's
+            // own end-of-content snapping puts it flush against the right edge.
+            if (targetIndex == books.lastIndex && targetIndex > 0) listState.scrollToItem(targetIndex)
+            return@LaunchedEffect
+        }
+
+        // Middle volume: jump near it first (so it's actually laid out and measurable), then nudge
+        // by the exact pixel delta needed to center it in the viewport.
+        listState.scrollToItem(targetIndex)
+        val layoutInfo = listState.layoutInfo
+        val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex } ?: return@LaunchedEffect
+        val itemCenter = itemInfo.offset + itemInfo.size / 2
+        val viewportCenter = layoutInfo.viewportSize.width / 2
+        listState.scrollBy((itemCenter - viewportCenter).toFloat())
+    }
+
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    )
+    LazyRow(
+        state = listState,
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(books, key = { it.url }) { book ->
             BookCoverCard(
                 book = book,
                 onClick = { onBookClick(book) },

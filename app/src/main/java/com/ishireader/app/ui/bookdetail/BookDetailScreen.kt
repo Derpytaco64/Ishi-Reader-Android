@@ -157,9 +157,27 @@ fun BookDetailScreen(
                         Text("Audiobook", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
 
+                    // CLAUDE-ADDED: Current-read stats sit beside the dial rather than in their own
+                    // section further down the page, so the "how far in" and "how it's going"
+                    // numbers read together at a glance.
                     state.percentRead?.let { percent ->
-                        Box(modifier = Modifier.padding(top = 8.dp)) {
+                        Row(
+                            modifier = Modifier.padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             ProgressDial(percent = percent)
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                state.totalReadingSeconds?.takeIf { it > 0 }?.let {
+                                    Text("Time read: ${formatDuration(it)}", style = MaterialTheme.typography.labelSmall)
+                                }
+                                state.wpm?.let {
+                                    Text("Pace: $it wpm", style = MaterialTheme.typography.labelSmall)
+                                }
+                                state.secondsLeft?.let {
+                                    Text("Time left: ${formatEstimatedTime(it)}", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
                         }
                     }
                 }
@@ -187,10 +205,10 @@ fun BookDetailScreen(
                 Text(description, style = MaterialTheme.typography.bodyMedium)
             }
 
-            // CLAUDE-ADDED: Point-in-time snapshot of this book's own reading pace, matching
-            // StatefulBookSheet.tsx's "Reading Timer" section -- not the reader's own live ticking
-            // counter (see BookDetailViewModel.refresh's own comment). Hidden entirely if there's
-            // no reading time logged and no completed history to manage either.
+            // CLAUDE-ADDED: The stats themselves now sit beside the progress dial in the header
+            // above -- this just keeps the "Manage" entry point (reset current read / delete
+            // completed history) reachable. Hidden entirely if there's no reading time logged and
+            // no completed history to manage either.
             if ((state.totalReadingSeconds ?: 0.0) > 0 || state.completedReads.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
@@ -200,12 +218,6 @@ fun BookDetailScreen(
                 ) {
                     Text("Reading Timer", style = MaterialTheme.typography.titleSmall)
                     TextButton(onClick = { showTimerSheet = true }) { Text("Manage") }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.totalReadingSeconds?.takeIf { it > 0 }?.let { Chip("Time read: ${formatDuration(it)}") }
-                    state.wpm?.let { Chip("Pace: $it wpm") }
-                    state.secondsLeft?.let { Chip("Time left: ${formatEstimatedTime(it)}") }
                 }
             }
 

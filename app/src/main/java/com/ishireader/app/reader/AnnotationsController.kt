@@ -8,6 +8,8 @@ import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.AnnotationsRepository
 import com.ishireader.app.data.repository.NotesRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +39,15 @@ enum class HighlightColor(val id: String, val hex: String) {
 
 const val ANNOTATIONS_GROUP_HIGHLIGHTS = "highlights"
 const val ANNOTATIONS_GROUP_NOTES = "notes"
+
+/** A decoration group of its own, separate from highlights/notes, so a flash's on/off blinking
+ *  (see [AnnotationsController.flashLocator]) never touches the diff-against-last-list logic
+ *  [AnnotationsController.applyDecorations] runs for those groups. */
+private const val ANNOTATIONS_GROUP_FLASH = "flash"
+
+/** Bright accent tint for the brief post-jump flash -- deliberately not one of the 5 user-pickable
+ *  highlight colors, so the flash reads as transient feedback rather than a real highlight. */
+private const val FLASH_TINT_HEX = "#FF5722"
 
 /** Fixed neutral tint for note decorations -- NOTE_DECORATION_HEX in the website, distinct from
  *  and not part of the highlight palette (notes aren't user-colorable). */
@@ -72,6 +83,7 @@ class AnnotationsController(
 
     private lateinit var manifestUrl: String
     private var navigator: DecorableNavigator? = null
+    private var flashJob: Job? = null
 
     suspend fun start(manifestUrl: String, navigator: DecorableNavigator) {
         this.manifestUrl = manifestUrl
@@ -184,6 +196,38 @@ class AnnotationsController(
      *  Forced, because an unforced re-push of an unchanged list is a no-op (see [applyDecorations]). */
     fun reapplyDecorations() {
         scope.launch { applyDecorations(force = true) }
+    }
+
+    /**
+     * Briefly blinks a decoration at [locator] a few times -- visual feedback that a jump (e.g.
+     * from the Annotations panel) actually landed where the user tapped, since a locator that
+     * resolves to the same spot as an existing highlight would otherwise look identical to one
+     * that silently failed to navigate. Cancels any flash already in flight so jumping again
+     * quickly doesn't leave two overlapping blink sequences racing each other.
+     */
+    fun flashLocator(locator: Locator) {
+        val nav = navigator ?: return
+        flashJob?.cancel()
+        flashJob = scope.launch {
+            val decoration = Decoration(
+                id = "flash",
+                locator = locator,
+                style = Decoration.Style.Highlight(
+                    tint = android.graphics.Color.parseColor(FLASH_TINT_HEX),
+                    isActive = true
+                )
+            )
+            try {
+                repeat(3) {
+                    nav.applyDecorations(listOf(decoration), ANNOTATIONS_GROUP_FLASH)
+                    delay(200)
+                    nav.applyDecorations(emptyList(), ANNOTATIONS_GROUP_FLASH)
+                    delay(120)
+                }
+            } finally {
+                nav.applyDecorations(emptyList(), ANNOTATIONS_GROUP_FLASH)
+            }
+        }
     }
 
     fun highlightById(id: String): StoredHighlight? = _state.value.highlights.find { it.id == id }

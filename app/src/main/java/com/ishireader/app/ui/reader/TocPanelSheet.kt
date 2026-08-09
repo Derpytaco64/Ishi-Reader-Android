@@ -1,8 +1,10 @@
 package com.ishireader.app.ui.reader
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -26,7 +28,7 @@ import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 
-private data class TocRow(val link: Link, val depth: Int)
+private data class TocRow(val link: Link, val depth: Int, val page: Int?)
 
 /**
  * Ports the website's table-of-contents panel (TocContent.tsx) -- a searchable, indented list of
@@ -38,11 +40,12 @@ private data class TocRow(val link: Link, val depth: Int)
 @Composable
 fun TocPanelSheet(
     publication: Publication,
+    positions: List<Locator>?,
     onJump: (Locator) -> Unit,
     onDismiss: () -> Unit
 ) {
     var filter by remember { mutableStateOf("") }
-    val rows = remember(publication) { flattenToc(publication.tableOfContents) }
+    val rows = remember(publication, positions) { flattenToc(publication.tableOfContents, positions = positions) }
     val filtered = if (filter.isBlank()) {
         rows
     } else {
@@ -71,16 +74,30 @@ fun TocPanelSheet(
             } else {
                 LazyColumn(modifier = Modifier.height(400.dp).padding(vertical = 8.dp)) {
                     items(filtered) { row ->
-                        Text(
-                            text = row.link.title?.takeUnless { it.isBlank() } ?: row.link.href.toString(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { publication.locatorFromLink(row.link)?.let(onJump) }
                                 .padding(start = (16 + row.depth * 16).dp, end = 16.dp, top = 12.dp, bottom = 12.dp)
-                        )
+                        ) {
+                            Text(
+                                text = row.link.title?.takeUnless { it.isBlank() } ?: row.link.href.toString(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            row.page?.let { page ->
+                                Text(
+                                    text = page.toString(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 12.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -88,5 +105,16 @@ fun TocPanelSheet(
     }
 }
 
-private fun flattenToc(links: List<Link>, depth: Int = 0): List<TocRow> =
-    links.flatMap { link -> listOf(TocRow(link, depth)) + flattenToc(link.children, depth + 1) }
+private fun flattenToc(links: List<Link>, depth: Int = 0, positions: List<Locator>?): List<TocRow> =
+    links.flatMap { link ->
+        listOf(TocRow(link, depth, pageNumberFor(link, positions))) +
+            flattenToc(link.children, depth + 1, positions)
+    }
+
+/** Mirrors the website's buildTocTree.ts: the page number of the first entry in [positions] whose
+ *  href matches this link's (fragment stripped -- positions are per-resource, not per-fragment). */
+private fun pageNumberFor(link: Link, positions: List<Locator>?): Int? {
+    if (positions == null) return null
+    val bareHref = link.href.toString().substringBefore("#")
+    return positions.firstOrNull { it.href.toString().substringBefore("#") == bareHref }?.locations?.position
+}

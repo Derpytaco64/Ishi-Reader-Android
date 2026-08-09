@@ -26,6 +26,9 @@ data class HomeUiState(
     val error: String? = null,
     val continueReading: List<ContinueReadingItem> = emptyList(),
     val lastSeriesRead: List<Book> = emptyList(),
+    /** Which of [lastSeriesRead]'s books was the one that made this the most-recently-read series
+     *  -- i.e. the volume the carousel should scroll to reveal. Null iff [lastSeriesRead] is. */
+    val lastSeriesReadFocusUrl: String? = null,
     val recentlyAdded: List<Book> = emptyList(),
     val myLibrary: List<Book> = emptyList()
 )
@@ -95,10 +98,13 @@ class HomeViewModel(
         // otherwise look frozen until the next sync -- see effectiveLastReadAt below.
         val localTimestamps = positionRepository.localLastReadTimestamps()
 
+        val (lastSeriesReadBooks, lastSeriesReadFocusUrl) = computeLastSeriesRead(allBooks, localTimestamps)
+
         _uiState.value = HomeUiState(
             isLoading = false,
             continueReading = computeContinueReading(allBooks, dismissed, localTimestamps),
-            lastSeriesRead = computeLastSeriesRead(allBooks, localTimestamps),
+            lastSeriesRead = lastSeriesReadBooks,
+            lastSeriesReadFocusUrl = lastSeriesReadFocusUrl,
             recentlyAdded = allBooks.sortedByDescending { it.addedAt ?: 0.0 }.take(20),
             myLibrary = allBooks.sortedWith(compareBy(collator) { it.title })
         )
@@ -137,19 +143,25 @@ class HomeViewModel(
             .map { (book, _, percent) -> ContinueReadingItem(book, percent) }
     }
 
-    private fun computeLastSeriesRead(allBooks: List<Book>, localTimestamps: Map<String, Long>): List<Book> {
+    /** Returns the series' books (ordered by series position) alongside the url of whichever one
+     *  of them was actually read most recently -- the "current" volume the Home carousel should
+     *  scroll to reveal (see HomeScreen's ShelfCarousel). */
+    private fun computeLastSeriesRead(allBooks: List<Book>, localTimestamps: Map<String, Long>): Pair<List<Book>, String?> {
         val groups = allBooks.filter { it.series != null }
             .groupBy { "${it.series!!.name}|${it.isAudiobook}" }
 
-        val bestGroupKey = groups.entries
+        val best = groups.entries
             .mapNotNull { (key, books) ->
-                books.mapNotNull { effectiveLastReadAt(it, localTimestamps) }.maxOrNull()?.let { key to it }
+                books.mapNotNull { book -> effectiveLastReadAt(book, localTimestamps)?.let { book to it } }
+                    .maxByOrNull { it.second }
+                    ?.let { (book, lastReadAt) -> Triple(key, book, lastReadAt) }
             }
-            .maxByOrNull { it.second }
-            ?.first
-            ?: return emptyList()
+            .maxByOrNull { it.third }
+            ?: return emptyList<Book>() to null
 
-        return groups.getValue(bestGroupKey).sortedBy { it.series?.position ?: 0.0 }
+        val (bestGroupKey, focusBook, _) = best
+        val sorted = groups.getValue(bestGroupKey).sortedBy { it.series?.position ?: 0.0 }
+        return sorted to focusBook.url
     }
 
     class Factory(

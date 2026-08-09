@@ -12,12 +12,15 @@ import org.readium.r2.shared.publication.Locator
 private const val ACTION_ID_HIGHLIGHT = 1
 private const val ACTION_ID_NOTE = 2
 private const val ACTION_ID_BOOKMARK = 3
+private const val ACTION_ID_COPY = 4
 
 /**
- * Adds "Highlight", "Note", and "Bookmark" items to the text-selection floating toolbar -- the
- * hook Readium Kotlin exposes for this
+ * Adds "Highlight", "Note", "Bookmark", and "Copy" items to the text-selection floating toolbar --
+ * the hook Readium Kotlin exposes for this
  * (EpubNavigatorFragment.Configuration.selectionActionModeCallback). Mirrors the three
- * non-dictionary actions SelectionPopover.tsx offers for a fresh (non-existing) selection.
+ * non-dictionary actions SelectionPopover.tsx offers for a fresh (non-existing) selection, plus a
+ * "Copy" action that has no website equivalent (the site never disabled the browser's own native
+ * selection Copy the way this custom callback has to).
  * "Highlight" hands the whole [Selection] (locator + on-screen rect) back rather than just a
  * Locator, since the caller uses the rect to anchor the website's color-swatch popover
  * (HighlightColorPopover) right at the selection, mirroring SelectionPopover.tsx, instead of
@@ -25,9 +28,9 @@ private const val ACTION_ID_BOOKMARK = 3
  *
  * Providing a custom callback here replaces the WebView's default action mode entirely (confirmed
  * in R2BasicWebView.startActionMode -- it bypasses super.startActionMode when a custom callback is
- * set), so stock Copy/Share are intentionally not offered -- this is a dedicated annotation menu,
- * not a general text-selection menu, matching the website's own selection popover which doesn't
- * offer generic copy/share either.
+ * set), so stock Copy/Share are intentionally not offered by default -- this is a dedicated
+ * annotation menu, not a general text-selection menu -- Copy is added back explicitly above since
+ * losing the ability to copy selected text entirely wasn't the goal.
  */
 class AnnotationSelectionActionModeCallback(
     private val scope: CoroutineScope,
@@ -38,13 +41,15 @@ class AnnotationSelectionActionModeCallback(
     private val navigatorProvider: () -> SelectableNavigator?,
     private val onHighlight: (Selection) -> Unit,
     private val onNote: (Locator) -> Unit,
-    private val onBookmark: (Locator) -> Unit
+    private val onBookmark: (Locator) -> Unit,
+    private val onCopy: (Locator) -> Unit
 ) : ActionMode.Callback {
 
     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
         menu.add(Menu.NONE, ACTION_ID_HIGHLIGHT, 1, "Highlight")
         menu.add(Menu.NONE, ACTION_ID_NOTE, 2, "Note")
         menu.add(Menu.NONE, ACTION_ID_BOOKMARK, 3, "Bookmark")
+        menu.add(Menu.NONE, ACTION_ID_COPY, 4, "Copy")
         return true
     }
 
@@ -65,6 +70,11 @@ class AnnotationSelectionActionModeCallback(
             ACTION_ID_BOOKMARK -> scope.launch {
                 val navigator = navigatorProvider() ?: return@launch
                 navigator.currentSelection()?.locator?.let(onBookmark)
+                navigator.clearSelection()
+            }
+            ACTION_ID_COPY -> scope.launch {
+                val navigator = navigatorProvider() ?: return@launch
+                navigator.currentSelection()?.locator?.let(onCopy)
                 navigator.clearSelection()
             }
             else -> return false
