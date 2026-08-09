@@ -5,9 +5,7 @@ package com.ishireader.app.reader
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.RectF
-import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -43,7 +41,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -260,12 +257,6 @@ class ReaderActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Without this, the window is only truly edge-to-edge on Android 15+ (where it's
-        // platform-enforced for apps targeting API 35). On older versions the decor still fits
-        // itself around the system bars by default, so the WindowInsets.safeDrawing padding the
-        // bottom bar below relies on reports zero -- the bar then renders flush with the screen
-        // edge and collides with a legacy 3-button nav bar's buttons instead of sitting above them.
-        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_reader)
         title = intent.getStringExtra(EXTRA_TITLE)
 
@@ -794,17 +785,6 @@ class ReaderActivity : FragmentActivity() {
                                     .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
-                                // TEMP DEBUG -- diagnosing a Pixel 9a-specific bug where this bar
-                                // renders with zero/insufficient bottom inset and overlaps the
-                                // legacy 3-button nav bar. Remove once root-caused.
-                                SideEffect {
-                                    Log.d(
-                                        "ReaderInsets",
-                                        "device=${Build.MODEL} sdk=${Build.VERSION.SDK_INT} chromeShown=$chromeShown " +
-                                            "liveBottomInsetPx=$liveBottomInsetPx cachedBottomInsetPx=$cachedBottomInsetPx " +
-                                            "effectiveBottomInsetPx=$effectiveBottomInsetPx densityDpi=${density.density}"
-                                    )
-                                }
                                 IconButton(onClick = { tocSheetOpen = true }) {
                                     Icon(Icons.AutoMirrored.Filled.Toc, contentDescription = "Table of contents", tint = MaterialTheme.colorScheme.onSurface)
                                 }
