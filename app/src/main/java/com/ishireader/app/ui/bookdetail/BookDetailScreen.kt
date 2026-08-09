@@ -25,10 +25,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -103,6 +105,7 @@ fun BookDetailScreen(
     var coverImage by remember { mutableStateOf<TappedImage?>(null) }
     var loadingCover by remember { mutableStateOf(false) }
     var showTimerSheet by remember { mutableStateOf(false) }
+    var pendingDeleteCompletedReadId by remember { mutableStateOf<String?>(null) }
 
     // Returning from ReaderActivity resumes this same Activity/composition rather than
     // navigating back into it, so nothing else would otherwise re-trigger a reload -- without
@@ -320,7 +323,23 @@ fun BookDetailScreen(
             // Sits below Annotations rather than above it.
             state.lastCompletedRead?.let { completedRead ->
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Completed Reads", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Completed Reads", style = MaterialTheme.typography.titleSmall)
+                    IconButton(
+                        onClick = { pendingDeleteCompletedReadId = completedRead.id },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Delete completed read",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("Completed: ${formatTimestamp(completedRead.completedAt)}")
@@ -377,6 +396,23 @@ fun BookDetailScreen(
                 onReset = { save -> viewModel.resetCurrentRead(save) },
                 onDeleteCompleted = { id -> viewModel.deleteCompletedRead(id) },
                 onDismiss = { showTimerSheet = false }
+            )
+        }
+
+        pendingDeleteCompletedReadId?.let { id ->
+            AlertDialog(
+                onDismissRequest = { pendingDeleteCompletedReadId = null },
+                title = { Text("Delete completed read?") },
+                text = { Text("This can't be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.deleteCompletedRead(id)
+                        pendingDeleteCompletedReadId = null
+                    }) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDeleteCompletedReadId = null }) { Text("Cancel") }
+                }
             )
         }
 
