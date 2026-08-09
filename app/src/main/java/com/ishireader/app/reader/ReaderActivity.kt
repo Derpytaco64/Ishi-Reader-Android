@@ -246,6 +246,12 @@ class ReaderActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Without this, the window is only truly edge-to-edge on Android 15+ (where it's
+        // platform-enforced for apps targeting API 35). On older versions the decor still fits
+        // itself around the system bars by default, so the WindowInsets.safeDrawing padding the
+        // bottom bar below relies on reports zero -- the bar then renders flush with the screen
+        // edge and collides with a legacy 3-button nav bar's buttons instead of sitting above them.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_reader)
         title = intent.getStringExtra(EXTRA_TITLE)
 
