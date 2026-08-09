@@ -9,6 +9,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.RectF
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.automirrored.filled.Toc
 import androidx.compose.material.icons.filled.Settings
@@ -89,6 +91,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import org.readium.r2.navigator.DecorableNavigator
+import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.SelectableNavigator
 import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
@@ -145,6 +148,11 @@ class ReaderActivity : FragmentActivity() {
     companion object {
         const val EXTRA_MANIFEST_URL = "manifest_url"
         const val EXTRA_TITLE = "title"
+
+        /** Optional Locator (as JSON, Locator.toJSON().toString() shape) to open directly on,
+         *  bypassing the usual saved-position lookup -- set when launched from the book detail
+         *  screen's "jump to this annotation" action rather than the normal "Read" button. */
+        const val EXTRA_INITIAL_LOCATOR = "initial_locator"
         private const val NAVIGATOR_FRAGMENT_TAG = "epub_navigator"
 
         /** HtmlDecorationTemplate always renders a tinted decoration's background at *this* alpha,
@@ -251,6 +259,29 @@ class ReaderActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         readingTimerTracker.onResumed()
+    }
+
+    /** Volume-down/up turn pages instead of adjusting media volume when the "Volume buttons turn
+     *  pages" reader setting is on -- checked here rather than onKeyDown/onKeyUp since a bare
+     *  onKeyDown override never sees KEYCODE_VOLUME_* at all (the system intercepts those for the
+     *  volume UI before they'd reach it); dispatchKeyEvent runs early enough to claim them first.
+     *  Only ACTION_DOWN triggers a turn -- otherwise the matching ACTION_UP would double it. Same
+     *  goForward/goBackward call the tap-zone edges use (see ChromeTapInputListener), so this works
+     *  in both paginated and scrolled layout. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val isVolumeKey = event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || event.keyCode == KeyEvent.KEYCODE_VOLUME_UP
+        if (readerSettingsState.value.volumeButtonsPageTurn && isVolumeKey) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                val overflow = navigatorFragment as? OverflowableNavigator
+                if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                    overflow?.goForward(animated = true)
+                } else {
+                    overflow?.goBackward(animated = true)
+                }
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onPause() {
@@ -398,7 +429,9 @@ class ReaderActivity : FragmentActivity() {
             is Try.Failure -> return toastAndFinish("Couldn't open book: ${result.value}")
         }
 
-        val initialLocator = fetchSavedLocator(manifestUrl)
+        val initialLocator = intent.getStringExtra(EXTRA_INITIAL_LOCATOR)
+            ?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
+            ?: fetchSavedLocator(manifestUrl)
         showNavigator(publication, initialLocator, manifestUrl)
     }
 
@@ -662,6 +695,15 @@ class ReaderActivity : FragmentActivity() {
                                         Icon(
                                             Icons.AutoMirrored.Filled.Undo,
                                             contentDescription = "Return to previous position",
+                                            tint = readerTextColor
+                                        )
+                                    }
+                                    // Dismisses the bar without navigating -- it otherwise sits over the
+                                    // text with no way to clear it short of using (and thus undoing) the jump.
+                                    IconButton(onClick = { returnLocatorState.value = null }) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = "Dismiss return to position",
                                             tint = readerTextColor
                                         )
                                     }

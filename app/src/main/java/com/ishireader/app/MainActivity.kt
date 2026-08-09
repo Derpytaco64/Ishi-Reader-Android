@@ -38,6 +38,7 @@ import com.ishireader.app.ui.common.LocalBookAvailability
 import com.ishireader.app.ui.main.MainTabsScreen
 import com.ishireader.app.ui.main.TopBarViewModel
 import com.ishireader.app.ui.series.SeriesViewModel
+import org.readium.r2.shared.publication.Locator
 import com.ishireader.app.ui.settings.LocalAppSettings
 import com.ishireader.app.ui.settings.SettingsViewModel
 import com.ishireader.app.ui.settings.parseAccentColor
@@ -172,6 +173,7 @@ class MainActivity : ComponentActivity() {
                                         book,
                                         app.positionRepository,
                                         app.notesRepository,
+                                        app.annotationsRepository,
                                         app.completedReadsRepository,
                                         app.readingTimerRepository
                                     )
@@ -180,7 +182,8 @@ class MainActivity : ComponentActivity() {
                                     book = book,
                                     viewModel = viewModel,
                                     onBackClick = { navController.popBackStack() },
-                                    onReadClick = { openReader(book) }
+                                    onReadClick = { openReader(book) },
+                                    onJumpToLocator = { locator -> openReader(book, locator) }
                                 )
                             }
                         }
@@ -194,7 +197,7 @@ class MainActivity : ComponentActivity() {
         navController.navigate("bookDetail/${Uri.encode(book.manifestUrl())}")
     }
 
-    private fun openReader(book: Book) {
+    private fun openReader(book: Book, initialLocator: Locator? = null) {
         val intent = if (book.isAudiobook) {
             Intent(this, AudiobookPlayerActivity::class.java).apply {
                 putExtra(AudiobookPlayerActivity.EXTRA_MANIFEST_URL, book.manifestUrl())
@@ -206,6 +209,9 @@ class MainActivity : ComponentActivity() {
             Intent(this, ReaderActivity::class.java).apply {
                 putExtra(ReaderActivity.EXTRA_MANIFEST_URL, book.manifestUrl())
                 putExtra(ReaderActivity.EXTRA_TITLE, book.title)
+                if (initialLocator != null) {
+                    putExtra(ReaderActivity.EXTRA_INITIAL_LOCATOR, initialLocator.toJSON().toString())
+                }
             }
         }
         startActivity(intent)

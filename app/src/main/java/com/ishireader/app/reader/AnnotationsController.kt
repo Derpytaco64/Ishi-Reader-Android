@@ -39,6 +39,7 @@ enum class HighlightColor(val id: String, val hex: String) {
 
 const val ANNOTATIONS_GROUP_HIGHLIGHTS = "highlights"
 const val ANNOTATIONS_GROUP_NOTES = "notes"
+const val ANNOTATIONS_GROUP_BOOKMARKS = "bookmarks"
 
 /** A decoration group of its own, separate from highlights/notes, so a flash's on/off blinking
  *  (see [AnnotationsController.flashLocator]) never touches the diff-against-last-list logic
@@ -53,6 +54,11 @@ private const val FLASH_TINT_HEX = "#FF5722"
  *  and not part of the highlight palette (notes aren't user-colorable). */
 private const val NOTE_TINT_HEX = "#B0B0B0"
 
+/** Light orange tint for bookmark decorations -- bookmarks aren't user-colorable either, and this
+ *  is deliberately not one of the 5 highlight-palette colors so a bookmarked passage still reads
+ *  as visually distinct from an actual highlight. */
+private const val BOOKMARK_TINT_HEX = "#FFCC80"
+
 /** Grep target for the decoration diagnostics -- pairs with Readium's own "Can't locate DOM range
  *  for decoration" log, which is what a decoration that reached the navigator but couldn't be
  *  anchored in the page reports instead. */
@@ -66,12 +72,11 @@ data class AnnotationsUiState(
 )
 
 /**
- * Owns highlight/bookmark/note CRUD and keeps the navigator's "highlights"/"notes" Decoration
- * groups in sync -- ports the website's annotation model onto Readium Kotlin's DecorableNavigator
- * API. Bookmarks have no visual decoration (matches the website: a bookmark marks a position, it
- * doesn't render inline in the text). Decoration ids are the annotation's own id, scoped per group
- * -- DecorableNavigator.OnActivatedEvent carries the group name too, so callers don't need a
- * prefix to tell a tapped highlight apart from a tapped note.
+ * Owns highlight/bookmark/note CRUD and keeps the navigator's "highlights"/"notes"/"bookmarks"
+ * Decoration groups in sync -- ports the website's annotation model onto Readium Kotlin's
+ * DecorableNavigator API. Decoration ids are the annotation's own id, scoped per group --
+ * DecorableNavigator.OnActivatedEvent carries the group name too, so callers don't need a
+ * prefix to tell a tapped highlight apart from a tapped note or bookmark.
  */
 class AnnotationsController(
     private val scope: CoroutineScope,
@@ -127,12 +132,25 @@ class AnnotationsController(
             )
         }
 
+        val bookmarkDecorations = _state.value.bookmarks.mapNotNull { b ->
+            val locator = b.locator?.let(::parseLocator) ?: return@mapNotNull null
+            Decoration(
+                id = b.id,
+                locator = locator,
+                style = Decoration.Style.Highlight(
+                    tint = android.graphics.Color.parseColor(BOOKMARK_TINT_HEX),
+                    isActive = true
+                )
+            )
+        }
+
         // CLAUDE-ADDED: Anything dropped here never reaches the navigator, so it can't decorate no
         // matter what the rendering side does -- log it, since a decoration that's listed in the
         // annotations panel but invisible in the text looks identical to a rendering failure.
-        logDecorationCounts(highlightDecorations.size, noteDecorations.size)
+        logDecorationCounts(highlightDecorations.size, noteDecorations.size, bookmarkDecorations.size)
         logDecorationDetail(ANNOTATIONS_GROUP_HIGHLIGHTS, highlightDecorations)
         logDecorationDetail(ANNOTATIONS_GROUP_NOTES, noteDecorations)
+        logDecorationDetail(ANNOTATIONS_GROUP_BOOKMARKS, bookmarkDecorations)
 
         if (force) {
             // CLAUDE-ADDED: applyDecorations() is a *diff* against the last list the navigator was
@@ -145,22 +163,26 @@ class AnnotationsController(
             // onResourceLoaded replay off the same per-group state this leaves behind.
             nav.applyDecorations(emptyList(), ANNOTATIONS_GROUP_HIGHLIGHTS)
             nav.applyDecorations(emptyList(), ANNOTATIONS_GROUP_NOTES)
+            nav.applyDecorations(emptyList(), ANNOTATIONS_GROUP_BOOKMARKS)
         }
 
         nav.applyDecorations(highlightDecorations, ANNOTATIONS_GROUP_HIGHLIGHTS)
         nav.applyDecorations(noteDecorations, ANNOTATIONS_GROUP_NOTES)
+        nav.applyDecorations(bookmarkDecorations, ANNOTATIONS_GROUP_BOOKMARKS)
     }
 
-    private fun logDecorationCounts(highlights: Int, notes: Int) {
+    private fun logDecorationCounts(highlights: Int, notes: Int, bookmarks: Int) {
         val skippedHighlights = _state.value.highlights.size - highlights
         val skippedNotes = _state.value.notes.size - notes
+        val skippedBookmarks = _state.value.bookmarks.size - bookmarks
         Log.i(
             LOG_TAG,
             "decorations: $highlights/${_state.value.highlights.size} highlights, " +
-                "$notes/${_state.value.notes.size} notes" +
-                if (skippedHighlights > 0 || skippedNotes > 0) {
-                    " -- skipped $skippedHighlights highlight(s) and $skippedNotes note(s) with an " +
-                        "unusable locator"
+                "$notes/${_state.value.notes.size} notes, " +
+                "$bookmarks/${_state.value.bookmarks.size} bookmarks" +
+                if (skippedHighlights > 0 || skippedNotes > 0 || skippedBookmarks > 0) {
+                    " -- skipped $skippedHighlights highlight(s), $skippedNotes note(s) and " +
+                        "$skippedBookmarks bookmark(s) with an unusable locator"
                 } else {
                     ""
                 }
@@ -190,7 +212,7 @@ class AnnotationsController(
         }
     }
 
-    /** Re-pushes the current highlight/note decorations to the navigator without re-fetching from
+    /** Re-pushes the current highlight/note/bookmark decorations to the navigator without re-fetching from
      *  the server -- see ReaderActivity's currentLocator collector, which calls this every time the
      *  visible chapter changes as a defense against decorations that raced the initial fetch.
      *  Forced, because an unforced re-push of an unchanged list is a no-op (see [applyDecorations]). */

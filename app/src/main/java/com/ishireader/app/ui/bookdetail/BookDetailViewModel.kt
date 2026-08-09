@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.StoredBookmark
 import com.ishireader.app.data.model.StoredCompletedReadTime
+import com.ishireader.app.data.model.StoredHighlight
 import com.ishireader.app.data.model.StoredNote
 import com.ishireader.app.data.model.computeCurrentWpm
 import com.ishireader.app.data.model.computeSecondsLeft
@@ -13,6 +15,7 @@ import com.ishireader.app.data.model.percentFromLocator
 import com.ishireader.app.data.model.progressionFromLocator
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.dataOrNull
+import com.ishireader.app.data.repository.AnnotationsRepository
 import com.ishireader.app.data.repository.CompletedReadsRepository
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
@@ -27,6 +30,8 @@ data class BookDetailUiState(
     /** 0..100, one decimal place to match the website's rounding; null = no progress yet (dial hidden). */
     val percentRead: Double? = null,
     val notes: List<StoredNote> = emptyList(),
+    val highlights: List<StoredHighlight> = emptyList(),
+    val bookmarks: List<StoredBookmark> = emptyList(),
     /** Most recent entry from the reader's own Completed tab -- mirrors StatefulBookSheet.tsx's
      *  lastCompletedRead (max by completedAt, not array order). */
     val lastCompletedRead: StoredCompletedReadTime? = null,
@@ -44,15 +49,16 @@ data class BookDetailUiState(
 
 /**
  * Reads the saved Locator's `locations.totalProgression` to derive a percent-read figure, the
- * book's notes, its most recent completed-read run, and a point-in-time "Reading Timer" snapshot
- * (time read so far / current pace / estimated time left) -- matching StatefulBookSheet.tsx's
- * ReadProgressDial + "Reading Timer" section + "Completed Read" section. Highlights/bookmarks
- * aren't ported yet -- they depend on API clients this app doesn't have.
+ * book's highlights/bookmarks/notes, its most recent completed-read run, and a point-in-time
+ * "Reading Timer" snapshot (time read so far / current pace / estimated time left) -- matching
+ * StatefulBookSheet.tsx's ReadProgressDial + annotations list + "Reading Timer" section +
+ * "Completed Read" section.
  */
 class BookDetailViewModel(
     private val book: Book,
     private val positionRepository: PositionRepository,
     private val notesRepository: NotesRepository,
+    private val annotationsRepository: AnnotationsRepository,
     private val completedReadsRepository: CompletedReadsRepository,
     private val readingTimerRepository: ReadingTimerRepository
 ) : ViewModel() {
@@ -64,8 +70,8 @@ class BookDetailViewModel(
         refresh()
     }
 
-    /** Re-reads position/notes/completed-reads/reading-timer figures -- called on first load and
-     *  again whenever this screen resumes (see BookDetailScreen), since returning from
+    /** Re-reads position/annotations/completed-reads/reading-timer figures -- called on first load
+     *  and again whenever this screen resumes (see BookDetailScreen), since returning from
      *  ReaderActivity (a separate Activity) doesn't otherwise re-trigger anything: it resumes the
      *  same Compose composition rather than navigating back into it. positionRepository.getPosition
      *  already reconciles against the server first, so this picks up whatever was just read. */
@@ -73,6 +79,8 @@ class BookDetailViewModel(
         viewModelScope.launch {
             val locatorDeferred = async { positionRepository.getPosition(book.manifestUrl()) }
             val notesDeferred = async { notesRepository.getNotes(book.manifestUrl()) }
+            val highlightsDeferred = async { annotationsRepository.getHighlights(book.manifestUrl()) }
+            val bookmarksDeferred = async { annotationsRepository.getBookmarks(book.manifestUrl()) }
             val completedReadsDeferred = async { completedReadsRepository.getCompletedReadTimes(book.manifestUrl()) }
             val readingSecondsDeferred = async { readingTimerRepository.getReadingTimeSeconds(book.manifestUrl()) }
             val wordCountDeferred = async { readingTimerRepository.getWordCount(book.manifestUrl()) }
@@ -83,6 +91,8 @@ class BookDetailViewModel(
                 is ApiResult.Success -> result.data
                 is ApiResult.Failure -> emptyList()
             }
+            val highlights = highlightsDeferred.await().dataOrNull() ?: emptyList()
+            val bookmarks = bookmarksDeferred.await().dataOrNull() ?: emptyList()
             // CLAUDE-ADDED: Same most-recent-first logic as the site's lastCompletedRead --
             // upsertCompletedReadTime appends, so completedAt (not array order) decides "the last run".
             val completedReads = when (val result = completedReadsDeferred.await()) {
@@ -102,6 +112,8 @@ class BookDetailViewModel(
             _uiState.value = BookDetailUiState(
                 percentRead = percentFromLocator(locator),
                 notes = notes,
+                highlights = highlights,
+                bookmarks = bookmarks,
                 lastCompletedRead = lastCompletedRead,
                 completedReads = completedReads,
                 totalReadingSeconds = readingSecondsDeferred.await().dataOrNull(),
@@ -162,15 +174,33 @@ class BookDetailViewModel(
         viewModelScope.launch { notesRepository.deleteNote(book.manifestUrl(), id) }
     }
 
+    fun deleteHighlight(id: String) {
+        _uiState.value = _uiState.value.copy(highlights = _uiState.value.highlights.filterNot { it.id == id })
+        viewModelScope.launch { annotationsRepository.deleteHighlight(book.manifestUrl(), id) }
+    }
+
+    fun deleteBookmark(id: String) {
+        _uiState.value = _uiState.value.copy(bookmarks = _uiState.value.bookmarks.filterNot { it.id == id })
+        viewModelScope.launch { annotationsRepository.deleteBookmark(book.manifestUrl(), id) }
+    }
+
     class Factory(
         private val book: Book,
         private val positionRepository: PositionRepository,
         private val notesRepository: NotesRepository,
+        private val annotationsRepository: AnnotationsRepository,
         private val completedReadsRepository: CompletedReadsRepository,
         private val readingTimerRepository: ReadingTimerRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            BookDetailViewModel(book, positionRepository, notesRepository, completedReadsRepository, readingTimerRepository) as T
+            BookDetailViewModel(
+                book,
+                positionRepository,
+                notesRepository,
+                annotationsRepository,
+                completedReadsRepository,
+                readingTimerRepository
+            ) as T
     }
 }

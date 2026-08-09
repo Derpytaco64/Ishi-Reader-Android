@@ -149,6 +149,18 @@ fun ReaderSettingsSheet(
                 )
             }
 
+            SectionLabel("Controls")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Text("Volume buttons turn pages", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = settings.volumeButtonsPageTurn,
+                    onCheckedChange = { onSettingsChange(settings.copy(volumeButtonsPageTurn = it)) }
+                )
+            }
+
             SectionLabel("Spacing")
             Row(
                 verticalAlignment = Alignment.CenterVertically,

@@ -102,7 +102,11 @@ data class ReaderSettings(
     val verticalMargin: Double = 0.0,
     val showChapterTitle: Boolean = false,
     val positionDisplayMode: PositionDisplayMode = PositionDisplayMode.NONE,
-    val positionDisplayAlignment: PositionDisplayAlignment = PositionDisplayAlignment.CENTER
+    val positionDisplayAlignment: PositionDisplayAlignment = PositionDisplayAlignment.CENTER,
+    /** When on, hardware volume-down/volume-up turn pages forward/backward instead of adjusting
+     *  the device's media volume -- handled entirely in ReaderActivity's dispatchKeyEvent, not a
+     *  Readium/EpubPreferences concept. */
+    val volumeButtonsPageTurn: Boolean = false
 )
 
 fun ReaderSettings.toEpubPreferences(): EpubPreferences {

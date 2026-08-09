@@ -23,10 +23,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -58,23 +63,23 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.DailyReadingBucket
-import com.ishireader.app.data.model.StoredNote
-import com.ishireader.app.data.model.percentFromLocator
+import com.ishireader.app.reader.AnnotationsUiState
 import com.ishireader.app.reader.ReadingTimerUiState
 import com.ishireader.app.reader.TappedImage
+import com.ishireader.app.ui.reader.AnnotationRowItem
+import com.ishireader.app.ui.reader.AnnotationTab
+import com.ishireader.app.ui.reader.AnnotationType
 import com.ishireader.app.ui.reader.ImageViewerOverlay
-import com.ishireader.app.ui.reader.NoteEditorDialog
 import com.ishireader.app.ui.reader.ReadingTimerSheet
+import com.ishireader.app.ui.reader.buildRows
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.readium.r2.shared.publication.Locator
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -82,11 +87,13 @@ fun BookDetailScreen(
     book: Book,
     viewModel: BookDetailViewModel,
     onBackClick: () -> Unit,
-    onReadClick: () -> Unit
+    onReadClick: () -> Unit,
+    onJumpToLocator: (Locator) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val clipboard = LocalClipboardManager.current
-    var editingNote by remember { mutableStateOf<StoredNote?>(null) }
+    var annotationTab by remember { mutableStateOf(AnnotationTab.ALL) }
+    var annotationsDescending by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var coverImage by remember { mutableStateOf<TappedImage?>(null) }
@@ -117,6 +124,10 @@ fun BookDetailScreen(
             )
         }
     ) { padding ->
+        // Wraps the whole body (not just the description) in a SelectionContainer so any text on
+        // this screen -- metadata chips, notes, annotation excerpts -- can be long-pressed and
+        // copied, same as the reader itself already allows for in-book text.
+        SelectionContainer {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -240,13 +251,69 @@ fun BookDetailScreen(
                 }
             }
 
-            if (state.notes.isNotEmpty()) {
+            // CLAUDE-ADDED: Ports the website's book detail annotations list -- same all/highlights/
+            // bookmarks/notes filter and book-order sort as the in-reader AnnotationsPanelSheet
+            // (shared row logic lives in AnnotationRows.kt). Tapping a row opens the reader at that
+            // exact locator rather than just the saved reading position.
+            if (state.highlights.isNotEmpty() || state.bookmarks.isNotEmpty() || state.notes.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Notes", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Annotations", style = MaterialTheme.typography.titleSmall)
+                    IconButton(onClick = { annotationsDescending = !annotationsDescending }) {
+                        Icon(
+                            if (annotationsDescending) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
+                            contentDescription = "Sort order"
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AnnotationTab.entries.forEach { t ->
+                        FilterChip(
+                            selected = annotationTab == t,
+                            onClick = { annotationTab = t },
+                            label = { Text(t.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.notes.sortedByDescending { it.createdAt }.forEach { note ->
-                        NoteCard(note = note, onClick = { editingNote = note })
+
+                val annotationsState = AnnotationsUiState(
+                    loading = false,
+                    highlights = state.highlights,
+                    bookmarks = state.bookmarks,
+                    notes = state.notes
+                )
+                val rows = buildRows(annotationsState, annotationTab, annotationsDescending)
+                if (rows.isEmpty()) {
+                    Text(
+                        "No annotations in this filter",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    Column {
+                        rows.forEach { row ->
+                            AnnotationRowItem(
+                                row = row,
+                                totalPositions = null,
+                                onJump = { row.locator?.let(onJumpToLocator) },
+                                onDelete = {
+                                    when (row.type) {
+                                        AnnotationType.HIGHLIGHT -> viewModel.deleteHighlight(row.id)
+                                        AnnotationType.BOOKMARK -> viewModel.deleteBookmark(row.id)
+                                        AnnotationType.NOTE -> viewModel.deleteNote(row.id)
+                                    }
+                                },
+                                onEditNote = { text -> viewModel.updateNoteText(row.id, text) }
+                            )
+                            HorizontalDivider()
+                        }
                     }
                 }
             }
@@ -276,6 +343,7 @@ fun BookDetailScreen(
                 ChipSection(title = "Language") { Chip(book.language) }
             }
         }
+        }
 
         coverImage?.let { image ->
             ImageViewerOverlay(image = image, onClose = { coverImage = null })
@@ -296,21 +364,6 @@ fun BookDetailScreen(
             )
         }
 
-        editingNote?.let { note ->
-            NoteEditorDialog(
-                initialText = note.text,
-                isNew = false,
-                onSave = { text ->
-                    viewModel.updateNoteText(note.id, text)
-                    editingNote = null
-                },
-                onDelete = {
-                    viewModel.deleteNote(note.id)
-                    editingNote = null
-                },
-                onDismiss = { editingNote = null }
-            )
-        }
     }
 }
 
@@ -353,37 +406,6 @@ private fun DailyHistoryRow(bucket: DailyReadingBucket) {
         Text(formatDuration(bucket.seconds), style = MaterialTheme.typography.labelSmall)
         Text(wpm?.let { "$it wpm" } ?: "—", style = MaterialTheme.typography.labelSmall)
         Text("$percent%", style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-/** One note, matching the site's per-note rendering: the highlighted passage it was attached to
- *  (if any), the note's own text, then chapter/percent/timestamp chips. Tapping it opens the same
- *  edit/delete NoteEditorDialog the reader's own annotations panel uses -- mirrors
- *  StatefulBookSheet.tsx's inline "Edit note" affordance on this same read-only list. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun NoteCard(note: StoredNote, onClick: () -> Unit) {
-    val quote = (note.locator?.jsonObject
-        ?.get("text")?.jsonObject
-        ?.get("highlight") as? JsonPrimitive)?.contentOrNull
-    val percent = percentFromLocator(note.locator)
-
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.clickable(onClick = onClick)
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            quote?.let {
-                Text("“$it”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(note.text, style = MaterialTheme.typography.bodyMedium)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                note.chapterTitle?.let { Chip(it) }
-                percent?.let { Chip("$it%") }
-                Chip(formatTimestamp(note.createdAt))
-            }
-        }
     }
 }
 
