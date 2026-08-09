@@ -231,27 +231,6 @@ fun BookDetailScreen(
                 Text(description, style = MaterialTheme.typography.bodyMedium)
             }
 
-            // CLAUDE-ADDED: The most recent entry from the reader's own Completed tab, matching
-            // StatefulBookSheet.tsx's "Completed Read" card -- only the single latest run, not the
-            // full history list the reader's own Manage sheet's Completed tab shows. Titled
-            // plural to match that sheet (and state.completedReads) now that the Manage entry
-            // point itself moved up beside the progress dial instead of heading its own section here.
-            state.lastCompletedRead?.let { completedRead ->
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Completed Reads", style = MaterialTheme.typography.titleSmall)
-                Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip("Completed: ${formatTimestamp(completedRead.completedAt)}")
-                    Chip("Duration: ${formatDuration(completedRead.seconds)}")
-                }
-                completedRead.dailyHistory?.takeIf { it.isNotEmpty() }?.let { history ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        history.sortedByDescending { it.date }.forEach { bucket -> DailyHistoryRow(bucket) }
-                    }
-                }
-            }
-
             // CLAUDE-ADDED: Ports the website's book detail annotations list -- same all/highlights/
             // bookmarks/notes filter and book-order sort as the in-reader AnnotationsPanelSheet
             // (shared row logic lives in AnnotationRows.kt). Tapping a row opens the reader at that
@@ -329,6 +308,28 @@ fun BookDetailScreen(
                                 HorizontalDivider()
                             }
                         }
+                    }
+                }
+            }
+
+            // CLAUDE-ADDED: The most recent entry from the reader's own Completed tab, matching
+            // StatefulBookSheet.tsx's "Completed Read" card -- only the single latest run, not the
+            // full history list the reader's own Manage sheet's Completed tab shows. Titled
+            // plural to match that sheet (and state.completedReads) now that the Manage entry
+            // point itself moved up beside the progress dial instead of heading its own section here.
+            // Sits below Annotations rather than above it.
+            state.lastCompletedRead?.let { completedRead ->
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Completed Reads", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Completed: ${formatTimestamp(completedRead.completedAt)}")
+                    Chip("Duration: ${formatDuration(completedRead.seconds)}")
+                }
+                completedRead.dailyHistory?.takeIf { it.isNotEmpty() }?.let { history ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        history.sortedByDescending { it.date }.forEach { bucket -> DailyHistoryRow(bucket) }
                     }
                 }
             }
