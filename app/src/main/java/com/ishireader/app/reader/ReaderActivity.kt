@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -239,6 +240,13 @@ class ReaderActivity : FragmentActivity() {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
         }
+        // controller.show()/hide() don't reliably re-trigger a fresh onApplyWindowInsets pass to
+        // composeOverlay on every call -- confirmed via logging (ReaderInsets) that after the first
+        // toggle, WindowInsets.safeDrawing's reported bottom inset can get stuck at 0 on a later
+        // show() even though the real nav bar is back on screen, until something else (e.g. the next
+        // hide()) forces a new dispatch. Explicitly requesting one here keeps Compose's insets in
+        // sync with reality on every toggle, not just the first.
+        ViewCompat.requestApplyInsets(composeOverlay)
     }
 
     override fun onResume() {
