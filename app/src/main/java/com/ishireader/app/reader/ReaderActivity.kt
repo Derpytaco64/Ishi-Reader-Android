@@ -60,7 +60,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -235,23 +234,20 @@ class ReaderActivity : FragmentActivity() {
         chromeVisible.value = visible
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         if (visible) {
+            // Must reset behavior back to default before showing -- BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            // (set below when hiding) stays set on the controller until something changes it. If it's
+            // still active on this show() call, the system reveals the bars as a transient/swipe-style
+            // overlay: visually present at full height, but WindowInsets stays 0 since transient bars
+            // are defined to float over content instead of pushing it -- confirmed via logging
+            // (ReaderInsets) that every show() after the first hide() got stuck at 0 with none of the
+            // per-frame animation samples hide() produces, i.e. it wasn't animating a real inset change
+            // at all. This is what caused the bottom bar to render with no padding and collide with a
+            // legacy 3-button nav bar.
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
             controller.show(WindowInsetsCompat.Type.systemBars())
         } else {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
-        }
-        // controller.show()/hide() don't reliably re-trigger a fresh onApplyWindowInsets pass to
-        // composeOverlay on every call -- confirmed via logging (ReaderInsets) that after a show(),
-        // WindowInsets.safeDrawing's reported bottom inset can get stuck at 0 even though the real
-        // nav bar is back on screen, until something else (e.g. the next hide()) forces a new
-        // dispatch. requestApplyInsets() alone doesn't fix this -- it just replays whatever insets
-        // the window already has cached, and that cache itself is what's stale. So instead: wait a
-        // beat for the visibility change to actually land, then pull the live insets straight from
-        // the root view and push that down to composeOverlay directly.
-        window.decorView.post {
-            ViewCompat.getRootWindowInsets(window.decorView)?.let { fresh ->
-                ViewCompat.dispatchApplyWindowInsets(composeOverlay, fresh)
-            }
         }
     }
 
