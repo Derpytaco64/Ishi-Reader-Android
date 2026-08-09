@@ -241,12 +241,18 @@ class ReaderActivity : FragmentActivity() {
             controller.hide(WindowInsetsCompat.Type.systemBars())
         }
         // controller.show()/hide() don't reliably re-trigger a fresh onApplyWindowInsets pass to
-        // composeOverlay on every call -- confirmed via logging (ReaderInsets) that after the first
-        // toggle, WindowInsets.safeDrawing's reported bottom inset can get stuck at 0 on a later
-        // show() even though the real nav bar is back on screen, until something else (e.g. the next
-        // hide()) forces a new dispatch. Explicitly requesting one here keeps Compose's insets in
-        // sync with reality on every toggle, not just the first.
-        ViewCompat.requestApplyInsets(composeOverlay)
+        // composeOverlay on every call -- confirmed via logging (ReaderInsets) that after a show(),
+        // WindowInsets.safeDrawing's reported bottom inset can get stuck at 0 even though the real
+        // nav bar is back on screen, until something else (e.g. the next hide()) forces a new
+        // dispatch. requestApplyInsets() alone doesn't fix this -- it just replays whatever insets
+        // the window already has cached, and that cache itself is what's stale. So instead: wait a
+        // beat for the visibility change to actually land, then pull the live insets straight from
+        // the root view and push that down to composeOverlay directly.
+        window.decorView.post {
+            ViewCompat.getRootWindowInsets(window.decorView)?.let { fresh ->
+                ViewCompat.dispatchApplyWindowInsets(composeOverlay, fresh)
+            }
+        }
     }
 
     override fun onResume() {
