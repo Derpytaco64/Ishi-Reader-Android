@@ -25,12 +25,9 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -557,6 +554,26 @@ class ReaderActivity : FragmentActivity() {
                 val totalPositions by totalPositionsState
                 val publicationPositions by publicationPositionsState
                 val returnLocator by returnLocatorState
+
+                // WindowInsetsControllerCompat.show() (see setChromeVisible) doesn't reliably
+                // produce a fresh, correct WindowInsets dispatch on this device/emulator combo --
+                // confirmed via logging (ReaderInsets) that every show() after the very first one
+                // gets WindowInsets.safeDrawing stuck at 0 while the real system bars are visibly
+                // full height, with none of the per-frame animation samples a working hide()
+                // produces. Resetting systemBarsBehavior before show() didn't fix it either, so
+                // this works around it instead of depending on the live value being correct:
+                // remember the last known non-zero inset (hide()'s own decay always starts from
+                // the true value, so a good reading is always available at least once per cycle)
+                // and floor the live reading with it whenever the chrome is supposed to be shown.
+                val density = LocalDensity.current
+                val liveTopInsetPx = WindowInsets.safeDrawing.getTop(density)
+                val liveBottomInsetPx = WindowInsets.safeDrawing.getBottom(density)
+                var cachedTopInsetPx by remember { mutableStateOf(0) }
+                var cachedBottomInsetPx by remember { mutableStateOf(0) }
+                if (liveTopInsetPx > 0) cachedTopInsetPx = liveTopInsetPx
+                if (liveBottomInsetPx > 0) cachedBottomInsetPx = liveBottomInsetPx
+                val effectiveTopInsetPx = maxOf(liveTopInsetPx, cachedTopInsetPx)
+                val effectiveBottomInsetPx = maxOf(liveBottomInsetPx, cachedBottomInsetPx)
                 // Scroll mode has no discrete on-screen pages to count (numPages is meaningless
                 // there -- see DynamicPageCountTracker's own doc comment), same gate the website's
                 // useExactPageCount uses.
@@ -588,7 +605,7 @@ class ReaderActivity : FragmentActivity() {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                                    .padding(top = with(density) { effectiveTopInsetPx.toDp() })
                                     .padding(horizontal = 4.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -773,25 +790,19 @@ class ReaderActivity : FragmentActivity() {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                                    .padding(bottom = with(density) { effectiveBottomInsetPx.toDp() })
                                     .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
                                 // TEMP DEBUG -- diagnosing a Pixel 9a-specific bug where this bar
                                 // renders with zero/insufficient bottom inset and overlaps the
                                 // legacy 3-button nav bar. Remove once root-caused.
-                                val density = LocalDensity.current
-                                val safeDrawingBottomPx = WindowInsets.safeDrawing.getBottom(density)
-                                val systemBarsBottomPx = WindowInsets.systemBars.getBottom(density)
-                                val navigationBarsBottomPx = WindowInsets.navigationBars.getBottom(density)
-                                val tappableElementBottomPx = WindowInsets.tappableElement.getBottom(density)
                                 SideEffect {
                                     Log.d(
                                         "ReaderInsets",
                                         "device=${Build.MODEL} sdk=${Build.VERSION.SDK_INT} chromeShown=$chromeShown " +
-                                            "safeDrawingBottomPx=$safeDrawingBottomPx systemBarsBottomPx=$systemBarsBottomPx " +
-                                            "navigationBarsBottomPx=$navigationBarsBottomPx tappableElementBottomPx=$tappableElementBottomPx " +
-                                            "densityDpi=${density.density}"
+                                            "liveBottomInsetPx=$liveBottomInsetPx cachedBottomInsetPx=$cachedBottomInsetPx " +
+                                            "effectiveBottomInsetPx=$effectiveBottomInsetPx densityDpi=${density.density}"
                                     )
                                 }
                                 IconButton(onClick = { tocSheetOpen = true }) {
