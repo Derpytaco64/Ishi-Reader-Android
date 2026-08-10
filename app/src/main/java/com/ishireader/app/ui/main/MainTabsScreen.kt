@@ -79,6 +79,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
@@ -145,8 +146,22 @@ fun MainTabsScreen(
     var userMenuExpanded by remember { mutableStateOf(false) }
     var isStatsOpen by remember { mutableStateOf(false) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
+    var isMigrateOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val app = context.applicationContext as IshiReaderApp
+    val migrateBookDataViewModel: MigrateBookDataViewModel = viewModel(
+        factory = MigrateBookDataViewModel.Factory(
+            app.libraryRepository,
+            app.positionRepository,
+            app.notesRepository,
+            app.annotationsRepository,
+            app.completedReadsRepository,
+            app.readingTimerRepository,
+            app.listeningTimeRepository,
+            app.bookMigrationRepository
+        )
+    )
+    val migrateBookDataState by migrateBookDataViewModel.uiState.collectAsState()
     val downloadsVersion by app.bookDownloadRepository.downloadsVersion.collectAsState()
     val coverSize = LocalAppSettings.current.coverSize
     val activeDownloads by app.bookDownloadRepository.activeDownloads.collectAsState()
@@ -185,6 +200,10 @@ fun MainTabsScreen(
                 is ApiResult.Failure -> {}
             }
         }
+    }
+
+    LaunchedEffect(isMigrateOpen) {
+        if (isMigrateOpen) migrateBookDataViewModel.start()
     }
 
     var contextMenuBook by remember { mutableStateOf<Book?>(null) }
@@ -304,6 +323,13 @@ fun MainTabsScreen(
                             onClick = {
                                 userMenuExpanded = false
                                 isStatsOpen = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Migrate Book Data") },
+                            onClick = {
+                                userMenuExpanded = false
+                                isMigrateOpen = true
                             }
                         )
                         if (user?.isAdmin == true) {
@@ -438,6 +464,21 @@ fun MainTabsScreen(
 
         if (isStatsOpen) {
             StatsDialog(stats = stats, onDismiss = { isStatsOpen = false })
+        }
+
+        if (isMigrateOpen) {
+            MigrateBookDataSheet(
+                state = migrateBookDataState,
+                onPickSource = migrateBookDataViewModel::pickSource,
+                onChangeSource = migrateBookDataViewModel::changeSource,
+                onContinueFromSource = migrateBookDataViewModel::goToDestStep,
+                onPickDest = migrateBookDataViewModel::pickDest,
+                onChangeDest = migrateBookDataViewModel::changeDest,
+                onContinueFromDest = migrateBookDataViewModel::goToConfirmStep,
+                onBackToDest = migrateBookDataViewModel::backToDestStep,
+                onConfirm = migrateBookDataViewModel::confirmMigration,
+                onDismiss = { isMigrateOpen = false }
+            )
         }
     }
 }
@@ -640,7 +681,7 @@ private fun StatRow(label: String, value: String) {
 
 /** Same h/m/s breakdown as the site's formatFullReadingTime (formatReadingTime.ts) -- every unit
  *  below the largest present one is always shown (no rounding to a single unit). */
-private fun formatFullReadingTime(totalSeconds: Double): String {
+fun formatFullReadingTime(totalSeconds: Double): String {
     val whole = totalSeconds.toLong()
     val hours = whole / 3600
     val minutes = (whole % 3600) / 60

@@ -23,6 +23,7 @@ import com.ishireader.app.data.model.LoginRequest
 import com.ishireader.app.data.model.LoginResponse
 import com.ishireader.app.data.model.LoginThemeModeField
 import com.ishireader.app.data.model.MeResponse
+import com.ishireader.app.data.model.MigrateBookDataRequest
 import com.ishireader.app.data.model.NoteUpsertRequest
 import com.ishireader.app.data.model.NotesResponse
 import com.ishireader.app.data.model.PositionRequest
@@ -174,6 +175,9 @@ interface ApiService {
 
     @GET("api/userdata/stats")
     suspend fun stats(): Response<UserStats>
+
+    @POST("api/userdata/migrateBookData")
+    suspend fun migrateBookData(@Body request: MigrateBookDataRequest): Response<Unit>
 
     @GET("api/admin/users")
     suspend fun adminListUsers(): Response<AdminUsersResponse>

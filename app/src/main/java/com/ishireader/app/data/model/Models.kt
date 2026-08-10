@@ -190,6 +190,12 @@ data class ReadingTimeResponse(val seconds: Double? = null)
 @Serializable
 data class ReadingTimeRequest(val manifestUrl: String, val seconds: Double)
 
+/** Carries one book's progress/annotations/reading-time onto a different library entry -- see
+ *  api/userdata/migrateBookData/route.ts. Source and destination must resolve to different content
+ *  hashes; the server rejects an exact-hash match. */
+@Serializable
+data class MigrateBookDataRequest(val sourceManifestUrl: String, val destManifestUrl: String)
+
 /** Computed once per book (whitespace-token count of every resource's body text) and persisted
  *  forever -- never recomputed once set, mirrors useBookWordCount.ts. */
 @Serializable
