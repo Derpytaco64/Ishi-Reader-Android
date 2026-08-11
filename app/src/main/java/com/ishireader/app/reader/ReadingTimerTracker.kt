@@ -139,8 +139,16 @@ class ReadingTimerTracker(
     }
 
     /** Feed every navigator locator change -- mirrors notifyLocatorChanged/computeReadingSpeed.ts.
-     *  Silently discards backward jumps, big TOC/search jumps, and implausibly fast "turns"
-     *  (mashing next-page) so only genuine reading contributes to the WPM estimate. */
+     *  Two separate ledgers come out of this: the rolling WPM buffer (speedSamples) and today's
+     *  daily bucket. Only "organic forward reading" intervals -- not backward jumps, big TOC/search
+     *  jumps, or implausibly fast "turns" (mashing next-page) -- count toward the former, since
+     *  folding those in would corrupt the WPM estimate. The daily bucket's *seconds* are credited
+     *  unconditionally regardless of any of that: a backward flip or a TOC jump is still real time
+     *  spent with the book open, and accumulatedSeconds counts it unconditionally too. Gating the
+     *  daily-bucket seconds on the same accept/reject check as the WPM sample (as this used to)
+     *  silently left the daily-history sum short of the lifetime total by however much reading
+     *  happened to involve navigation rather than straight-through page turns -- see the equivalent
+     *  fix in the website's useReadingSpeedSampler.ts. */
     fun onLocatorChanged(locator: Locator) {
         if (!::manifestUrl.isInitialized) return
         val totalProgression = locator.locations.totalProgression
@@ -158,23 +166,36 @@ class ReadingTimerTracker(
         val deltaSeconds = nowSeconds - lastSampleSeconds
         lastSampleSeconds = nowSeconds
 
-        val words = wordCount
-        if (deltaProgression > 0 && deltaProgression <= JUMP_DISCARD_THRESHOLD && deltaSeconds > 0 && words != null) {
-            val deltaWords = deltaProgression * words
-            val impliedWpm = deltaWords / (deltaSeconds / 60.0)
-            if (impliedWpm <= RAPID_TURN_WPM_CEILING) {
-                speedSamples.add(ReadingSpeedSample(deltaWords, deltaSeconds, System.currentTimeMillis().toDouble()))
-                while (speedSamples.size > MAX_SPEED_SAMPLES) speedSamples.removeAt(0)
+        if (deltaSeconds <= 0) {
+            val wpm = computeCurrentWpm(speedSamples)
+            _state.value = _state.value.copy(wpm = wpm, secondsLeft = computeSecondsLeft(wordCount, wpm, lastTotalProgression))
+            return
+        }
 
-                val dateKey = LocalDate.now().toString()
-                val existing = dailyBuckets[dateKey] ?: DailyReadingBucket(date = dateKey)
-                dailyBuckets[dateKey] = existing.copy(
-                    seconds = existing.seconds + deltaSeconds,
-                    words = existing.words + deltaWords,
-                    progressionDelta = existing.progressionDelta + deltaProgression
-                )
+        val words = wordCount
+        var deltaWords = 0.0
+        var acceptedSample = false
+        if (words != null && deltaProgression > 0 && deltaProgression <= JUMP_DISCARD_THRESHOLD) {
+            val candidateWords = deltaProgression * words
+            val impliedWpm = candidateWords / (deltaSeconds / 60.0)
+            if (impliedWpm <= RAPID_TURN_WPM_CEILING) {
+                deltaWords = candidateWords
+                acceptedSample = true
             }
         }
+
+        if (acceptedSample) {
+            speedSamples.add(ReadingSpeedSample(deltaWords, deltaSeconds, System.currentTimeMillis().toDouble()))
+            while (speedSamples.size > MAX_SPEED_SAMPLES) speedSamples.removeAt(0)
+        }
+
+        val dateKey = LocalDate.now().toString()
+        val existing = dailyBuckets[dateKey] ?: DailyReadingBucket(date = dateKey)
+        dailyBuckets[dateKey] = existing.copy(
+            seconds = existing.seconds + deltaSeconds,
+            words = existing.words + deltaWords,
+            progressionDelta = existing.progressionDelta + (if (acceptedSample) deltaProgression else 0.0)
+        )
 
         val wpm = computeCurrentWpm(speedSamples)
         _state.value = _state.value.copy(wpm = wpm, secondsLeft = computeSecondsLeft(wordCount, wpm, lastTotalProgression))
