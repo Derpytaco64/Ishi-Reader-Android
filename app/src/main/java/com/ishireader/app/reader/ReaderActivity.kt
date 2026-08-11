@@ -878,6 +878,7 @@ class ReaderActivity : FragmentActivity() {
                         TocPanelSheet(
                             publication = pub,
                             positions = publicationPositions,
+                            dynamicStartPages = dynamicPageCount?.resourceStartPages,
                             onJump = { locator ->
                                 navigateTo(locator, animated = true)
                                 tocSheetOpen = false
@@ -891,6 +892,7 @@ class ReaderActivity : FragmentActivity() {
                     AnnotationsPanelSheet(
                         state = annotationsState,
                         totalPositions = totalPositions,
+                        dynamicPageCount = dynamicPageCount,
                         onJump = { locator ->
                             currentLocatorState.value?.let { returnLocatorState.value = it }
                             navigateTo(locator, animated = true)

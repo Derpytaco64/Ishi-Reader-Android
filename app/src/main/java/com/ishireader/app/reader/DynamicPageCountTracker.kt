@@ -8,7 +8,40 @@ import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.Url
 
-data class DynamicPageCountState(val currentPage: Int? = null, val totalPages: Int? = null)
+/** [resourceStartPages] mirrors the website's resourcePages (ExactPageResourceEntry[]) dispatched
+ *  out to consumers beyond the reader's own footer -- the TOC panel and annotation rows remap
+ *  their coarse positions()-derived page numbers through this so every page number shown anywhere
+ *  in the app agrees with the live footer. Keyed by each reading-order resource's href *string*
+ *  (Url.toString(), fragment-free) rather than [Url] itself -- callers building this key from a
+ *  [org.readium.r2.shared.publication.Link]'s href (e.g. a TOC entry, which can carry a
+ *  fragment identifying a sub-heading) already strip the fragment and compare as strings, same
+ *  as this class's own [estimatedPages]/reading-order lookups do internally. */
+data class DynamicPageCountState(
+    val currentPage: Int? = null,
+    val totalPages: Int? = null,
+    val resourceStartPages: Map<String, Int> = emptyMap(),
+    /** Same keys as [resourceStartPages] -- how many dynamic pages each resource itself spans,
+     *  used to place a locator's within-resource progression onto a specific page (see
+     *  [dynamicPageForLocator]) rather than just the resource's first page. */
+    val resourcePageCounts: Map<String, Int> = emptyMap()
+)
+
+/** Mirrors the website's findExactPageForLocator: places [locator] on a specific dynamic page
+ *  using its resource's start page plus its within-resource progression, rather than just that
+ *  resource's first page -- e.g. a highlight near the end of a long chapter shows near the end of
+ *  that chapter's page range, not at its start. Deliberately not the cruder
+ *  `totalProgression * totalPages` shortcut, which drifts since chapters vary in length. Null
+ *  when the resource hasn't been reached by [DynamicPageCountTracker.onPositionsLoaded] (e.g. an
+ *  href outside the reading order). */
+fun dynamicPageForLocator(state: DynamicPageCountState, locator: Locator): Int? {
+    val href = locator.href.toString().substringBefore("#")
+    val start = state.resourceStartPages[href] ?: return null
+    val pages = state.resourcePageCounts[href] ?: return start
+    if (pages <= 1) return start
+    val progression = (locator.locations.progression ?: 0.0).coerceIn(0.0, 1.0)
+    val withinIndex = kotlin.math.round(progression * (pages - 1)).toInt()
+    return start + withinIndex
+}
 
 /**
  * A "dynamic" page count -- unlike the position/totalPositions the reader already shows elsewhere
@@ -75,15 +108,26 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
 
     private fun recompute() {
         if (readingOrderHrefs.isEmpty()) return
-        val href = currentHref ?: return
+        val href = currentHref
 
         var pagesBefore = 0
+        var currentResourceStart: Int? = null
+        val startPages = mutableMapOf<String, Int>()
+        val pageCounts = mutableMapOf<String, Int>()
         for (resourceHref in readingOrderHrefs) {
-            if (resourceHref == href) break
-            pagesBefore += estimatedPages(resourceHref)
+            val key = resourceHref.toString()
+            startPages[key] = pagesBefore + 1
+            if (resourceHref == href) currentResourceStart = pagesBefore
+            val pages = estimatedPages(resourceHref)
+            pageCounts[key] = pages
+            pagesBefore += pages
         }
 
-        val total = readingOrderHrefs.sumOf { estimatedPages(it) }
-        _state.value = DynamicPageCountState(currentPage = pagesBefore + currentPageIndex + 1, totalPages = total)
+        _state.value = DynamicPageCountState(
+            currentPage = currentResourceStart?.let { it + currentPageIndex + 1 },
+            totalPages = pagesBefore,
+            resourceStartPages = startPages,
+            resourcePageCounts = pageCounts
+        )
     }
 }

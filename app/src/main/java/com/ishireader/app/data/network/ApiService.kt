@@ -26,6 +26,7 @@ import com.ishireader.app.data.model.MeResponse
 import com.ishireader.app.data.model.MigrateBookDataRequest
 import com.ishireader.app.data.model.NoteUpsertRequest
 import com.ishireader.app.data.model.NotesResponse
+import com.ishireader.app.data.model.PageCountResponse
 import com.ishireader.app.data.model.PositionRequest
 import com.ishireader.app.data.model.PositionResponse
 import com.ishireader.app.data.model.PublicUsersResponse
@@ -159,6 +160,10 @@ interface ApiService {
 
     @POST("api/userdata/wordCount")
     suspend fun setWordCount(@Body request: WordCountRequest): Response<Unit>
+
+    /** GET-only, computes-and-caches on the server on a cache miss -- see PageCountResponse. */
+    @GET("api/userdata/pageCount")
+    suspend fun getPageCount(@Query("manifestUrl") manifestUrl: String): Response<PageCountResponse>
 
     /** Global per-user buffer, no manifestUrl -- carries the live WPM estimate across book switches. */
     @GET("api/userdata/readingSpeedSamples")

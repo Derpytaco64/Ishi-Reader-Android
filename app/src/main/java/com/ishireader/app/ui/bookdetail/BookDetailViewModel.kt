@@ -44,7 +44,13 @@ data class BookDetailUiState(
      *  ticking counter (this screen isn't open while actually reading). Null fields hide their row. */
     val totalReadingSeconds: Double? = null,
     val wpm: Int? = null,
-    val secondsLeft: Double? = null
+    val secondsLeft: Double? = null,
+    /** The original Thorium Reader's 1024-characters-per-page estimate, computed server-side on
+     *  demand -- mirrors StatefulBookSheet.tsx's own pageCount. Fetched in its own coroutine (see
+     *  [BookDetailViewModel.refresh]) rather than alongside everything else above, since a cache
+     *  miss can trigger an expensive first-time server-side computation; null just hides the chip
+     *  while it's in flight instead of holding up the rest of the screen. */
+    val pageCount: Int? = null
 )
 
 /**
@@ -68,6 +74,20 @@ class BookDetailViewModel(
 
     init {
         refresh()
+        fetchPageCount()
+    }
+
+    /** Deliberately its own coroutine, not bundled into [refresh]'s Promise.all-style batch --
+     *  unlike everything fetched there (which just reads back something already cached), a page
+     *  count cache miss can trigger an expensive server-side computation that walks every
+     *  reading-order resource. Fetched once (not re-triggered by resume-refresh, since it's a
+     *  fixed property of the book's own text) so the rest of the screen never waits on it; the
+     *  chip just pops in once it resolves. */
+    private fun fetchPageCount() {
+        viewModelScope.launch {
+            val pageCount = readingTimerRepository.getPageCount(book.manifestUrl()).dataOrNull()
+            _uiState.value = _uiState.value.copy(pageCount = pageCount)
+        }
     }
 
     /** Re-reads position/annotations/completed-reads/reading-timer figures -- called on first load
@@ -118,7 +138,8 @@ class BookDetailViewModel(
                 completedReads = completedReads,
                 totalReadingSeconds = readingSecondsDeferred.await().dataOrNull(),
                 wpm = wpm,
-                secondsLeft = computeSecondsLeft(wordCount, wpm, progressionFromLocator(locator))
+                secondsLeft = computeSecondsLeft(wordCount, wpm, progressionFromLocator(locator)),
+                pageCount = _uiState.value.pageCount
             )
         }
     }

@@ -221,7 +221,7 @@ fun BookDetailScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            MetadataChips(book = book)
+            MetadataChips(book = book, pageCount = state.pageCount)
 
             if (book.tags.isNotEmpty()) {
                 ChipSection(title = "Genres") { book.tags.forEach { tag -> Chip(tag) } }
@@ -498,12 +498,15 @@ private fun formatEstimatedTime(totalSeconds: Double): String {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MetadataChips(book: Book) {
+private fun MetadataChips(book: Book, pageCount: Int?) {
     val chips = buildList {
         book.addedAt?.let { add("Added" to DateFormat.getDateInstance().format(Date(it.toLong()))) }
         book.modified?.let { add("Modified" to it) }
         book.published?.let { add("Published" to it) }
         book.fileSize?.let { add("Size" to it) }
+        // CLAUDE-ADDED: 0 is a real but uninformative result for a pathological empty-text book --
+        // excluded the same way the website's own !!pageCount check drops it.
+        pageCount?.takeIf { it > 0 }?.let { add("# of pages" to it.toString()) }
     }
 
     FlowRow(

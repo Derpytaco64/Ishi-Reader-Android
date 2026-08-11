@@ -204,6 +204,12 @@ data class WordCountResponse(val wordCount: Double? = null)
 @Serializable
 data class WordCountRequest(val manifestUrl: String, val wordCount: Double)
 
+/** Computed server-side on first request (the original Thorium Reader's 1024-characters-per-page
+ *  estimate) and cached forever after -- mirrors pageCountApi.ts. GET-only; unlike word count,
+ *  the client never pushes this value, the server always derives it. */
+@Serializable
+data class PageCountResponse(val pageCount: Int? = null)
+
 /** One accepted reading-speed observation between two locator-change events -- mirrors
  *  ReadingSpeedSample.ts. Global/cross-book, not scoped to a single manifestUrl. */
 @Serializable

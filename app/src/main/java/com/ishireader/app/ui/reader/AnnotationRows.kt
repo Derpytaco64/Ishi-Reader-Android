@@ -30,7 +30,9 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ishireader.app.reader.AnnotationsUiState
+import com.ishireader.app.reader.DynamicPageCountState
 import com.ishireader.app.reader.HighlightColor
+import com.ishireader.app.reader.dynamicPageForLocator
 import kotlinx.serialization.json.JsonElement
 import org.json.JSONObject
 import org.readium.r2.shared.publication.Locator
@@ -117,10 +119,18 @@ internal fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending
 internal fun parseLocator(json: JsonElement): Locator? =
     runCatching { Locator.fromJSON(JSONObject(json.toString())) }.getOrNull()
 
-/** Mirrors the website's getLocationLabel.ts: page-of-total when a page count is known for this
- *  locator, otherwise the same one-decimal percent format used elsewhere in the app. */
-internal fun locationLabel(locator: Locator?, totalPositions: Int?): String? {
+/** Mirrors the website's getLocationLabel.ts: prefers the real, layout-aware dynamic page (see
+ *  DynamicPageCountTracker) over the coarse positions()-derived one -- same "chapters vary in
+ *  length" reasoning findExactPageForLocator documents -- then falls back to the coarse
+ *  page-of-total, then to the same one-decimal percent format used elsewhere in the app. */
+internal fun locationLabel(locator: Locator?, totalPositions: Int?, dynamicPageCount: DynamicPageCountState? = null): String? {
     if (locator == null) return null
+
+    val dynamicTotal = dynamicPageCount?.totalPages
+    if (dynamicPageCount != null && dynamicTotal != null) {
+        dynamicPageForLocator(dynamicPageCount, locator)?.let { return "$it of $dynamicTotal" }
+    }
+
     val page = locator.locations.position
     if (page != null && totalPositions != null) return "$page of $totalPositions"
 
@@ -139,7 +149,8 @@ internal fun AnnotationRowItem(
     totalPositions: Int?,
     onJump: () -> Unit,
     onDelete: () -> Unit,
-    onEditNote: (String) -> Unit
+    onEditNote: (String) -> Unit,
+    dynamicPageCount: DynamicPageCountState? = null
 ) {
     var showNoteDialog by remember { mutableStateOf(false) }
 
@@ -180,7 +191,7 @@ internal fun AnnotationRowItem(
 
             val metaParts = listOfNotNull(
                 if (!usesChapterAsExcerpt) row.chapterTitle else null,
-                locationLabel(row.locator, totalPositions),
+                locationLabel(row.locator, totalPositions, dynamicPageCount),
                 if (row.type == AnnotationType.NOTE) {
                     "Last edited " + formatTimestamp(row.updatedAt ?: row.createdAt)
                 } else {

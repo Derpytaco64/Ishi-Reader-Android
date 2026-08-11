@@ -63,6 +63,19 @@ class ReadingTimerRepository(private val network: NetworkModule) {
         }
     }
 
+    /** GET-only -- the server computes and caches this on a cache miss (mirrors
+     *  fetchPageCountFromServer), so simply calling this is what makes the value exist. */
+    suspend fun getPageCount(manifestUrl: String): ApiResult<Int?> = withContext(Dispatchers.IO) {
+        try {
+            val response = network.api.getPageCount(manifestUrl)
+            val body = response.body()
+            if (response.isSuccessful && body != null) ApiResult.Success(body.pageCount)
+            else ApiResult.Failure("Couldn't load page count (${response.code()})")
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error")
+        }
+    }
+
     /** Global per-user buffer, not scoped to a single book -- carries the live WPM estimate
      *  across book switches, same as the website. */
     suspend fun getReadingSpeedSamples(): ApiResult<List<ReadingSpeedSample>> = withContext(Dispatchers.IO) {

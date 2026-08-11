@@ -15,25 +15,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-/** A curated subset of the site's ~330-emoji searchable picker -- enough choice for a shelf icon
- *  without reproducing that whole searchable grid. */
-val ShelfIcons = listOf(
-    "📚", "❤️", "⭐", "🔥", "📖", "🎧",
-    "🎭", "🐉", "👻", "🧛", "🖤", "👽",
-    "🌌", "⚔️", "🧙", "👑", "💀", "👼",
-    "🏰", "🌙", "☀️", "☁️", "⚡", "🌺",
-    "🍁", "🍃", "🌊", "🗺️", "🔮", "🕓",
-    "🏆", "🎓", "💼", "⚖️", "🔬", "🧪",
-    "🚀", "🤖", "👾", "🎲", "♠️", "🎀",
-    "📰", "📝", "📌", "🔖", "🏹", "🪄"
-)
-
-private val DefaultIcon = ShelfIcons.first()
-
 data class ShelfModalState(
     val editingShelfId: String? = null,
     val name: String = "",
-    val icon: String = DefaultIcon,
+    val icon: String = DEFAULT_SHELF_ICON,
     /** Set when opened from the book context menu's "+ Create new shelf" -- that book is added
      *  to the shelf the instant it's created, same as the site's StatefulShelfFormModal. */
     val addBookUrl: String? = null

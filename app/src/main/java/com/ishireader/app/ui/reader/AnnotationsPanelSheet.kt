@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ishireader.app.reader.AnnotationsUiState
+import com.ishireader.app.reader.DynamicPageCountState
 import org.readium.r2.shared.publication.Locator
 
 /**
@@ -46,6 +47,7 @@ import org.readium.r2.shared.publication.Locator
 fun AnnotationsPanelSheet(
     state: AnnotationsUiState,
     totalPositions: Int?,
+    dynamicPageCount: DynamicPageCountState?,
     onJump: (Locator) -> Unit,
     onBookmarkThisPage: () -> Unit,
     onDeleteHighlight: (String) -> Unit,
@@ -105,6 +107,7 @@ fun AnnotationsPanelSheet(
                         AnnotationRowItem(
                             row = row,
                             totalPositions = totalPositions,
+                            dynamicPageCount = dynamicPageCount,
                             onJump = { row.locator?.let(onJump) },
                             onDelete = {
                                 when (row.type) {

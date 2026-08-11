@@ -41,11 +41,19 @@ private data class TocRow(val link: Link, val depth: Int, val page: Int?)
 fun TocPanelSheet(
     publication: Publication,
     positions: List<Locator>?,
+    // CLAUDE-ADDED: Same real, layout-aware page numbers the reader's own footer shows (see
+    // DynamicPageCountTracker) -- mirrors the website's applyExactPositions, remapping each
+    // entry's coarse positions()-derived page onto the dynamic one so the TOC agrees with the
+    // footer. Null (or missing an entry) falls back to the coarse number, same as the website
+    // falls back to its raw tree when useExactPageCount has no data yet.
+    dynamicStartPages: Map<String, Int>?,
     onJump: (Locator) -> Unit,
     onDismiss: () -> Unit
 ) {
     var filter by remember { mutableStateOf("") }
-    val rows = remember(publication, positions) { flattenToc(publication.tableOfContents, positions = positions) }
+    val rows = remember(publication, positions, dynamicStartPages) {
+        flattenToc(publication.tableOfContents, positions = positions, dynamicStartPages = dynamicStartPages)
+    }
     val filtered = if (filter.isBlank()) {
         rows
     } else {
@@ -105,16 +113,19 @@ fun TocPanelSheet(
     }
 }
 
-private fun flattenToc(links: List<Link>, depth: Int = 0, positions: List<Locator>?): List<TocRow> =
+private fun flattenToc(links: List<Link>, depth: Int = 0, positions: List<Locator>?, dynamicStartPages: Map<String, Int>?): List<TocRow> =
     links.flatMap { link ->
-        listOf(TocRow(link, depth, pageNumberFor(link, positions))) +
-            flattenToc(link.children, depth + 1, positions)
+        listOf(TocRow(link, depth, pageNumberFor(link, positions, dynamicStartPages))) +
+            flattenToc(link.children, depth + 1, positions, dynamicStartPages)
     }
 
-/** Mirrors the website's buildTocTree.ts: the page number of the first entry in [positions] whose
- *  href matches this link's (fragment stripped -- positions are per-resource, not per-fragment). */
-private fun pageNumberFor(link: Link, positions: List<Locator>?): Int? {
-    if (positions == null) return null
+/** Mirrors the website's buildTocTree.ts/applyExactPositions: prefers the resource's dynamic
+ *  (real, layout-aware) start page when available, falling back to the page number of the first
+ *  entry in [positions] whose href matches this link's (fragment stripped -- positions/dynamic
+ *  pages are per-resource, not per-fragment). */
+private fun pageNumberFor(link: Link, positions: List<Locator>?, dynamicStartPages: Map<String, Int>?): Int? {
     val bareHref = link.href.toString().substringBefore("#")
+    dynamicStartPages?.get(bareHref)?.let { return it }
+    if (positions == null) return null
     return positions.firstOrNull { it.href.toString().substringBefore("#") == bareHref }?.locations?.position
 }

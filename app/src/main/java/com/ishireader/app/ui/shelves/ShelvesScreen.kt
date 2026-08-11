@@ -8,13 +8,12 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,9 +22,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -61,7 +58,7 @@ import com.ishireader.app.data.model.CustomShelf
 import com.ishireader.app.ui.common.BookCoverCard
 import com.ishireader.app.ui.settings.LocalAppSettings
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShelvesScreen(
     viewModel: ShelvesViewModel,
@@ -318,14 +315,21 @@ private fun ManageShelfBooksGrid(shelf: CustomShelf, allBooks: List<Book>, viewM
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ShelfFormDialog(modal: ShelfModalState, viewModel: ShelvesViewModel) {
+    // Local, ephemeral like the site's iconSearch useState -- this composable is only in
+    // composition while the modal is open, so it naturally resets on every open.
+    var iconSearch by remember { mutableStateOf("") }
+    val filteredIconChoices = remember(iconSearch) {
+        val query = iconSearch.trim().lowercase()
+        if (query.isEmpty()) SHELF_ICON_CHOICES else SHELF_ICON_CHOICES.filter { it.label.lowercase().contains(query) }
+    }
+
     AlertDialog(
         onDismissRequest = viewModel::closeModal,
         title = { Text(if (modal.editingShelfId == null) "New Shelf" else "Edit Shelf") },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = modal.name,
                     onValueChange = viewModel::onModalNameChange,
@@ -338,22 +342,41 @@ fun ShelfFormDialog(modal: ShelfModalState, viewModel: ShelvesViewModel) {
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
                 )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                OutlinedTextField(
+                    value = iconSearch,
+                    onValueChange = { iconSearch = it },
+                    placeholder = { Text("Search icons…") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth()
-                ) {
-                    ShelfIcons.forEach { icon ->
-                        val selected = icon == modal.icon
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                .clickable { viewModel.onModalIconChange(icon) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(icon, fontSize = 20.sp)
+                )
+                if (filteredIconChoices.isEmpty()) {
+                    Text(
+                        text = "No matching icons",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(6),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .heightIn(max = 260.dp)
+                    ) {
+                        items(filteredIconChoices, key = { it.icon }) { choice ->
+                            val selected = choice.icon == modal.icon
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .clickable { viewModel.onModalIconChange(choice.icon) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(choice.icon, fontSize = 20.sp)
+                            }
                         }
                     }
                 }
