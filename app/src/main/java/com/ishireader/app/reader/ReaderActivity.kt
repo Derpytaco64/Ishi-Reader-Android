@@ -67,6 +67,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
@@ -549,7 +550,15 @@ class ReaderActivity : FragmentActivity() {
 
         lifecycleScope.launch {
             readingTimerTracker.start(manifestUrl, publication)
-            readingTimerTracker.onResumed()
+            // Loading (download/parse) can finish after the Activity has already left RESUMED --
+            // e.g. the user backed out while the book was still opening. Only (re)start the ticker
+            // if we're still actually in the foreground; otherwise the real onResume() will start
+            // it once we're back, same as any other cold open. Without this check the ticker was
+            // starting unconditionally here and never getting a matching onPause() to stop it,
+            // ticking away in the background indefinitely and inflating the stored reading time.
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                readingTimerTracker.onResumed()
+            }
         }
         lifecycleScope.launch { annotationsController.start(manifestUrl, decorableNavigator) }
 
