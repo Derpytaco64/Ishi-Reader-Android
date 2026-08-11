@@ -11,7 +11,7 @@
 
     <!-- Needed on Android 11+ (package visibility) so ReaderSettingsSheet's dictionary-app picker
          can see every installed app that supports Android's standard ACTION_PROCESS_TEXT "Process
-         text" intent -- without this <queries> declaration, PackageManager.queryIntentActivities
+         text" intent. Without this queries declaration, PackageManager.queryIntentActivities
          silently returns an empty list for other apps' activities regardless of what's installed. -->
     <queries>
         <intent>
