@@ -315,6 +315,20 @@ fun BookDetailScreen(
                 }
             }
 
+            // CLAUDE-ADDED: The current (not-yet-completed) read's own day-by-day breakdown --
+            // same buckets a "Save" reset would archive onto a fresh Completed Reads entry (see
+            // completedRead.dailyHistory below), just shown live instead of requiring a reset
+            // first. Mirrors the reader's own ReadingTimerSheet "Timer" tab. Sits directly above
+            // Completed Reads since it's the same kind of breakdown, just for the read in progress.
+            state.currentDailyHistory.takeIf { it.isNotEmpty() }?.let { history ->
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Current Read's Sessions", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    history.sortedByDescending { it.date }.forEach { bucket -> DailyHistoryRow(bucket) }
+                }
+            }
+
             // CLAUDE-ADDED: The most recent entry from the reader's own Completed tab, matching
             // StatefulBookSheet.tsx's "Completed Read" card -- only the single latest run, not the
             // full history list the reader's own Manage sheet's Completed tab shows. Titled

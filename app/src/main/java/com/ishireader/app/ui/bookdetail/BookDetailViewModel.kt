@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.DailyReadingBucket
 import com.ishireader.app.data.model.StoredBookmark
 import com.ishireader.app.data.model.StoredCompletedReadTime
 import com.ishireader.app.data.model.StoredHighlight
@@ -45,6 +46,11 @@ data class BookDetailUiState(
     val totalReadingSeconds: Double? = null,
     val wpm: Int? = null,
     val secondsLeft: Double? = null,
+    /** The current (not-yet-completed) read's own day-by-day breakdown -- same buckets a "Save"
+     *  reset would archive onto a new StoredCompletedReadTime's dailyHistory (see
+     *  [resetCurrentRead]), shown live here so the day-by-day view doesn't require resetting the
+     *  timer first. Mirrors the reader's own ReadingTimerSheet "Timer" tab dailyReadingHistory. */
+    val currentDailyHistory: List<DailyReadingBucket> = emptyList(),
     /** The original Thorium Reader's 1024-characters-per-page estimate, computed server-side on
      *  demand -- mirrors StatefulBookSheet.tsx's own pageCount. Fetched in its own coroutine (see
      *  [BookDetailViewModel.refresh]) rather than alongside everything else above, since a cache
@@ -105,6 +111,7 @@ class BookDetailViewModel(
             val readingSecondsDeferred = async { readingTimerRepository.getReadingTimeSeconds(book.manifestUrl()) }
             val wordCountDeferred = async { readingTimerRepository.getWordCount(book.manifestUrl()) }
             val speedSamplesDeferred = async { readingTimerRepository.getReadingSpeedSamples() }
+            val dailyHistoryDeferred = async { readingTimerRepository.getDailyReadingHistory(book.manifestUrl()) }
 
             val locator = locatorDeferred.await()
             val notes = when (val result = notesDeferred.await()) {
@@ -139,6 +146,7 @@ class BookDetailViewModel(
                 totalReadingSeconds = readingSecondsDeferred.await().dataOrNull(),
                 wpm = wpm,
                 secondsLeft = computeSecondsLeft(wordCount, wpm, progressionFromLocator(locator)),
+                currentDailyHistory = dailyHistoryDeferred.await().dataOrNull() ?: emptyList(),
                 pageCount = _uiState.value.pageCount
             )
         }
