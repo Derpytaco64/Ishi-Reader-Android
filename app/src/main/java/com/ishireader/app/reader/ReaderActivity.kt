@@ -4,7 +4,9 @@ package com.ishireader.app.reader
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.RectF
@@ -472,7 +474,9 @@ class ReaderActivity : FragmentActivity() {
             },
             onNote = { locator -> pendingNewNoteLocator.value = locator },
             onBookmark = { locator -> annotationsController.addBookmark(locator) },
-            onCopy = { locator -> copyToClipboard(locator.text.highlight) }
+            onCopy = { locator -> copyToClipboard(locator.text.highlight) },
+            isDictionaryConfigured = { readerSettingsState.value.dictionaryAppComponent != null },
+            onDictionary = { locator -> launchDictionaryLookup(locator.text.highlight) }
         )
 
         val navigatorFactory = EpubNavigatorFactory(publication = publication)
@@ -1051,6 +1055,33 @@ class ReaderActivity : FragmentActivity() {
     private fun navigateTo(locator: Locator, animated: Boolean) {
         navigationGeneration++
         navigatorFragment?.go(locator, animated = animated)
+    }
+
+    /** Sends the selected passage's text to the user's configured dictionary/lookup app via
+     *  Android's standard ACTION_PROCESS_TEXT intent -- the same mechanism system-wide text
+     *  selection toolbars use to offer "Process text" entries, so any dictionary/translator app
+     *  that already supports being invoked from selected text elsewhere on the device works here
+     *  too, no per-app integration needed. Targets the specific activity the user picked in Reader
+     *  Settings (rather than showing a chooser) since re-prompting on every lookup would defeat the
+     *  point of setting a default. Silently a no-op for an empty/missing quote, same as
+     *  [copyToClipboard]. */
+    private fun launchDictionaryLookup(text: String?) {
+        if (text.isNullOrEmpty()) return
+        val componentName = readerSettingsState.value.dictionaryAppComponent
+            ?.let { runCatching { ComponentName.unflattenFromString(it) }.getOrNull() }
+        if (componentName == null) {
+            Toast.makeText(this, "No dictionary app set -- choose one in Reader Settings", Toast.LENGTH_LONG).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_PROCESS_TEXT).apply {
+            type = "text/plain"
+            component = componentName
+            putExtra(Intent.EXTRA_PROCESS_TEXT, text)
+            putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+        }
+        // The target app may have been uninstalled/disabled since it was picked in settings.
+        runCatching { startActivity(intent) }
+            .onFailure { Toast.makeText(this, "Couldn't open dictionary app", Toast.LENGTH_LONG).show() }
     }
 
     /** Copies the selected passage's text -- silently a no-op for an empty/missing quote, since a

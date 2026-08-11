@@ -9,6 +9,17 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Needed on Android 11+ (package visibility) so ReaderSettingsSheet's dictionary-app picker
+         can see every installed app that supports Android's standard ACTION_PROCESS_TEXT "Process
+         text" intent -- without this <queries> declaration, PackageManager.queryIntentActivities
+         silently returns an empty list for other apps' activities regardless of what's installed. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+
     <application
         android:name=".IshiReaderApp"
         android:allowBackup="true"

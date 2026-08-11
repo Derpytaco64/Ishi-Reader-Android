@@ -1,7 +1,12 @@
 package com.ishireader.app.ui.reader
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,17 +15,25 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.ishireader.app.data.model.PositionDisplayAlignment
 import com.ishireader.app.data.model.PositionDisplayMode
@@ -161,6 +174,12 @@ fun ReaderSettingsSheet(
                 )
             }
 
+            SectionLabel("Dictionary")
+            DictionaryAppPicker(
+                selectedComponent = settings.dictionaryAppComponent,
+                onSelect = { onSettingsChange(settings.copy(dictionaryAppComponent = it)) }
+            )
+
             SectionLabel("Spacing")
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -284,6 +303,69 @@ private fun <T> SegmentedOptionRow(
             }
         }
     }
+}
+
+/** Lets the user pick which installed app receives selected text for lookup -- see
+ *  ReaderActivity.launchDictionaryLookup, which fires Android's standard ACTION_PROCESS_TEXT
+ *  intent at whatever's picked here. Options are queried live from PackageManager rather than
+ *  hardcoded, since which dictionary/translator apps are installed varies per device -- any app
+ *  that already offers itself from other apps' text-selection toolbars ("Process text") shows up
+ *  here automatically, no per-app integration needed. */
+@Composable
+private fun DictionaryAppPicker(selectedComponent: String?, onSelect: (String?) -> Unit) {
+    val context = LocalContext.current
+    val options = remember(context) { dictionaryAppOptions(context) }
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = when {
+        selectedComponent == null -> "None"
+        else -> options.firstOrNull { it.componentName == selectedComponent }?.label ?: "Unknown app"
+    }
+
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Text("Lookup App", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(4.dp))
+        Box {
+            OutlinedButton(onClick = { expanded = true }) {
+                Text(selectedLabel)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(text = { Text("None") }, onClick = { onSelect(null); expanded = false })
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        onClick = { onSelect(option.componentName); expanded = false }
+                    )
+                }
+            }
+        }
+        if (options.isEmpty()) {
+            Text(
+                "No apps found that support text lookup. Install a dictionary or translator app " +
+                    "that offers itself from other apps' text-selection menus to enable this.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private data class DictionaryAppOption(val componentName: String, val label: String)
+
+/** [PackageManager.MATCH_DEFAULT_ONLY] mirrors how the system itself resolves ACTION_PROCESS_TEXT
+ *  for selection-toolbar "Process text" entries, so this list matches what a user would see there. */
+private fun dictionaryAppOptions(context: Context): List<DictionaryAppOption> {
+    val packageManager = context.packageManager
+    val intent = Intent(Intent.ACTION_PROCESS_TEXT).apply { type = "text/plain" }
+    return packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        .mapNotNull { resolveInfo ->
+            val activityInfo = resolveInfo.activityInfo ?: return@mapNotNull null
+            val componentName = ComponentName(activityInfo.packageName, activityInfo.name)
+            DictionaryAppOption(
+                componentName = componentName.flattenToString(),
+                label = resolveInfo.loadLabel(packageManager).toString()
+            )
+        }
+        .sortedBy { it.label }
 }
 
 @Composable

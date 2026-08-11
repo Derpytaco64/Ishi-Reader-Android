@@ -106,7 +106,14 @@ data class ReaderSettings(
     /** When on, hardware volume-down/volume-up turn pages forward/backward instead of adjusting
      *  the device's media volume -- handled entirely in ReaderActivity's dispatchKeyEvent, not a
      *  Readium/EpubPreferences concept. */
-    val volumeButtonsPageTurn: Boolean = false
+    val volumeButtonsPageTurn: Boolean = false,
+    /** A flattened ComponentName (`ComponentName.flattenToString()`) of the activity to send
+     *  selected text to for lookup -- e.g. a dictionary or translator app that supports Android's
+     *  standard ACTION_PROCESS_TEXT "Process text" intent. Null means no "Dictionary" action is
+     *  offered on the selection toolbar (see AnnotationSelectionActionModeCallback). Stored as a
+     *  plain string rather than a ComponentName since this class is @Serializable and
+     *  ComponentName isn't. */
+    val dictionaryAppComponent: String? = null
 )
 
 fun ReaderSettings.toEpubPreferences(): EpubPreferences {
