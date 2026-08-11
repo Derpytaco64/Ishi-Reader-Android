@@ -206,6 +206,20 @@ fun MainTabsScreen(
         if (isMigrateOpen) migrateBookDataViewModel.start()
     }
 
+    // CLAUDE-ADDED: Guards against the logo's drawer-open tap and a book cover's detail-navigation
+    // tap firing together (e.g. two quick taps landing close in time) -- without this, navigating
+    // to bookDetail can tear this composable (and its ModalNavigationDrawer/drawerState) down
+    // mid-open-animation, leaving a stuck blank frame. Only one of the two actions is allowed to
+    // start until it finishes; navigating away disposes this composable anyway, so there's nothing
+    // to reset on that side.
+    var interactionLocked by remember { mutableStateOf(false) }
+    val guardedOnBookClick: (Book) -> Unit = { book ->
+        if (!interactionLocked) {
+            interactionLocked = true
+            onBookClick(book)
+        }
+    }
+
     var contextMenuBook by remember { mutableStateOf<Book?>(null) }
     var pendingExportMarkdown by remember { mutableStateOf<String?>(null) }
     val createNotesDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
@@ -280,7 +294,15 @@ fun MainTabsScreen(
                     modifier = Modifier
                         .size(LogoSize)
                         .clip(CircleShape)
-                        .clickable { scope.launch { drawerState.open() } }
+                        .clickable {
+                            if (!interactionLocked) {
+                                interactionLocked = true
+                                scope.launch {
+                                    drawerState.open()
+                                    interactionLocked = false
+                                }
+                            }
+                        }
                 )
                 LibrarySearchField(
                     value = searchQuery,
@@ -388,7 +410,7 @@ fun MainTabsScreen(
                             items(searchResults) { book ->
                                 BookCoverCard(
                                     book = book,
-                                    onClick = { onBookClick(book) },
+                                    onClick = { guardedOnBookClick(book) },
                                     modifier = Modifier.fillMaxWidth(),
                                     onLongClick = { contextMenuBook = book }
                                 )
@@ -411,10 +433,10 @@ fun MainTabsScreen(
                     modifier = Modifier.weight(1f)
                 ) { page ->
                     when (page) {
-                        0 -> HomeScreen(viewModel = homeViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
-                        1 -> LibraryScreen(viewModel = libraryViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
-                        2 -> SeriesScreen(viewModel = seriesViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
-                        else -> ShelvesScreen(viewModel = shelvesViewModel, onBookClick = onBookClick, onBookLongClick = { contextMenuBook = it })
+                        0 -> HomeScreen(viewModel = homeViewModel, onBookClick = guardedOnBookClick, onBookLongClick = { contextMenuBook = it })
+                        1 -> LibraryScreen(viewModel = libraryViewModel, onBookClick = guardedOnBookClick, onBookLongClick = { contextMenuBook = it })
+                        2 -> SeriesScreen(viewModel = seriesViewModel, onBookClick = guardedOnBookClick, onBookLongClick = { contextMenuBook = it })
+                        else -> ShelvesScreen(viewModel = shelvesViewModel, onBookClick = guardedOnBookClick, onBookLongClick = { contextMenuBook = it })
                     }
                 }
             }
