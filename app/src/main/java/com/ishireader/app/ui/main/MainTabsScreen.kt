@@ -210,9 +210,17 @@ fun MainTabsScreen(
     // tap firing together (e.g. two quick taps landing close in time) -- without this, navigating
     // to bookDetail can tear this composable (and its ModalNavigationDrawer/drawerState) down
     // mid-open-animation, leaving a stuck blank frame. Only one of the two actions is allowed to
-    // start until it finishes; navigating away disposes this composable anyway, so there's nothing
-    // to reset on that side.
+    // start until it finishes. The lock releases itself after a short delay rather than relying on
+    // navigating away to dispose this composable (predictive-back keeps the destination's
+    // composition alive, so that disposal isn't guaranteed) -- otherwise a single book tap would
+    // wedge the lock on permanently and silently disable the logo/every other book afterwards.
     var interactionLocked by remember { mutableStateOf(false) }
+    LaunchedEffect(interactionLocked) {
+        if (interactionLocked) {
+            delay(500)
+            interactionLocked = false
+        }
+    }
     val guardedOnBookClick: (Book) -> Unit = { book ->
         if (!interactionLocked) {
             interactionLocked = true
@@ -297,10 +305,7 @@ fun MainTabsScreen(
                         .clickable {
                             if (!interactionLocked) {
                                 interactionLocked = true
-                                scope.launch {
-                                    drawerState.open()
-                                    interactionLocked = false
-                                }
+                                scope.launch { drawerState.open() }
                             }
                         }
                 )
