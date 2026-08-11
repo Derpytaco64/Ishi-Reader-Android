@@ -90,7 +90,9 @@ import com.ishireader.app.data.model.buildNotesMarkdown
 import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.data.model.notesExportFilename
 import com.ishireader.app.data.repository.DownloadProgress
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.StatsRepository
@@ -451,8 +453,12 @@ fun MainTabsScreen(
             // Keyed on downloadsVersion too (not just book) so reopening the menu after a
             // download/delete from elsewhere -- or from this same sheet -- reflects the change
             // immediately instead of whatever was true the first time this book was long-pressed.
-            val isDownloaded = remember(book, downloadsVersion) {
-                app.bookDownloadRepository.isDownloaded(book.manifestUrl())
+            // CLAUDE-ADDED: isDownloaded() hits the filesystem (File.listFiles()) -- run it off the
+            // main thread instead of inline in remember{}, which was blocking composition on a
+            // synchronous disk scan.
+            var isDownloaded by remember(book, downloadsVersion) { mutableStateOf(false) }
+            LaunchedEffect(book, downloadsVersion) {
+                isDownloaded = withContext(Dispatchers.IO) { app.bookDownloadRepository.isDownloaded(book.manifestUrl()) }
             }
             BookContextMenuSheet(
                 book = book,

@@ -11,7 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -24,6 +28,8 @@ import coil.request.ImageRequest
 import coil.size.Size
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.manifestUrl
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Cover + title, used by the Books/Audiobooks grid and every Home shelf (carousel or wrapping).
  *  [onLongClick] opens the shared book context menu (Go to Series / Export Notes / shelf toggle /
@@ -41,8 +47,14 @@ fun BookCoverCard(
     uniformCoverSlot: Boolean = true
 ) {
     val availability = LocalBookAvailability.current
-    val dimmed = remember(book.url, availability) {
-        availability.isOffline && availability.bookDownloadRepository?.isDownloaded(book.manifestUrl()) == false
+    // CLAUDE-ADDED: isDownloaded() hits the filesystem (File.listFiles()) -- every visible cover
+    // used to run this inline in remember{} while offline, meaning a single isOffline flip could
+    // fire a synchronous disk scan per book on the main thread in the same recomposition pass.
+    // Off the main thread and defaults to "not dimmed" until the check resolves.
+    var dimmed by remember(book.url, availability) { mutableStateOf(false) }
+    LaunchedEffect(book.url, availability) {
+        dimmed = availability.isOffline &&
+            withContext(Dispatchers.IO) { availability.bookDownloadRepository?.isDownloaded(book.manifestUrl()) } == false
     }
     Column(
         modifier = modifier
