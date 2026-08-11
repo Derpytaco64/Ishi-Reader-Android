@@ -260,7 +260,12 @@ class AudiobookPlayerActivity : ComponentActivity() {
                 }
                 lastChapterIndexForSleepTimer = chapterIndex
 
-                listeningTimeTracker.onTick(isPlaying)
+                // CLAUDE-ADDED: Same positionMs/durationMs ratio buildPositionLocator saves as
+                // totalProgression -- feeds the tracker's daily "percent listened" bucket without
+                // needing a separate progression source.
+                val durationMs = uiState.value.durationMs
+                val progression = if (durationMs > 0) (positionMs.toDouble() / durationMs).coerceIn(0.0, 1.0) else null
+                listeningTimeTracker.onTick(isPlaying, progression)
                 syncListeningState()
 
                 if (isPlaying) {

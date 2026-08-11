@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.DailyListeningBucket
 import com.ishireader.app.data.model.DailyReadingBucket
 import com.ishireader.app.data.model.StoredBookmark
+import com.ishireader.app.data.model.StoredCompletedListen
 import com.ishireader.app.data.model.StoredCompletedReadTime
 import com.ishireader.app.data.model.StoredHighlight
 import com.ishireader.app.data.model.StoredNote
@@ -18,9 +20,11 @@ import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.AnnotationsRepository
 import com.ishireader.app.data.repository.CompletedReadsRepository
+import com.ishireader.app.data.repository.ListeningTimeRepository
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
 import com.ishireader.app.data.repository.ReadingTimerRepository
+import com.ishireader.app.audiobook.AudiobookRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,7 +60,21 @@ data class BookDetailUiState(
      *  [BookDetailViewModel.refresh]) rather than alongside everything else above, since a cache
      *  miss can trigger an expensive first-time server-side computation; null just hides the chip
      *  while it's in flight instead of holding up the rest of the screen. */
-    val pageCount: Int? = null
+    val pageCount: Int? = null,
+    /** Audiobook counterparts of [totalReadingSeconds]/[lastCompletedRead]/[completedReads]/
+     *  [currentDailyHistory] -- populated instead of those when [Book.isAudiobook], never both
+     *  (see [refresh]). accumulatedSeconds is a lifetime total (see ListeningTimeData), unlike
+     *  totalReadingSeconds which is reset on save. */
+    val totalListeningSeconds: Double? = null,
+    val lastCompletedListen: StoredCompletedListen? = null,
+    val completedListens: List<StoredCompletedListen> = emptyList(),
+    val currentListeningDailyHistory: List<DailyListeningBucket> = emptyList(),
+    /** The audiobook's single track duration, straight off its manifest.json -- mirrors [pageCount]
+     *  in that it's a fixed property of the book fetched once (see [fetchAudiobookDuration]), not
+     *  re-fetched on every [refresh]. Backs both the "Length" chip and the "Time remaining" figure
+     *  (computed from this and [percentRead], since audio has an exact duration unlike text's
+     *  pace-estimated secondsLeft). */
+    val totalListeningDurationSeconds: Double? = null
 )
 
 /**
@@ -72,15 +90,21 @@ class BookDetailViewModel(
     private val notesRepository: NotesRepository,
     private val annotationsRepository: AnnotationsRepository,
     private val completedReadsRepository: CompletedReadsRepository,
-    private val readingTimerRepository: ReadingTimerRepository
+    private val readingTimerRepository: ReadingTimerRepository,
+    private val listeningTimeRepository: ListeningTimeRepository
 ) : ViewModel() {
+
+    // CLAUDE-ADDED: Not part of the app-level DI container (see AudiobookPlayerActivity's own
+    // identical instantiation) -- it's a stateless plain HTTP client hitting manifestUrl directly,
+    // not one of the cookie-jarred Retrofit repositories against the Ishi-Read server.
+    private val audiobookRepository = AudiobookRepository()
 
     private val _uiState = MutableStateFlow(BookDetailUiState())
     val uiState: StateFlow<BookDetailUiState> = _uiState.asStateFlow()
 
     init {
         refresh()
-        fetchPageCount()
+        if (book.isAudiobook) fetchAudiobookDuration() else fetchPageCount()
     }
 
     /** Deliberately its own coroutine, not bundled into [refresh]'s Promise.all-style batch --
@@ -90,28 +114,38 @@ class BookDetailViewModel(
      *  fixed property of the book's own text) so the rest of the screen never waits on it; the
      *  chip just pops in once it resolves. */
     private fun fetchPageCount() {
+        // CLAUDE-ADDED: The 1024-characters-per-page estimate walks the manifest's textual reading
+        // order (see pageCountCompute.ts) -- meaningless for an audiobook manifest, so skipped
+        // entirely rather than making a pointless round trip.
+        if (book.isAudiobook) return
         viewModelScope.launch {
             val pageCount = readingTimerRepository.getPageCount(book.manifestUrl()).dataOrNull()
             _uiState.value = _uiState.value.copy(pageCount = pageCount)
         }
     }
 
-    /** Re-reads position/annotations/completed-reads/reading-timer figures -- called on first load
+    /** Audiobook counterpart of [fetchPageCount] -- the manifest's single track duration is this
+     *  book's fixed "length", fetched once rather than on every [refresh] for the same reason. */
+    private fun fetchAudiobookDuration() {
+        viewModelScope.launch {
+            val duration = audiobookRepository.fetchManifestInfo(book.manifestUrl())?.trackDurationSeconds
+            _uiState.value = _uiState.value.copy(totalListeningDurationSeconds = duration)
+        }
+    }
+
+    /** Re-reads position/annotations/reading-or-listening-timer figures -- called on first load
      *  and again whenever this screen resumes (see BookDetailScreen), since returning from
-     *  ReaderActivity (a separate Activity) doesn't otherwise re-trigger anything: it resumes the
-     *  same Compose composition rather than navigating back into it. positionRepository.getPosition
-     *  already reconciles against the server first, so this picks up whatever was just read. */
+     *  ReaderActivity/AudiobookPlayerActivity (separate Activities) doesn't otherwise re-trigger
+     *  anything: it resumes the same Compose composition rather than navigating back into it.
+     *  positionRepository.getPosition already reconciles against the server first, so this picks
+     *  up whatever was just read/listened to. Branches entirely on [Book.isAudiobook] -- a book
+     *  only ever has one of reading-timer or listening-timer data, never both. */
     fun refresh() {
         viewModelScope.launch {
             val locatorDeferred = async { positionRepository.getPosition(book.manifestUrl()) }
             val notesDeferred = async { notesRepository.getNotes(book.manifestUrl()) }
             val highlightsDeferred = async { annotationsRepository.getHighlights(book.manifestUrl()) }
             val bookmarksDeferred = async { annotationsRepository.getBookmarks(book.manifestUrl()) }
-            val completedReadsDeferred = async { completedReadsRepository.getCompletedReadTimes(book.manifestUrl()) }
-            val readingSecondsDeferred = async { readingTimerRepository.getReadingTimeSeconds(book.manifestUrl()) }
-            val wordCountDeferred = async { readingTimerRepository.getWordCount(book.manifestUrl()) }
-            val speedSamplesDeferred = async { readingTimerRepository.getReadingSpeedSamples() }
-            val dailyHistoryDeferred = async { readingTimerRepository.getDailyReadingHistory(book.manifestUrl()) }
 
             val locator = locatorDeferred.await()
             val notes = when (val result = notesDeferred.await()) {
@@ -120,6 +154,39 @@ class BookDetailViewModel(
             }
             val highlights = highlightsDeferred.await().dataOrNull() ?: emptyList()
             val bookmarks = bookmarksDeferred.await().dataOrNull() ?: emptyList()
+
+            if (book.isAudiobook) {
+                val completedListensDeferred = async { listeningTimeRepository.getCompletedListens(book.manifestUrl()) }
+                val listeningTimeDeferred = async { listeningTimeRepository.getListeningTime(book.manifestUrl()) }
+                val dailyHistoryDeferred = async { listeningTimeRepository.getDailyListeningHistory(book.manifestUrl()) }
+
+                // CLAUDE-ADDED: Same most-recent-first logic as the reading side's lastCompletedRead
+                // -- saveCompletedListen appends, so completedAt (not array order) decides "the last run".
+                val completedListens = when (val result = completedListensDeferred.await()) {
+                    is ApiResult.Success -> result.data.sortedByDescending { it.completedAt }
+                    is ApiResult.Failure -> emptyList()
+                }
+
+                _uiState.value = BookDetailUiState(
+                    percentRead = percentFromLocator(locator),
+                    notes = notes,
+                    highlights = highlights,
+                    bookmarks = bookmarks,
+                    totalListeningSeconds = listeningTimeDeferred.await().dataOrNull()?.accumulatedSeconds,
+                    lastCompletedListen = completedListens.firstOrNull(),
+                    completedListens = completedListens,
+                    currentListeningDailyHistory = dailyHistoryDeferred.await().dataOrNull() ?: emptyList(),
+                    totalListeningDurationSeconds = _uiState.value.totalListeningDurationSeconds
+                )
+                return@launch
+            }
+
+            val completedReadsDeferred = async { completedReadsRepository.getCompletedReadTimes(book.manifestUrl()) }
+            val readingSecondsDeferred = async { readingTimerRepository.getReadingTimeSeconds(book.manifestUrl()) }
+            val wordCountDeferred = async { readingTimerRepository.getWordCount(book.manifestUrl()) }
+            val speedSamplesDeferred = async { readingTimerRepository.getReadingSpeedSamples() }
+            val dailyHistoryDeferred = async { readingTimerRepository.getDailyReadingHistory(book.manifestUrl()) }
+
             // CLAUDE-ADDED: Same most-recent-first logic as the site's lastCompletedRead --
             // upsertCompletedReadTime appends, so completedAt (not array order) decides "the last run".
             val completedReads = when (val result = completedReadsDeferred.await()) {
@@ -188,6 +255,15 @@ class BookDetailViewModel(
         viewModelScope.launch { completedReadsRepository.deleteCompletedReadTime(book.manifestUrl(), id) }
     }
 
+    fun deleteCompletedListen(id: String) {
+        val updated = _uiState.value.completedListens.filterNot { it.id == id }
+        _uiState.value = _uiState.value.copy(
+            completedListens = updated,
+            lastCompletedListen = updated.firstOrNull()
+        )
+        viewModelScope.launch { listeningTimeRepository.deleteCompletedListen(book.manifestUrl(), id) }
+    }
+
     /** Mirrors StatefulBookSheet.tsx's saveEditingNote -- same upsert-by-id save used by the
      *  reader's own annotations panel, just triggered from this screen instead. Optimistic local
      *  update so the edit shows immediately rather than waiting on the round trip. */
@@ -219,7 +295,8 @@ class BookDetailViewModel(
         private val notesRepository: NotesRepository,
         private val annotationsRepository: AnnotationsRepository,
         private val completedReadsRepository: CompletedReadsRepository,
-        private val readingTimerRepository: ReadingTimerRepository
+        private val readingTimerRepository: ReadingTimerRepository,
+        private val listeningTimeRepository: ListeningTimeRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -229,7 +306,8 @@ class BookDetailViewModel(
                 notesRepository,
                 annotationsRepository,
                 completedReadsRepository,
-                readingTimerRepository
+                readingTimerRepository,
+                listeningTimeRepository
             ) as T
     }
 }

@@ -1,6 +1,8 @@
 package com.ishireader.app.data.repository
 
 import com.ishireader.app.data.model.CompletedListenUpsertRequest
+import com.ishireader.app.data.model.DailyListeningBucket
+import com.ishireader.app.data.model.DailyListeningHistoryRequest
 import com.ishireader.app.data.model.ListeningTimeData
 import com.ishireader.app.data.model.ListeningTimeRequest
 import com.ishireader.app.data.model.StoredCompletedListen
@@ -59,6 +61,28 @@ class ListeningTimeRepository(private val network: NetworkModule) {
         try {
             val response = network.api.deleteCompletedListen(manifestUrl, id)
             if (response.isSuccessful) ApiResult.Success(Unit) else ApiResult.Failure("Couldn't delete completed listen (${response.code()})")
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error")
+        }
+    }
+
+    /** The current (not-yet-completed) listen-through's own day-by-day breakdown -- audiobook
+     *  counterpart of getDailyReadingHistory. */
+    suspend fun getDailyListeningHistory(manifestUrl: String): ApiResult<List<DailyListeningBucket>> = withContext(Dispatchers.IO) {
+        try {
+            val response = network.api.getDailyListeningHistory(manifestUrl)
+            val body = response.body()
+            if (response.isSuccessful && body != null) ApiResult.Success(body.buckets)
+            else ApiResult.Failure("Couldn't load daily listening history (${response.code()})")
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error")
+        }
+    }
+
+    suspend fun setDailyListeningHistory(manifestUrl: String, buckets: List<DailyListeningBucket>): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val response = network.api.setDailyListeningHistory(DailyListeningHistoryRequest(manifestUrl, buckets))
+            if (response.isSuccessful) ApiResult.Success(Unit) else ApiResult.Failure("Couldn't save daily listening history (${response.code()})")
         } catch (e: Exception) {
             ApiResult.Failure(e.message ?: "Network error")
         }

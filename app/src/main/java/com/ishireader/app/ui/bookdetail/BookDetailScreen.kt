@@ -67,6 +67,7 @@ import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.DailyListeningBucket
 import com.ishireader.app.data.model.DailyReadingBucket
 import com.ishireader.app.reader.AnnotationsUiState
 import com.ishireader.app.reader.ReadingTimerUiState
@@ -106,6 +107,7 @@ fun BookDetailScreen(
     var loadingCover by remember { mutableStateOf(false) }
     var showTimerSheet by remember { mutableStateOf(false) }
     var pendingDeleteCompletedReadId by remember { mutableStateOf<String?>(null) }
+    var pendingDeleteCompletedListenId by remember { mutableStateOf<String?>(null) }
 
     // Returning from ReaderActivity resumes this same Activity/composition rather than
     // navigating back into it, so nothing else would otherwise re-trigger a reload -- without
@@ -188,17 +190,34 @@ fun BookDetailScreen(
                         ) {
                             ProgressDial(percent = percent)
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                state.totalReadingSeconds?.takeIf { it > 0 }?.let {
-                                    Text("Time read: ${formatDuration(it)}", style = MaterialTheme.typography.labelSmall)
-                                }
-                                state.wpm?.let {
-                                    Text("Pace: $it wpm", style = MaterialTheme.typography.labelSmall)
-                                }
-                                state.secondsLeft?.let {
-                                    Text("Time left: ${formatEstimatedTime(it)}", style = MaterialTheme.typography.labelSmall)
+                                if (book.isAudiobook) {
+                                    // CLAUDE-ADDED: accumulatedSeconds is a lifetime total (see
+                                    // ListeningTimeData), unlike totalReadingSeconds -- no wpm
+                                    // equivalent for audio, but unlike text's pace-estimated
+                                    // secondsLeft, "time remaining" is exact here since the track's
+                                    // own duration is known outright (no words-per-minute guess needed).
+                                    state.totalListeningSeconds?.takeIf { it > 0 }?.let {
+                                        Text("Time listened: ${formatDuration(it)}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    val totalDuration = state.totalListeningDurationSeconds
+                                    if (totalDuration != null && totalDuration > 0) {
+                                        val remaining = (totalDuration * (1.0 - (percent / 100.0))).coerceAtLeast(0.0)
+                                        Text("Time remaining: ${formatDuration(remaining)}", style = MaterialTheme.typography.labelSmall)
+                                        Text("Length: ${formatDuration(totalDuration)}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                } else {
+                                    state.totalReadingSeconds?.takeIf { it > 0 }?.let {
+                                        Text("Time read: ${formatDuration(it)}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    state.wpm?.let {
+                                        Text("Pace: $it wpm", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    state.secondsLeft?.let {
+                                        Text("Time left: ${formatEstimatedTime(it)}", style = MaterialTheme.typography.labelSmall)
+                                    }
                                 }
                             }
-                            if ((state.totalReadingSeconds ?: 0.0) > 0 || state.completedReads.isNotEmpty()) {
+                            if (!book.isAudiobook && ((state.totalReadingSeconds ?: 0.0) > 0 || state.completedReads.isNotEmpty())) {
                                 IconButton(onClick = { showTimerSheet = true }, modifier = Modifier.size(28.dp)) {
                                     Icon(
                                         Icons.Filled.MoreVert,
@@ -367,6 +386,57 @@ fun BookDetailScreen(
                 }
             }
 
+            // CLAUDE-ADDED: Audiobook counterpart of "Current Read's Sessions" above -- same
+            // day-by-day breakdown, just time listened + percent listened instead of duration/wpm/
+            // percent read (audio has no reading-speed equivalent, see DailyListeningBucket).
+            state.currentListeningDailyHistory.takeIf { it.isNotEmpty() }?.let { history ->
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Current Listen's Sessions", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    history.sortedByDescending { it.date }.forEach { bucket -> DailyListeningHistoryRow(bucket) }
+                }
+            }
+
+            // CLAUDE-ADDED: Audiobook counterpart of "Completed Reads" above -- only the single
+            // latest listen-through, same as that section's own single-card treatment.
+            state.lastCompletedListen?.let { completedListen ->
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Completed Listens", style = MaterialTheme.typography.titleSmall)
+                    IconButton(
+                        onClick = { pendingDeleteCompletedListenId = completedListen.id },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Delete completed listen",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Completed: ${formatTimestamp(completedListen.completedAt)}")
+                    // CLAUDE-ADDED: There's no per-listen "seconds" field the way StoredCompletedReadTime
+                    // has (accumulatedSeconds is a lifetime total, never reset per-listen) -- summing this
+                    // run's own daily buckets gives actual time spent listening, unlike completedAt minus
+                    // startedAt, which would count idle/paused wall-clock time too.
+                    val listenedSeconds = completedListen.dailyHistory?.sumOf { it.seconds } ?: 0.0
+                    Chip("Duration: ${formatDuration(listenedSeconds)}")
+                }
+                completedListen.dailyHistory?.takeIf { it.isNotEmpty() }?.let { history ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        history.sortedByDescending { it.date }.forEach { bucket -> DailyListeningHistoryRow(bucket) }
+                    }
+                }
+            }
+
             if (book.publisher != null) {
                 ChipSection(title = "Publisher") { Chip(book.publisher) }
             }
@@ -430,6 +500,23 @@ fun BookDetailScreen(
             )
         }
 
+        pendingDeleteCompletedListenId?.let { id ->
+            AlertDialog(
+                onDismissRequest = { pendingDeleteCompletedListenId = null },
+                title = { Text("Delete completed listen?") },
+                text = { Text("This can't be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.deleteCompletedListen(id)
+                        pendingDeleteCompletedListenId = null
+                    }) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDeleteCompletedListenId = null }) { Text("Cancel") }
+                }
+            )
+        }
+
     }
 }
 
@@ -471,6 +558,19 @@ private fun DailyHistoryRow(bucket: DailyReadingBucket) {
         Text(formatDateOnly(bucket.date), style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
         Text(formatDuration(bucket.seconds), style = MaterialTheme.typography.labelSmall)
         Text(wpm?.let { "$it wpm" } ?: "—", style = MaterialTheme.typography.labelSmall)
+        Text("$percent%", style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/** Audiobook counterpart of [DailyHistoryRow] -- same date + percent columns, but time listened
+ *  instead of duration and no wpm/pace column (see DailyListeningBucket -- there's no reading-speed
+ *  equivalent for audio, progress is already exact via the position locator's totalProgression). */
+@Composable
+private fun DailyListeningHistoryRow(bucket: DailyListeningBucket) {
+    val percent = (bucket.progressionDelta * 100).takeIf { it.isFinite() }?.toInt() ?: 0
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(formatDateOnly(bucket.date), style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+        Text(formatDuration(bucket.seconds), style = MaterialTheme.typography.labelSmall)
         Text("$percent%", style = MaterialTheme.typography.labelSmall)
     }
 }

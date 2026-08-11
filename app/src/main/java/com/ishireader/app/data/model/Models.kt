@@ -281,14 +281,15 @@ data class LoginAccentColorField(val loginAccentColor: String = "#2f6fed")
 @Serializable
 data class LoginThemeModeField(val loginThemeMode: String = "dark")
 
-/** Audiobook counterpart to StoredCompletedReadTime -- deliberately simpler (no wordCount/wpm/
- *  dailyHistory equivalent, see the website's listeningTimeTypes.ts), just when a listen-through
- *  started and finished. */
+/** Audiobook counterpart to StoredCompletedReadTime -- deliberately simpler (no wordCount/wpm
+ *  equivalent, see the website's listeningTimeTypes.ts), just when a listen-through started and
+ *  finished, plus its own day-by-day breakdown. */
 @Serializable
 data class StoredCompletedListen(
     val id: String,
     val startedAt: Double,
-    val completedAt: Double
+    val completedAt: Double,
+    val dailyHistory: List<DailyListeningBucket>? = null
 )
 
 @Serializable
@@ -296,6 +297,23 @@ data class CompletedListensResponse(val items: List<StoredCompletedListen> = emp
 
 @Serializable
 data class CompletedListenUpsertRequest(val manifestUrl: String, val item: StoredCompletedListen)
+
+/** One calendar day's listening within a listen-through -- audiobook counterpart of
+ *  DailyReadingBucket, minus the words/wpm dimension (progress is already exact via the position
+ *  locator's own totalProgression, see AudiobookLocator.kt, so there's no reading-speed estimate
+ *  to derive here). */
+@Serializable
+data class DailyListeningBucket(
+    val date: String,
+    val seconds: Double = 0.0,
+    val progressionDelta: Double = 0.0
+)
+
+@Serializable
+data class DailyListeningHistoryResponse(val buckets: List<DailyListeningBucket> = emptyList())
+
+@Serializable
+data class DailyListeningHistoryRequest(val manifestUrl: String, val buckets: List<DailyListeningBucket>)
 
 /** accumulatedSeconds is a lifetime total for the book (never reset on completion, unlike
  *  ReadingTimeResponse); startedAt is the current listen-through's start marker, null when

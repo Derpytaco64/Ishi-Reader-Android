@@ -11,6 +11,8 @@ import com.ishireader.app.data.model.CompletedListensResponse
 import com.ishireader.app.data.model.CompletedReadTimeUpsertRequest
 import com.ishireader.app.data.model.CompletedReadTimesResponse
 import com.ishireader.app.data.model.CreateUserRequest
+import com.ishireader.app.data.model.DailyListeningHistoryRequest
+import com.ishireader.app.data.model.DailyListeningHistoryResponse
 import com.ishireader.app.data.model.DailyReadingHistoryRequest
 import com.ishireader.app.data.model.DailyReadingHistoryResponse
 import com.ishireader.app.data.model.HighlightUpsertRequest
@@ -154,6 +156,12 @@ interface ApiService {
 
     @DELETE("api/userdata/completedListens")
     suspend fun deleteCompletedListen(@Query("manifestUrl") manifestUrl: String, @Query("id") id: String): Response<Unit>
+
+    @GET("api/userdata/dailyListeningHistory")
+    suspend fun getDailyListeningHistory(@Query("manifestUrl") manifestUrl: String): Response<DailyListeningHistoryResponse>
+
+    @POST("api/userdata/dailyListeningHistory")
+    suspend fun setDailyListeningHistory(@Body request: DailyListeningHistoryRequest): Response<Unit>
 
     @GET("api/userdata/wordCount")
     suspend fun getWordCount(@Query("manifestUrl") manifestUrl: String): Response<WordCountResponse>
