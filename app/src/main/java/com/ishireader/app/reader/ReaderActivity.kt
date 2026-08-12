@@ -694,7 +694,7 @@ class ReaderActivity : FragmentActivity() {
                                     text = chapterTitle.orEmpty(),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = readerTextColor,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = if (showChapterTitleHeader) TextAlign.Center else TextAlign.Start,
                                     modifier = Modifier
