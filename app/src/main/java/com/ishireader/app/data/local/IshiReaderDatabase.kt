@@ -15,7 +15,7 @@ import androidx.room.RoomDatabase
         PendingLibraryPrefsPatchEntity::class,
         ExactPageCountEntity::class
     ],
-    version = 7,
+    version = 5,
     exportSchema = false
 )
 abstract class IshiReaderDatabase : RoomDatabase() {

@@ -36,7 +36,6 @@ fun formatPercent(fraction: Double): String {
 }
 
 /** 0..1 fraction -> 0..100 percent, clamped and rounded to one decimal place -- the shared rounding
- *  every percent figure in the app goes through (see [formatPercent]), including the exact percent
- *  ReaderActivity persists alongside a saved position (see PositionEntity.exactPercent), so a
- *  fraction always rounds to the same displayed number regardless of which caller formats it. */
+ *  every percent figure in the app goes through (see [formatPercent] and [percentFromLocator]), so
+ *  a fraction always rounds to the same displayed number regardless of which caller formats it. */
 fun roundPercent(fraction: Double): Double = round(min(1.0, max(0.0, fraction)) * 1000) / 10

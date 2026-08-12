@@ -39,31 +39,19 @@ class PositionRepository(
         positionDao.get(manifestUrl)?.toLocatorJson()
     }
 
-    /** Saves a Locator (as produced by the Readium navigator's `Locator.toJSON()`). [exactPercent],
-     *  when the caller has one (see PositionEntity's own doc comment), rides along so the book
-     *  detail screen can show the exact same percent the reader itself just displayed. */
-    suspend fun setPosition(manifestUrl: String, locator: JsonElement, exactPercent: Double? = null) =
-        withContext(Dispatchers.IO) {
-            val locatorJson = locator.toString()
-            positionDao.upsert(
-                PositionEntity(
-                    manifestUrl = manifestUrl,
-                    locatorJson = locatorJson,
-                    progression = totalProgressionOf(locator),
-                    updatedAtMillis = System.currentTimeMillis(),
-                    pendingSync = true,
-                    exactPercent = exactPercent
-                )
+    /** Saves a Locator (as produced by the Readium navigator's `Locator.toJSON()`). */
+    suspend fun setPosition(manifestUrl: String, locator: JsonElement) = withContext(Dispatchers.IO) {
+        val locatorJson = locator.toString()
+        positionDao.upsert(
+            PositionEntity(
+                manifestUrl = manifestUrl,
+                locatorJson = locatorJson,
+                progression = totalProgressionOf(locator),
+                updatedAtMillis = System.currentTimeMillis(),
+                pendingSync = true
             )
-            syncScheduler.schedulePositionSync()
-        }
-
-    /** The page-accurate percent saved alongside this book's last local position write, if any --
-     *  see PositionEntity.exactPercent. Reads straight from Room without a server round-trip;
-     *  callers that need the freshest cross-device position should call [getPosition] first (which
-     *  reconciles), then this. */
-    suspend fun getExactPercent(manifestUrl: String): Double? = withContext(Dispatchers.IO) {
-        positionDao.get(manifestUrl)?.exactPercent
+        )
+        syncScheduler.schedulePositionSync()
     }
 
     /** Best-effort, time-boxed check against the server -- used when opening a book so a position

@@ -20,21 +20,16 @@ import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.AnnotationsRepository
 import com.ishireader.app.data.repository.CompletedReadsRepository
-import com.ishireader.app.data.repository.ExactPageCountRepository
 import com.ishireader.app.data.repository.ListeningTimeRepository
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
 import com.ishireader.app.data.repository.ReadingTimerRepository
 import com.ishireader.app.audiobook.AudiobookRepository
-import com.ishireader.app.reader.DynamicPageCountState
-import com.ishireader.app.reader.dynamicPageForLocator
-import com.ishireader.app.ui.reader.parseLocator
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonElement
 
 data class BookDetailUiState(
     /** 0..100, one decimal place to match the website's rounding; null = no progress yet (dial hidden). */
@@ -83,10 +78,8 @@ data class BookDetailUiState(
 )
 
 /**
- * Reads the saved Locator to derive a percent-read figure (see [resolvePercentRead] -- prefers a
- * real, layout-aware page-based percent over the coarse `totalProgression`-based one when a sweep
- * for this book is available), the book's highlights/bookmarks/notes, its most recent
- * completed-read run, and a point-in-time
+ * Reads the saved Locator's `locations.totalProgression` to derive a percent-read figure, the
+ * book's highlights/bookmarks/notes, its most recent completed-read run, and a point-in-time
  * "Reading Timer" snapshot (time read so far / current pace / estimated time left) -- matching
  * StatefulBookSheet.tsx's ReadProgressDial + annotations list + "Reading Timer" section +
  * "Completed Read" section.
@@ -98,8 +91,7 @@ class BookDetailViewModel(
     private val annotationsRepository: AnnotationsRepository,
     private val completedReadsRepository: CompletedReadsRepository,
     private val readingTimerRepository: ReadingTimerRepository,
-    private val listeningTimeRepository: ListeningTimeRepository,
-    private val exactPageCountRepository: ExactPageCountRepository
+    private val listeningTimeRepository: ListeningTimeRepository
 ) : ViewModel() {
 
     // CLAUDE-ADDED: Not part of the app-level DI container (see AudiobookPlayerActivity's own
@@ -156,8 +148,7 @@ class BookDetailViewModel(
             val bookmarksDeferred = async { annotationsRepository.getBookmarks(book.manifestUrl()) }
 
             val locator = locatorDeferred.await()
-            val exactPercent = positionRepository.getExactPercent(book.manifestUrl())
-            val percentRead = resolvePercentRead(locator, exactPercent)
+            val percentRead = percentFromLocator(locator)
             val notes = when (val result = notesDeferred.await()) {
                 is ApiResult.Success -> result.data
                 is ApiResult.Failure -> emptyList()
@@ -227,33 +218,6 @@ class BookDetailViewModel(
                 pageCount = _uiState.value.pageCount
             )
         }
-    }
-
-    /** Prefers [exactPercent] -- the same page-accurate figure the reader's own footer showed at
-     *  the moment this position was saved (see PositionEntity.exactPercent) -- so this screen's
-     *  dial never disagrees with what the user was just looking at while reading. Recomputing that
-     *  figure here instead (from whatever page-count sweep happens to be cached) used to be the
-     *  source of that disagreement: [ExactPageCountRepository.getLatestForManifest] returns the
-     *  most recently swept layout for this book *regardless of settings*, which can differ from
-     *  the layout the saved locator's page was actually measured under, giving a different
-     *  page/total fraction for the same position. Recomputing remains as a fallback for rows saved
-     *  before [exactPercent] existed, or adopted from the server (which doesn't carry it yet).
-     *  Falls back further to [percentFromLocator]'s coarse totalProgression-based figure when
-     *  neither is available. */
-    private suspend fun resolvePercentRead(locatorJson: JsonElement?, exactPercent: Double?): Double? {
-        if (exactPercent != null) return exactPercent.takeIf { it > 0 }
-        val fallback = percentFromLocator(locatorJson)
-        val layout = exactPageCountRepository.getLatestForManifest(book.manifestUrl()) ?: return fallback
-        if (layout.totalPages <= 0) return fallback
-        val locator = locatorJson?.let { parseLocator(it) } ?: return fallback
-        val state = DynamicPageCountState(
-            isLoading = false,
-            resourceStartPages = layout.resourceStartPages,
-            resourcePageCounts = layout.resourcePageCounts
-        )
-        val page = dynamicPageForLocator(state, locator) ?: return fallback
-        val percent = kotlin.math.round((page.toDouble() / layout.totalPages).coerceIn(0.0, 1.0) * 1000) / 10
-        return percent.takeIf { it > 0 }
     }
 
     /** Same Discard/Save semantics as the reader's own [com.ishireader.app.reader.ReadingTimerTracker.reset]
@@ -333,8 +297,7 @@ class BookDetailViewModel(
         private val annotationsRepository: AnnotationsRepository,
         private val completedReadsRepository: CompletedReadsRepository,
         private val readingTimerRepository: ReadingTimerRepository,
-        private val listeningTimeRepository: ListeningTimeRepository,
-        private val exactPageCountRepository: ExactPageCountRepository
+        private val listeningTimeRepository: ListeningTimeRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -345,8 +308,7 @@ class BookDetailViewModel(
                 annotationsRepository,
                 completedReadsRepository,
                 readingTimerRepository,
-                listeningTimeRepository,
-                exactPageCountRepository
+                listeningTimeRepository
             ) as T
     }
 }

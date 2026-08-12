@@ -176,8 +176,7 @@ class MainActivity : ComponentActivity() {
                                         app.annotationsRepository,
                                         app.completedReadsRepository,
                                         app.readingTimerRepository,
-                                        app.listeningTimeRepository,
-                                        app.exactPageCountRepository
+                                        app.listeningTimeRepository
                                     )
                                 )
                                 BookDetailScreen(

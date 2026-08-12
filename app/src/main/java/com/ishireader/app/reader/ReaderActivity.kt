@@ -80,10 +80,8 @@ import com.ishireader.app.data.model.ReaderLayout
 import com.ishireader.app.data.model.ReaderSettings
 import com.ishireader.app.data.model.formatPercent
 import com.ishireader.app.data.model.layoutFingerprint
-import com.ishireader.app.data.model.roundPercent
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
-import com.ishireader.app.data.repository.ExactPageLayout
 import com.ishireader.app.ui.reader.AnnotationsPanelSheet
 import com.ishireader.app.ui.reader.HighlightColorPopover
 import com.ishireader.app.ui.reader.ImageViewerOverlay
@@ -868,13 +866,10 @@ class ReaderActivity : FragmentActivity() {
                             }
                         }
 
-                        // Scrub slider: drags to any point in the book by totalProgression --
-                        // navigation itself stays on that coarse mechanism (only navigates on
-                        // release, not per-tick; publicationPositions resolves the dragged-to
-                        // fraction to a concrete Locator, same list totalPositions is sized from)
-                        // -- but the live percentage shown to its right prefers the same real,
-                        // page-based figure the footer/book-detail dial show now (see
-                        // scrubPercentFraction), so this number doesn't disagree with those.
+                        // Scrub slider: drags to any point in the book by totalProgression, with
+                        // the live percentage shown to its right. Only navigates on release (not
+                        // per-tick) -- publicationPositions resolves the dragged-to fraction to a
+                        // concrete Locator, same list totalPositions is sized from.
                         AnimatedVisibility(
                             visible = chromeShown && publicationPositions != null,
                             enter = fadeIn(),
@@ -922,14 +917,7 @@ class ReaderActivity : FragmentActivity() {
                                     )
                                 )
                                 Text(
-                                    text = formatPercent(
-                                        scrubPercentFraction(
-                                            sliderValue = sliderValue,
-                                            dragging = scrubProgress != null,
-                                            dynamicPageCount = dynamicPageCount,
-                                            publicationPositions = publicationPositions
-                                        )
-                                    ),
+                                    text = formatPercent(sliderValue.toDouble()),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.padding(start = 8.dp)
@@ -1155,11 +1143,12 @@ class ReaderActivity : FragmentActivity() {
         lastPageCountFingerprint = fingerprint
         tracker.markLoading()
 
-        val cached = app.exactPageCountRepository.get(manifestUrl, fingerprint)
+        val cacheKey = "$manifestUrl::$fingerprint"
+        val cached = app.exactPageCountRepository.get(cacheKey)
         if (cached != null) {
             // Only apply if still current -- a concurrent call for a newer fingerprint may have
             // already won by the time this cache read returns.
-            if (lastPageCountFingerprint == fingerprint) tracker.applyExactCounts(cached.resourcePageCounts)
+            if (lastPageCountFingerprint == fingerprint) tracker.applyExactCounts(cached)
             return
         }
 
@@ -1179,15 +1168,8 @@ class ReaderActivity : FragmentActivity() {
                         tracker.reportSweepProgress(completed, total)
                     }
                 if (lastPageCountFingerprint != fingerprint) return@withLock
+                app.exactPageCountRepository.put(cacheKey, counts)
                 tracker.applyExactCounts(counts)
-                // Persisted post-recompute (not the sweep's raw counts) so this cache entry
-                // carries resourceStartPages too -- see ExactPageCountEntity's doc comment.
-                val computed = tracker.state.value
-                app.exactPageCountRepository.put(
-                    manifestUrl,
-                    fingerprint,
-                    ExactPageLayout(computed.resourceStartPages, computed.resourcePageCounts)
-                )
             } finally {
                 pageCountSweepJob = null
             }
@@ -1356,15 +1338,9 @@ class ReaderActivity : FragmentActivity() {
 
     private fun savePosition(locator: Locator) {
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL) ?: return
-        // Same page/total fraction the footer (positionDisplayText) is showing right now for this
-        // locator -- persisted so the book detail screen's dial can show that exact number instead
-        // of recomputing one from a page-count sweep that may be stale relative to these settings.
-        val dynamicPageCount = dynamicPageCountState.value.takeIf { readerSettingsState.value.layout != ReaderLayout.SCROLLED }
-        val fraction = pageFraction(locator, totalPositionsState.value, dynamicPageCount) ?: locator.locations.totalProgression
-        val exactPercent = fraction?.let { roundPercent(it) }
         lifecycleScope.launch {
             val locatorJson = Json.parseToJsonElement(locator.toJSON().toString())
-            app.positionRepository.setPosition(manifestUrl, locatorJson, exactPercent)
+            app.positionRepository.setPosition(manifestUrl, locatorJson)
         }
     }
 
@@ -1418,16 +1394,6 @@ private suspend fun View.awaitNextLayout() {
     }
 }
 
-/** The real, layout-aware page/total fraction [positionDisplayText]'s PAGE_PERCENT mode prefers
- *  over `totalProgression` -- pulled out so [ReaderActivity.savePosition] can persist the exact
- *  same figure the footer just displayed (see PositionEntity.exactPercent) instead of the two
- *  drifting apart. Null when neither a dynamic nor a coarse page count is available yet. */
-private fun pageFraction(locator: Locator, totalPositions: Int?, dynamicPageCount: DynamicPageCountState?): Double? {
-    val page = dynamicPageCount?.currentPage ?: locator.locations.position
-    val total = dynamicPageCount?.totalPages ?: totalPositions
-    return if (page != null && total != null && total > 0) page.toDouble() / total else null
-}
-
 /** Builds the bottom position indicator's text per [mode], or null if there's nothing to show
  *  (mode is NONE, or the data it needs hasn't loaded/isn't available for this locator yet).
  *  [dynamicPageCount], when non-null, supplies real layout-aware page numbers (see
@@ -1435,14 +1401,10 @@ private fun pageFraction(locator: Locator, totalPositions: Int?, dynamicPageCoun
  *  those (via [totalPositions]/`locator.locations.position`) when it's null (scroll mode, or the
  *  navigator hasn't reported an initial page yet).
  *
- *  [PositionDisplayMode.PERCENT] (shown alone, no page number) still uses `totalProgression` --
- *  the same coarse, chunk-based measure the library screen uses -- so it stays consistent with
- *  that. But [PositionDisplayMode.PAGE_PERCENT]'s percent is derived from the *same* page/total
- *  fraction as the page number it's shown next to, not `totalProgression`: the two measures
- *  disagree (chunk-density vs. real-page-density vary chapter to chapter), and showing e.g. "206
- *  of 272 (67%)" -- numbers that don't actually agree with each other -- read as broken even
- *  though each was individually correct for what it measured. The scrub bar's own percent label
- *  (see [scrubPercentFraction]) follows the same page-based preference. */
+ *  Percent (in both [PositionDisplayMode.PERCENT] and [PositionDisplayMode.PAGE_PERCENT]) always
+ *  uses `totalProgression` -- the same coarse, chunk-based measure the library screen and scrub
+ *  bar use -- so it stays consistent across the app even when shown next to a real, layout-aware
+ *  page number. */
 private fun positionDisplayText(
     mode: PositionDisplayMode,
     locator: Locator?,
@@ -1455,14 +1417,13 @@ private fun positionDisplayText(
     val total = dynamicPageCount?.totalPages ?: totalPositions
     val pageText = if (page != null && total != null) "$page of $total" else null
     val totalProgression = locator.locations.totalProgression
-    val pageFraction = pageFraction(locator, totalPositions, dynamicPageCount)
 
     return when (mode) {
         PositionDisplayMode.NONE -> null
         PositionDisplayMode.PAGE -> pageText
         PositionDisplayMode.PERCENT -> totalProgression?.let { formatPercent(it) }
         PositionDisplayMode.PAGE_PERCENT -> {
-            val percentText = (pageFraction ?: totalProgression)?.let { formatPercent(it) }
+            val percentText = totalProgression?.let { formatPercent(it) }
             when {
                 pageText != null && percentText != null -> "$pageText ($percentText)"
                 pageText != null -> pageText
@@ -1471,36 +1432,4 @@ private fun positionDisplayText(
             }
         }
     }
-}
-
-/** The scrub bar's own percent label -- prefers the same real, page-based fraction
- *  [positionDisplayText]'s [PositionDisplayMode.PAGE_PERCENT] uses over the slider's own
- *  `totalProgression`-driven [sliderValue], so the number shown here never disagrees with the
- *  footer or the book detail dial. While actively dragging, there's no live tracker update for
- *  the drag preview (that only updates from real on-screen navigation) -- so the previewed page
- *  is resolved the same way the slider's own release-time jump is (via `publicationPositions`'
- *  matching Locator), rather than reverting to the coarse fraction while the number's still
- *  supposed to read as a real page. Falls back to [sliderValue] itself (i.e. `totalProgression`)
- *  wherever real page data isn't available yet (still loading, or scroll mode). */
-private fun scrubPercentFraction(
-    sliderValue: Float,
-    dragging: Boolean,
-    dynamicPageCount: DynamicPageCountState?,
-    publicationPositions: List<Locator>?
-): Double {
-    val totalPages = dynamicPageCount?.totalPages
-    if (dynamicPageCount == null || totalPages == null || totalPages <= 0) return sliderValue.toDouble()
-
-    val page = if (dragging) {
-        val positions = publicationPositions
-        if (positions.isNullOrEmpty()) {
-            null
-        } else {
-            val index = (sliderValue * (positions.size - 1)).roundToInt().coerceIn(0, positions.size - 1)
-            dynamicPageForLocator(dynamicPageCount, positions[index])
-        }
-    } else {
-        dynamicPageCount.currentPage
-    }
-    return page?.let { it.toDouble() / totalPages } ?: sliderValue.toDouble()
 }
