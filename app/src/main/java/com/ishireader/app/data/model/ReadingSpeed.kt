@@ -32,11 +32,15 @@ private fun medianOf(sorted: List<Double>): Double {
 }
 
 /** Estimated seconds remaining in the book at the given pace -- mirrors estimateSecondsLeft in
- *  the website's computeReadingSpeed.ts. */
+ *  the website's computeReadingSpeed.ts. [totalProgression] null means "position not known yet"
+ *  (e.g. the reader hasn't reported its first locator this session) -- treating that as 0% would
+ *  estimate against the *entire* book's word count, wildly overstating time left until a real
+ *  locator arrives. The website's own caller guards this the same way (`currentProgression !==
+ *  null` in StatefulReadingTimerContainer.tsx) rather than defaulting inside the helper. */
 fun computeSecondsLeft(wordCount: Double?, wpm: Int?, totalProgression: Double?): Double? {
     val words = wordCount ?: return null
     if (wpm == null || wpm <= 0) return null
-    val progression = totalProgression ?: 0.0
+    val progression = totalProgression ?: return null
     val wordsRemaining = words * (1.0 - progression)
     return wordsRemaining / wpm * 60.0
 }
