@@ -21,9 +21,15 @@ import org.readium.r2.shared.util.Url
  *  [isLoading] is true until [DynamicPageCountTracker.applyExactCounts] has real, swept counts for
  *  the book's current settings/device fingerprint -- consumers should show a loading indicator
  *  rather than any page number while this is true, since there is no meaningful partial number
- *  (see DynamicPageCountTracker's own doc comment for why this app no longer estimates). */
+ *  (see DynamicPageCountTracker's own doc comment for why this app no longer estimates).
+ *
+ *  [loadingProgress] is the fraction (0f-1f) of reading-order resources [PageCountSweeper] has
+ *  measured so far, via [DynamicPageCountTracker.reportSweepProgress] -- null while [isLoading] is
+ *  false, or before the first progress report (e.g. still waiting on the cache lookup that
+ *  precedes a sweep), so consumers fall back to an indeterminate indicator until it's known. */
 data class DynamicPageCountState(
     val isLoading: Boolean = true,
+    val loadingProgress: Float? = null,
     val currentPage: Int? = null,
     val totalPages: Int? = null,
     val resourceStartPages: Map<String, Int> = emptyMap(),
@@ -81,6 +87,7 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
     private var resourcePageCounts: Map<Url, Int> = emptyMap()
     private var currentHref: Url? = null
     private var currentPageIndex: Int = 0
+    private var loadingProgress: Float? = null
 
     /** Drops any previously-applied exact counts and returns [state] to the loading state -- call
      *  before re-sweeping (or checking the cache) for a new settings/device fingerprint, so
@@ -88,7 +95,20 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
      *  new sweep/cache-lookup is in flight. */
     fun markLoading() {
         resourcePageCounts = emptyMap()
+        loadingProgress = null
         recompute()
+    }
+
+    /** Reports how far [PageCountSweeper] has gotten through the reading order (called from its
+     *  onProgress callback), so [state] can drive a determinate progress indicator instead of an
+     *  indeterminate spinner. A no-op once loading has finished (or if [markLoading] has since
+     *  reset for a newer settings/device fingerprint than this report belongs to -- callers only
+     *  bother reporting for a still-current sweep, but a stale report arriving late is harmless
+     *  here since it just gets ignored). */
+    fun reportSweepProgress(completed: Int, total: Int) {
+        if (total <= 0 || resourcePageCounts.isNotEmpty()) return
+        loadingProgress = completed.toFloat() / total
+        _state.value = _state.value.copy(loadingProgress = loadingProgress)
     }
 
     /** Applies real, swept per-resource page counts (href string -> page count), ending the
@@ -107,7 +127,7 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
 
     private fun recompute() {
         if (resourcePageCounts.isEmpty()) {
-            _state.value = DynamicPageCountState(isLoading = true)
+            _state.value = DynamicPageCountState(isLoading = true, loadingProgress = loadingProgress)
             return
         }
 

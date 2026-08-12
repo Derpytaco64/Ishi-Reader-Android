@@ -36,14 +36,18 @@ class PageCountSweeper(
     /** Runs the sweep, hosting a temporary fragment in [containerId] and removing it when done.
      *  Each resource gets up to [RESOURCE_TIMEOUT_MS] to report a page count before falling back
      *  to 1 page, so one stuck resource can't hang the whole sweep. Must be called from the main
-     *  thread (fragment transactions require it). */
+     *  thread (fragment transactions require it). [onProgress] is called after each resource
+     *  finishes (or times out) with (resources completed so far, total resources), so callers can
+     *  show a determinate progress indicator instead of an indeterminate one. */
     suspend fun sweep(
         fragmentManager: FragmentManager,
         containerId: Int,
-        classLoader: ClassLoader
+        classLoader: ClassLoader,
+        onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> }
     ): Map<String, Int> {
         val readingOrder = publication.readingOrder
         if (readingOrder.isEmpty()) return emptyMap()
+        val total = readingOrder.size
 
         var awaitingHref: Url? = null
         var continuation: CancellableContinuation<Int>? = null
@@ -83,9 +87,16 @@ class PageCountSweeper(
                 }
             }
             results[firstHref.toString()] = firstPages ?: 1
+            var processed = 1
+            onProgress(processed, total)
 
             for (link in readingOrder.drop(1)) {
-                val locator = publication.locatorFromLink(link) ?: continue
+                val locator = publication.locatorFromLink(link)
+                if (locator == null) {
+                    processed++
+                    onProgress(processed, total)
+                    continue
+                }
                 val href = link.url()
                 awaitingHref = href
                 val pages = withTimeoutOrNull(RESOURCE_TIMEOUT_MS) {
@@ -95,10 +106,20 @@ class PageCountSweeper(
                     }
                 }
                 results[href.toString()] = pages ?: 1
+                processed++
+                onProgress(processed, total)
             }
         } finally {
             continuation = null
-            fragmentManager.beginTransaction().remove(fragment).commitNow()
+            // Guarded: if the sweep was cancelled because the host Activity is being torn down
+            // (see ReaderActivity.pageCountSweepJob), this cleanup can end up running after the
+            // FragmentManager itself has already saved state or been destroyed, and a plain
+            // commitNow() would throw in either case -- there's nothing left worth crashing over
+            // at that point, the hidden fragment is going away with the rest of the Activity
+            // regardless of whether this transaction actually runs.
+            runCatching {
+                fragmentManager.beginTransaction().remove(fragment).commitNowAllowingStateLoss()
+            }
         }
         return results
     }

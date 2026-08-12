@@ -89,6 +89,7 @@ import com.ishireader.app.ui.reader.ReaderSettingsSheet
 import com.ishireader.app.ui.reader.ReadingTimerSheet
 import com.ishireader.app.ui.reader.TocPanelSheet
 import com.ishireader.app.ui.theme.IshiReaderTheme
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -122,6 +123,7 @@ import org.readium.r2.shared.util.toUrl
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
 import java.io.File
+import kotlin.coroutines.coroutineContext
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -235,6 +237,14 @@ class ReaderActivity : FragmentActivity() {
      *  fingerprint was still current when its turn came up -- rather than queuing up N of them. */
     private val pageCountSweepMutex = Mutex()
 
+    /** The in-flight [PageCountSweeper.sweep] call, if any -- cancelled from [onPause] when the
+     *  Activity is finishing, so leaving the book mid-sweep stops the sweep and discards its
+     *  progress instead of racing the fragment/WebView teardown that follows (letting the sweep's
+     *  own coroutine cancellation happen later, via lifecycleScope's automatic ON_DESTROY cleanup,
+     *  was too late -- by the time it ran, the FragmentManager was already gone, crashing on the
+     *  hidden sweep fragment's removal in PageCountSweeper's own finally block). */
+    private var pageCountSweepJob: Job? = null
+
     private val readingTimerTracker: ReadingTimerTracker by lazy {
         ReadingTimerTracker(lifecycleScope, app.readingTimerRepository, app.completedReadsRepository)
     }
@@ -317,6 +327,12 @@ class ReaderActivity : FragmentActivity() {
     override fun onPause() {
         super.onPause()
         readingTimerTracker.onPaused()
+        // Cancel any in-flight page-count sweep as soon as we know the book is being exited --
+        // still well before FragmentManager/WebView teardown, unlike waiting for lifecycleScope's
+        // own ON_DESTROY-triggered cancellation (see pageCountSweepJob's doc comment).
+        if (isFinishing) {
+            pageCountSweepJob?.cancel()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -818,11 +834,23 @@ class ReaderActivity : FragmentActivity() {
                                     }
                                 )
                                 if (pageCountLoading) {
-                                    CircularProgressIndicator(
-                                        color = readerTextColor,
-                                        strokeWidth = 2.dp,
-                                        modifier = alignmentModifier.size(16.dp)
-                                    )
+                                    val loadingProgress = dynamicPageCount?.loadingProgress
+                                    if (loadingProgress != null) {
+                                        CircularProgressIndicator(
+                                            progress = { loadingProgress },
+                                            color = readerTextColor,
+                                            strokeWidth = 2.dp,
+                                            modifier = alignmentModifier.size(16.dp)
+                                        )
+                                    } else {
+                                        // No progress yet (still checking the cache before a sweep
+                                        // even starts) -- indeterminate until the first report.
+                                        CircularProgressIndicator(
+                                            color = readerTextColor,
+                                            strokeWidth = 2.dp,
+                                            modifier = alignmentModifier.size(16.dp)
+                                        )
+                                    }
                                 } else {
                                     Text(
                                         text = positionText.orEmpty(),
@@ -1129,11 +1157,18 @@ class ReaderActivity : FragmentActivity() {
                 readerContainer.paddingLeft, readerContainer.paddingTop,
                 readerContainer.paddingRight, readerContainer.paddingBottom
             )
-            val counts = PageCountSweeper(publication, settings.toEpubPreferences())
-                .sweep(supportFragmentManager, R.id.reader_sweep_container, classLoader)
-            if (lastPageCountFingerprint != fingerprint) return@withLock
-            app.exactPageCountRepository.put(cacheKey, counts)
-            tracker.applyExactCounts(counts)
+            pageCountSweepJob = coroutineContext[Job]
+            try {
+                val counts = PageCountSweeper(publication, settings.toEpubPreferences())
+                    .sweep(supportFragmentManager, R.id.reader_sweep_container, classLoader) { completed, total ->
+                        tracker.reportSweepProgress(completed, total)
+                    }
+                if (lastPageCountFingerprint != fingerprint) return@withLock
+                app.exactPageCountRepository.put(cacheKey, counts)
+                tracker.applyExactCounts(counts)
+            } finally {
+                pageCountSweepJob = null
+            }
         }
     }
 
