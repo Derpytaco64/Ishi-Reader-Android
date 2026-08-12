@@ -153,3 +153,19 @@ private fun ReaderTextAlign.toReadium(): TextAlign = when (this) {
     ReaderTextAlign.START -> TextAlign.START
     ReaderTextAlign.JUSTIFY -> TextAlign.JUSTIFY
 }
+
+/** Deterministic key for every layout-affecting input to page rendering, for caching a full-book
+ *  exact page-count sweep (see PageCountSweeper/ExactPageCountRepository) across sessions that
+ *  share it. Covers every field [toEpubPreferences] submits to Readium plus [verticalMargin]
+ *  (applied outside Readium, see its own doc comment) and [contentWidthPx]/[contentHeightPx] --
+ *  the actual laid-out pixel size of the navigator's container, which feeds Readium's own
+ *  column-count "auto" heuristic and so is as much a layout input as any user-facing setting, even
+ *  though the user doesn't set it directly. Deliberately excludes [theme] (colors don't reflow
+ *  text) and anything about system chrome/inset visibility -- this app's content area doesn't
+ *  resize when the status/nav bar show or hide (see ReaderActivity's chrome handling), so chrome
+ *  state is not a layout input here. */
+fun ReaderSettings.layoutFingerprint(contentWidthPx: Int, contentHeightPx: Int): String = listOf(
+    fontFamily, fontSize, textAlign, lineHeight, paragraphSpacing, paragraphIndent,
+    wordSpacing, letterSpacing, hyphens, publisherStyles, layout, pageMargins, verticalMargin,
+    contentWidthPx, contentHeightPx
+).joinToString("|")

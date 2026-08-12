@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.automirrored.filled.Toc
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +78,7 @@ import com.ishireader.app.data.model.PositionDisplayAlignment
 import com.ishireader.app.data.model.PositionDisplayMode
 import com.ishireader.app.data.model.ReaderLayout
 import com.ishireader.app.data.model.ReaderSettings
+import com.ishireader.app.data.model.layoutFingerprint
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.ui.reader.AnnotationsPanelSheet
@@ -91,7 +94,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import org.readium.r2.navigator.DecorableNavigator
@@ -182,6 +189,10 @@ class ReaderActivity : FragmentActivity() {
     private lateinit var composeOverlay: ComposeView
     private lateinit var readerContainer: View
 
+    /** Hidden host for PageCountSweeper's off-screen navigator fragment -- see its own layout
+     *  file comment for why it must be INVISIBLE rather than GONE. */
+    private lateinit var readerSweepContainer: View
+
     /** Plain (non-remember) Compose state so it can be mutated from outside the composition --
      *  see setUpSettingsOverlay/applyReaderSettings. Compose's snapshot system observes writes to
      *  this the same way it would a remembered one. */
@@ -208,6 +219,21 @@ class ReaderActivity : FragmentActivity() {
      *  into this Compose state from its own StateFlow the same way currentLocatorState etc. are. */
     private var dynamicPageCountTracker: DynamicPageCountTracker? = null
     private val dynamicPageCountState = mutableStateOf(DynamicPageCountState())
+
+    /** The settings/device fingerprint (see ReaderSettings.layoutFingerprint) [dynamicPageCountTracker]
+     *  currently has exact counts for (or is resolving), so [resolveExactPageCounts] can skip
+     *  redundant work when nothing layout-affecting actually changed -- e.g. a non-layout settings
+     *  tweak (theme) or a config-change callback that fires with the same size as before. */
+    private var lastPageCountFingerprint: String? = null
+
+    /** Serializes actual sweeps (never the cheap fingerprint/cache-check work above them) --
+     *  [resolveExactPageCounts] can be called back-to-back many times a second (e.g. dragging a
+     *  font-size/margin slider, whose onValueChange fires every tick, not just on release), and
+     *  two overlapping calls both trying to add a fragment into [readerSweepContainer] at once
+     *  would conflict. Each waiting call re-checks [lastPageCountFingerprint] once it acquires the
+     *  lock, so a run of rapid calls collapses into at most one real sweep -- for whichever
+     *  fingerprint was still current when its turn came up -- rather than queuing up N of them. */
+    private val pageCountSweepMutex = Mutex()
 
     private val readingTimerTracker: ReadingTimerTracker by lazy {
         ReadingTimerTracker(lifecycleScope, app.readingTimerRepository, app.completedReadsRepository)
@@ -309,6 +335,7 @@ class ReaderActivity : FragmentActivity() {
         progressText = findViewById(R.id.reader_progress_text)
         composeOverlay = findViewById(R.id.reader_compose_overlay)
         readerContainer = findViewById(R.id.reader_container)
+        readerSweepContainer = findViewById(R.id.reader_sweep_container)
 
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL)
         if (manifestUrl == null) {
@@ -455,12 +482,12 @@ class ReaderActivity : FragmentActivity() {
         val pageCountTracker = DynamicPageCountTracker(publication)
         dynamicPageCountTracker = pageCountTracker
         pageCountTracker.state.onEach { dynamicPageCountState.value = it }.launchIn(lifecycleScope)
+        lifecycleScope.launch { resolveExactPageCounts() }
 
         lifecycleScope.launch {
             val positions = publication.positions()
             publicationPositionsState.value = positions
             totalPositionsState.value = positions.size
-            pageCountTracker.onPositionsLoaded(positions)
         }
 
         if (supportFragmentManager.findFragmentByTag(NAVIGATOR_FRAGMENT_TAG) != null) return
@@ -621,7 +648,18 @@ class ReaderActivity : FragmentActivity() {
                 // useExactPageCount uses.
                 val dynamicPageCount = dynamicPageCountState.value.takeIf { settings.layout != ReaderLayout.SCROLLED }
                 val chapterTitle = currentLocator?.let { locator -> publication?.chapterTitleFor(locator) }
-                val positionText = positionDisplayText(settings.positionDisplayMode, currentLocator, totalPositions, dynamicPageCount)
+                // While PageCountSweeper is (re-)measuring the book for the current settings, show
+                // a spinner in place of a page number rather than the old ratio-estimated guess
+                // (see DynamicPageCountTracker's doc comment for why that was removed) or silently
+                // falling back to the coarse position -- there's no meaningful number to show yet.
+                // Percent-only mode doesn't need a page count at all, so it's unaffected.
+                val pageCountLoading = dynamicPageCount?.isLoading == true && currentLocator != null &&
+                    (settings.positionDisplayMode == PositionDisplayMode.PAGE || settings.positionDisplayMode == PositionDisplayMode.PAGE_PERCENT)
+                val positionText = if (pageCountLoading) {
+                    null
+                } else {
+                    positionDisplayText(settings.positionDisplayMode, currentLocator, totalPositions, dynamicPageCount)
+                }
 
                 // The chapter title/position overlays sit directly against the page, so they
                 // track the reader's own theme colors rather than the app's Material chrome
@@ -747,7 +785,7 @@ class ReaderActivity : FragmentActivity() {
                     // stacking/inset reasoning as the top Column above.
                     Column(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                         AnimatedVisibility(
-                            visible = positionText != null,
+                            visible = positionText != null || pageCountLoading,
                             enter = fadeIn(),
                             exit = fadeOut(),
                             modifier = Modifier.fillMaxWidth()
@@ -772,18 +810,27 @@ class ReaderActivity : FragmentActivity() {
                                     // instead of being cut off by it.
                                     .padding(horizontal = 32.dp, vertical = 6.dp)
                             ) {
-                                Text(
-                                    text = positionText.orEmpty(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = readerTextColor,
-                                    modifier = Modifier.align(
-                                        when (settings.positionDisplayAlignment) {
-                                            PositionDisplayAlignment.LEFT -> Alignment.CenterStart
-                                            PositionDisplayAlignment.CENTER -> Alignment.Center
-                                            PositionDisplayAlignment.RIGHT -> Alignment.CenterEnd
-                                        }
-                                    )
+                                val alignmentModifier = Modifier.align(
+                                    when (settings.positionDisplayAlignment) {
+                                        PositionDisplayAlignment.LEFT -> Alignment.CenterStart
+                                        PositionDisplayAlignment.CENTER -> Alignment.Center
+                                        PositionDisplayAlignment.RIGHT -> Alignment.CenterEnd
+                                    }
                                 )
+                                if (pageCountLoading) {
+                                    CircularProgressIndicator(
+                                        color = readerTextColor,
+                                        strokeWidth = 2.dp,
+                                        modifier = alignmentModifier.size(16.dp)
+                                    )
+                                } else {
+                                    Text(
+                                        text = positionText.orEmpty(),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = readerTextColor,
+                                        modifier = alignmentModifier
+                                    )
+                                }
                             }
                         }
 
@@ -1025,8 +1072,69 @@ class ReaderActivity : FragmentActivity() {
                 applyContainerAppearance(updated)
                 navigatorFragment?.submitPreferences(updated.toEpubPreferences())
             }
+            resolveExactPageCounts()
         }
         lifecycleScope.launch { app.readerPreferencesStore.save(updated) }
+    }
+
+    /** Checks/updates the exact, deterministic page count for the book's *current* settings +
+     *  content-area size (see ReaderSettings.layoutFingerprint) -- a cache hit (ExactPageCountRepository)
+     *  applies instantly; a miss runs [PageCountSweeper] (shows as [DynamicPageCountState.isLoading]
+     *  in the meantime, i.e. a spinner in the footer -- see positionDisplayText's caller) and
+     *  persists the result so it's instant next time this exact combination comes up. A no-op if
+     *  the fingerprint hasn't actually changed since the last call (e.g. a settings save that
+     *  didn't touch anything layout-affecting, like theme), or in scroll mode (no discrete pages to
+     *  count -- same gate the footer's own dynamicPageCount use already applies).
+     *
+     *  [waitForNextLayout], when true, waits for the *next* layout pass rather than trusting
+     *  [readerContainer]'s already-cached width/height -- needed from [onConfigurationChanged],
+     *  where those properties still hold their pre-rotation values until Android actually re-lays
+     *  the view out. */
+    private suspend fun resolveExactPageCounts(waitForNextLayout: Boolean = false) {
+        val publication = publication ?: return
+        val tracker = dynamicPageCountTracker ?: return
+        val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL) ?: return
+        val settings = readerSettingsState.value
+        if (settings.layout == ReaderLayout.SCROLLED) return
+
+        if (waitForNextLayout) {
+            readerContainer.awaitNextLayout()
+        } else if (readerContainer.width == 0 || readerContainer.height == 0) {
+            readerContainer.awaitLaidOut()
+        }
+        val widthPx = readerContainer.width
+        val heightPx = readerContainer.height
+        if (widthPx == 0 || heightPx == 0) return
+
+        val fingerprint = settings.layoutFingerprint(widthPx, heightPx)
+        if (fingerprint == lastPageCountFingerprint) return
+        lastPageCountFingerprint = fingerprint
+        tracker.markLoading()
+
+        val cacheKey = "$manifestUrl::$fingerprint"
+        val cached = app.exactPageCountRepository.get(cacheKey)
+        if (cached != null) {
+            // Only apply if still current -- a concurrent call for a newer fingerprint may have
+            // already won by the time this cache read returns.
+            if (lastPageCountFingerprint == fingerprint) tracker.applyExactCounts(cached)
+            return
+        }
+
+        pageCountSweepMutex.withLock {
+            // Re-check after acquiring the lock: while this call was waiting its turn, a newer
+            // settings/rotation change may have already superseded it, in which case running this
+            // sweep would just be wasted work for a fingerprint nothing cares about anymore.
+            if (lastPageCountFingerprint != fingerprint) return@withLock
+            readerSweepContainer.setPadding(
+                readerContainer.paddingLeft, readerContainer.paddingTop,
+                readerContainer.paddingRight, readerContainer.paddingBottom
+            )
+            val counts = PageCountSweeper(publication, settings.toEpubPreferences())
+                .sweep(supportFragmentManager, R.id.reader_sweep_container, classLoader)
+            if (lastPageCountFingerprint != fingerprint) return@withLock
+            app.exactPageCountRepository.put(cacheKey, counts)
+            tracker.applyExactCounts(counts)
+        }
     }
 
     /**
@@ -1051,7 +1159,10 @@ class ReaderActivity : FragmentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (!::readerContainer.isInitialized) return
-        lifecycleScope.launch { preservePositionAcross { } }
+        lifecycleScope.launch {
+            preservePositionAcross { }
+            resolveExactPageCounts(waitForNextLayout = true)
+        }
     }
 
     private fun toggleOrientation() {
@@ -1202,6 +1313,46 @@ class ReaderActivity : FragmentActivity() {
 
 private inline fun FragmentManager.commitNow(body: FragmentTransaction.() -> Unit) {
     beginTransaction().apply(body).commitNow()
+}
+
+/** Suspends until this view has a nonzero measured size -- a no-op resume if it already does.
+ *  Used before reading [View.width]/[View.height] for the very first time (book open), when
+ *  there's no "previous" layout pass to distinguish from. */
+private suspend fun View.awaitLaidOut() {
+    if (width > 0 && height > 0) return
+    suspendCancellableCoroutine { cont ->
+        val listener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (width > 0 && height > 0) {
+                    viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    if (cont.isActive) cont.resume(Unit)
+                }
+            }
+        }
+        viewTreeObserver.addOnGlobalLayoutListener(listener)
+        cont.invokeOnCancellation { viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+    }
+}
+
+/** Suspends until this view's *next* layout pass completes, ignoring whatever width/height it
+ *  already holds -- unlike [awaitLaidOut], which returns immediately if a size is already known.
+ *  Needed after a config change: [View.width]/[View.height] keep their pre-change values until
+ *  Android actually re-lays the view out, so trusting an already-nonzero size there would read
+ *  stale (pre-rotation) dimensions. */
+private suspend fun View.awaitNextLayout() {
+    suspendCancellableCoroutine { cont ->
+        val listener = object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(
+                v: View, left: Int, top: Int, right: Int, bottom: Int,
+                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+            ) {
+                removeOnLayoutChangeListener(this)
+                if (cont.isActive) cont.resume(Unit)
+            }
+        }
+        addOnLayoutChangeListener(listener)
+        cont.invokeOnCancellation { removeOnLayoutChangeListener(listener) }
+    }
 }
 
 /** One-decimal-place percent, matching percentFromLocator's rounding (used by the library

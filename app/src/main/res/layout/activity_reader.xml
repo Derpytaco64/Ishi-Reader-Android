@@ -9,6 +9,17 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Hidden host for PageCountSweeper's off-screen navigator fragment -- INVISIBLE (not GONE)
+         so it still lays out at the same size as reader_container above, which its exact page
+         counts depend on (see ReaderSettings.layoutFingerprint). Never intercepts touches: it sits
+         behind reader_container/reader_compose_overlay in z-order and INVISIBLE views don't
+         receive touch events regardless. -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/reader_sweep_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible" />
+
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/reader_compose_overlay"
         android:layout_width="match_parent"

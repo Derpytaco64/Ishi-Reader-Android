@@ -15,8 +15,15 @@ import org.readium.r2.shared.util.Url
  *  (Url.toString(), fragment-free) rather than [Url] itself -- callers building this key from a
  *  [org.readium.r2.shared.publication.Link]'s href (e.g. a TOC entry, which can carry a
  *  fragment identifying a sub-heading) already strip the fragment and compare as strings, same
- *  as this class's own [estimatedPages]/reading-order lookups do internally. */
+ *  as this class's own reading-order lookups (see [DynamicPageCountTracker.recompute]) do
+ *  internally.
+ *
+ *  [isLoading] is true until [DynamicPageCountTracker.applyExactCounts] has real, swept counts for
+ *  the book's current settings/device fingerprint -- consumers should show a loading indicator
+ *  rather than any page number while this is true, since there is no meaningful partial number
+ *  (see DynamicPageCountTracker's own doc comment for why this app no longer estimates). */
 data class DynamicPageCountState(
+    val isLoading: Boolean = true,
     val currentPage: Int? = null,
     val totalPages: Int? = null,
     val resourceStartPages: Map<String, Int> = emptyMap(),
@@ -31,8 +38,8 @@ data class DynamicPageCountState(
  *  resource's first page -- e.g. a highlight near the end of a long chapter shows near the end of
  *  that chapter's page range, not at its start. Deliberately not the cruder
  *  `totalProgression * totalPages` shortcut, which drifts since chapters vary in length. Null
- *  when the resource hasn't been reached by [DynamicPageCountTracker.onPositionsLoaded] (e.g. an
- *  href outside the reading order). */
+ *  when the resource hasn't been reached by [DynamicPageCountTracker.applyExactCounts] yet (still
+ *  loading), or is outside the reading order. */
 fun dynamicPageForLocator(state: DynamicPageCountState, locator: Locator): Int? {
     val href = locator.href.toString().substringBefore("#")
     val start = state.resourceStartPages[href] ?: return null
@@ -47,69 +54,64 @@ fun dynamicPageForLocator(state: DynamicPageCountState, locator: Locator): Int? 
  * A "dynamic" page count -- unlike the position/totalPositions the reader already shows elsewhere
  * (a fixed ~1024-char content-chunk index from [Publication.positions], unrelated to actual
  * rendered layout), this reflects real on-screen pages under the *current* font/margin/column
- * settings, changing live as those change. Mirrors the intent of the website's useExactPageCount
- * (a from-scratch off-screen full-book layout scan -- explicitly a "spike... not a finished
- * feature" per its own doc comment, since a full re-render of every resource off-screen is
- * expensive and edge-case-heavy).
+ * settings, changing live as those change.
  *
- * This gets the same kind of number far more cheaply by reusing [EpubNavigatorFragment]'s own
- * (deprecated, but still public) [EpubNavigatorFragment.PaginationListener] -- Readium's own
- * WebView already computes exactly this (a real scrollWidth/viewportWidth-based page count) for
- * whichever resource is currently on screen, it's just not otherwise exposed. Resources not yet
- * visited this session have no real count, so their page count is estimated from their share of
- * the (already loaded elsewhere, for the scrub slider) coarse positions() list, scaled by the
- * average real/coarse ratio observed so far -- exact for the resource currently being read, and
- * for the book-wide total once most of it has been visited; before that, still a reasonable
- * estimate. Display-only: navigation/scrubbing stays on the stable, cheap positions()-based index.
+ * The per-resource page counts themselves come from [PageCountSweeper] (a from-scratch, full-book
+ * off-screen sweep, cached by ExactPageCountRepository per settings/device fingerprint -- see
+ * ReaderSettings.layoutFingerprint) via [applyExactCounts], not estimated. An earlier version of
+ * this class estimated unvisited chapters' page counts from a ratio (real/coarse) observed only
+ * among chapters the user happened to visit that session -- cheap, but that ratio depended on
+ * which chapters were visited and in what order, so the same book at the same settings could
+ * report anywhere from ~520 to ~730 total pages session to session. [PageCountSweeper] measures
+ * every resource for real instead, so the total is deterministic for a given book + settings +
+ * device, matching the exact rendered page count rather than an extrapolated guess.
+ *
+ * This class's own remaining job is just tracking *which* page you're currently on -- driven live
+ * by [EpubNavigatorFragment]'s own (deprecated, but still public) [PaginationListener], since
+ * Readium's WebView already computes exactly this (a real scrollWidth/viewportWidth-based page
+ * index) for whichever resource is on screen. Display-only: navigation/scrubbing stays on the
+ * stable, cheap positions()-based index.
  */
 class DynamicPageCountTracker(private val publication: Publication) : EpubNavigatorFragment.PaginationListener {
 
     private val _state = MutableStateFlow(DynamicPageCountState())
     val state: StateFlow<DynamicPageCountState> = _state.asStateFlow()
 
-    private var readingOrderHrefs: List<Url> = emptyList()
-    private var coarseCountByHref: Map<Url, Int> = emptyMap()
-    private val realPagesByHref = mutableMapOf<Url, Int>()
+    private val readingOrderHrefs: List<Url> = publication.readingOrder.map { it.url() }
+    private var resourcePageCounts: Map<Url, Int> = emptyMap()
     private var currentHref: Url? = null
     private var currentPageIndex: Int = 0
 
-    /** Seeds the coarse per-resource estimate -- call once [Publication.positions] resolves (it's
-     *  already loaded elsewhere in ReaderActivity for the scrub slider/position indicator, so this
-     *  is free -- no extra positions() computation here). */
-    fun onPositionsLoaded(positions: List<Locator>) {
-        readingOrderHrefs = publication.readingOrder.map { it.url() }
-        coarseCountByHref = positions.groupingBy { it.href }.eachCount()
+    /** Drops any previously-applied exact counts and returns [state] to the loading state -- call
+     *  before re-sweeping (or checking the cache) for a new settings/device fingerprint, so
+     *  consumers don't keep showing page numbers computed under the *previous* settings while the
+     *  new sweep/cache-lookup is in flight. */
+    fun markLoading() {
+        resourcePageCounts = emptyMap()
+        recompute()
+    }
+
+    /** Applies real, swept per-resource page counts (href string -> page count), ending the
+     *  loading state. Missing reading-order resources (shouldn't normally happen -- every resource
+     *  is swept) fall back to 1 page rather than crashing on a lookup miss. */
+    fun applyExactCounts(countsByHref: Map<String, Int>) {
+        resourcePageCounts = readingOrderHrefs.associateWith { href -> countsByHref[href.toString()] ?: 1 }
         recompute()
     }
 
     override fun onPageChanged(pageIndex: Int, totalPages: Int, locator: Locator) {
         currentHref = locator.href
         currentPageIndex = pageIndex
-        if (totalPages > 0) realPagesByHref[locator.href] = totalPages
         recompute()
     }
 
-    private fun estimatedPages(href: Url): Int {
-        realPagesByHref[href]?.let { return it }
-        val coarse = coarseCountByHref[href] ?: 1
-        val estimate = coarse * averageRealToCoarseRatio()
-        return kotlin.math.max(1, kotlin.math.round(estimate).toInt())
-    }
-
-    /** How real page counts have tended to compare to the coarse positions()-derived guess among
-     *  resources actually visited so far -- 1.0 (i.e. just use the coarse count) until at least
-     *  one resource has a real measurement. */
-    private fun averageRealToCoarseRatio(): Double {
-        val ratios = realPagesByHref.entries.mapNotNull { (href, real) ->
-            coarseCountByHref[href]?.takeIf { it > 0 }?.let { real.toDouble() / it }
-        }
-        return if (ratios.isEmpty()) 1.0 else ratios.average()
-    }
-
     private fun recompute() {
-        if (readingOrderHrefs.isEmpty()) return
-        val href = currentHref
+        if (resourcePageCounts.isEmpty()) {
+            _state.value = DynamicPageCountState(isLoading = true)
+            return
+        }
 
+        val href = currentHref
         var pagesBefore = 0
         var currentResourceStart: Int? = null
         val startPages = mutableMapOf<String, Int>()
@@ -118,12 +120,13 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
             val key = resourceHref.toString()
             startPages[key] = pagesBefore + 1
             if (resourceHref == href) currentResourceStart = pagesBefore
-            val pages = estimatedPages(resourceHref)
+            val pages = resourcePageCounts[resourceHref] ?: 1
             pageCounts[key] = pages
             pagesBefore += pages
         }
 
         _state.value = DynamicPageCountState(
+            isLoading = false,
             currentPage = currentResourceStart?.let { it + currentPageIndex + 1 },
             totalPages = pagesBefore,
             resourceStartPages = startPages,
