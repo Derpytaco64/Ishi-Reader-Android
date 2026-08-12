@@ -836,9 +836,13 @@ class ReaderActivity : FragmentActivity() {
                                 if (pageCountLoading) {
                                     val loadingProgress = dynamicPageCount?.loadingProgress
                                     if (loadingProgress != null) {
+                                        // trackColor transparent so the unfilled remainder of the
+                                        // ring is blank as it fills, rather than a dim track arc
+                                        // sitting opposite the progress arc.
                                         CircularProgressIndicator(
                                             progress = { loadingProgress },
                                             color = readerTextColor,
+                                            trackColor = Color.Transparent,
                                             strokeWidth = 2.dp,
                                             modifier = alignmentModifier.size(16.dp)
                                         )
@@ -847,6 +851,7 @@ class ReaderActivity : FragmentActivity() {
                                         // even starts) -- indeterminate until the first report.
                                         CircularProgressIndicator(
                                             color = readerTextColor,
+                                            trackColor = Color.Transparent,
                                             strokeWidth = 2.dp,
                                             modifier = alignmentModifier.size(16.dp)
                                         )
