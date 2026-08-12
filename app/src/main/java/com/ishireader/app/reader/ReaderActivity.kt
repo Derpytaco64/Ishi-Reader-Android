@@ -78,6 +78,7 @@ import com.ishireader.app.data.model.PositionDisplayAlignment
 import com.ishireader.app.data.model.PositionDisplayMode
 import com.ishireader.app.data.model.ReaderLayout
 import com.ishireader.app.data.model.ReaderSettings
+import com.ishireader.app.data.model.formatPercent
 import com.ishireader.app.data.model.layoutFingerprint
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
@@ -124,8 +125,6 @@ import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
 import java.io.File
 import kotlin.coroutines.coroutineContext
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Drives HighlightColorPopover -- [anchorRect] is already converted to the ComposeView's local
@@ -1395,22 +1394,20 @@ private suspend fun View.awaitNextLayout() {
     }
 }
 
-/** One-decimal-place percent, matching percentFromLocator's rounding (used by the library
- *  screen) exactly, so the standalone [PositionDisplayMode.PERCENT] reads the same everywhere in
- *  the app -- e.g. "23.2%". */
-private fun formatPercent(totalProgression: Double): String {
-    val percent = kotlin.math.round(min(1.0, max(0.0, totalProgression)) * 1000) / 10
-    return "%.1f%%".format(percent)
-}
-
 /** Builds the bottom position indicator's text per [mode], or null if there's nothing to show
  *  (mode is NONE, or the data it needs hasn't loaded/isn't available for this locator yet).
  *  [dynamicPageCount], when non-null, supplies real layout-aware page numbers (see
  *  DynamicPageCountTracker) in place of the coarse positions()-derived ones -- falls back to
  *  those (via [totalPositions]/`locator.locations.position`) when it's null (scroll mode, or the
- *  navigator hasn't reported an initial page yet). [PositionDisplayMode.PERCENT] and the percent
- *  half of [PositionDisplayMode.PAGE_PERCENT] both use the same one-decimal [formatPercent] now,
- *  so switching between the two only changes whether a page number is shown alongside it. */
+ *  navigator hasn't reported an initial page yet).
+ *
+ *  [PositionDisplayMode.PERCENT] (shown alone, no page number) still uses `totalProgression` --
+ *  the same coarse, chunk-based measure the library screen and scrub bar use -- so it stays
+ *  consistent with those. But [PositionDisplayMode.PAGE_PERCENT]'s percent is derived from the
+ *  *same* page/total fraction as the page number it's shown next to, not `totalProgression`:
+ *  the two measures disagree (chunk-density vs. real-page-density vary chapter to chapter), and
+ *  showing e.g. "206 of 272 (67%)" -- numbers that don't actually agree with each other -- read as
+ *  broken even though each was individually correct for what it measured. */
 private fun positionDisplayText(
     mode: PositionDisplayMode,
     locator: Locator?,
@@ -1423,13 +1420,14 @@ private fun positionDisplayText(
     val total = dynamicPageCount?.totalPages ?: totalPositions
     val pageText = if (page != null && total != null) "$page of $total" else null
     val totalProgression = locator.locations.totalProgression
+    val pageFraction = if (page != null && total != null && total > 0) page.toDouble() / total else null
 
     return when (mode) {
         PositionDisplayMode.NONE -> null
         PositionDisplayMode.PAGE -> pageText
         PositionDisplayMode.PERCENT -> totalProgression?.let { formatPercent(it) }
         PositionDisplayMode.PAGE_PERCENT -> {
-            val percentText = totalProgression?.let { formatPercent(it) }
+            val percentText = (pageFraction ?: totalProgression)?.let { formatPercent(it) }
             when {
                 pageText != null && percentText != null -> "$pageText ($percentText)"
                 pageText != null -> pageText

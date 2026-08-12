@@ -37,6 +37,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.formatPercent
 
 /**
  * Two-step book picker (source, then destination -- exact manifestUrl match with the source is
@@ -225,7 +226,7 @@ private fun SelectedBookRow(book: Book, summary: BookSummary?, isLoadingSummary:
 @Composable
 private fun SummaryChips(summary: BookSummary) {
     val chips = buildList {
-        add(if (summary.percent != null) "Progress: ${summary.percent}%" else "Progress: Not started")
+        add(summary.percent?.let { "Progress: ${formatPercent(it / 100.0)}" } ?: "Progress: Not started")
         if (summary.isAudiobook) {
             if ((summary.listeningSeconds ?: 0.0) > 0.0) add("Time Listened: ${formatFullReadingTime(summary.listeningSeconds!!)}")
             add("Completed Listens: ${summary.completedListens}")

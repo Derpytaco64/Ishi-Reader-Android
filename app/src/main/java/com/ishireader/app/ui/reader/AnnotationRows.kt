@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.ishireader.app.data.model.formatPercent
 import com.ishireader.app.reader.AnnotationsUiState
 import com.ishireader.app.reader.DynamicPageCountState
 import com.ishireader.app.reader.HighlightColor
@@ -135,8 +136,7 @@ internal fun locationLabel(locator: Locator?, totalPositions: Int?, dynamicPageC
     if (page != null && totalPositions != null) return "$page of $totalPositions"
 
     val totalProgression = locator.locations.totalProgression ?: return null
-    val percent = kotlin.math.round(totalProgression.coerceIn(0.0, 1.0) * 1000) / 10
-    return "%.1f%%".format(percent)
+    return formatPercent(totalProgression)
 }
 
 /** Mirrors the website's formatTimestamp.ts (Intl.DateTimeFormat with medium date + short time). */

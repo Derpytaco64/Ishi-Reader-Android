@@ -69,6 +69,7 @@ import coil.request.ImageRequest
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.DailyListeningBucket
 import com.ishireader.app.data.model.DailyReadingBucket
+import com.ishireader.app.data.model.formatPercent
 import com.ishireader.app.reader.AnnotationsUiState
 import com.ishireader.app.reader.ReadingTimerUiState
 import com.ishireader.app.reader.TappedImage
@@ -543,7 +544,7 @@ private fun ProgressDial(percent: Double) {
             progress = { (percent / 100.0).toFloat() },
             modifier = Modifier.fillMaxSize()
         )
-        Text("${percent}%", style = MaterialTheme.typography.labelSmall)
+        Text(formatPercent(percent / 100.0), style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -553,12 +554,11 @@ private fun ProgressDial(percent: Double) {
 @Composable
 private fun DailyHistoryRow(bucket: DailyReadingBucket) {
     val wpm = if (bucket.seconds > 0) (bucket.words / (bucket.seconds / 60)).toInt() else null
-    val percent = (bucket.progressionDelta * 100).takeIf { it.isFinite() }?.toInt() ?: 0
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(formatDateOnly(bucket.date), style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
         Text(formatDuration(bucket.seconds), style = MaterialTheme.typography.labelSmall)
         Text(wpm?.let { "$it wpm" } ?: "—", style = MaterialTheme.typography.labelSmall)
-        Text("$percent%", style = MaterialTheme.typography.labelSmall)
+        Text(formatPercent(bucket.progressionDelta), style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -567,11 +567,10 @@ private fun DailyHistoryRow(bucket: DailyReadingBucket) {
  *  equivalent for audio, progress is already exact via the position locator's totalProgression). */
 @Composable
 private fun DailyListeningHistoryRow(bucket: DailyListeningBucket) {
-    val percent = (bucket.progressionDelta * 100).takeIf { it.isFinite() }?.toInt() ?: 0
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(formatDateOnly(bucket.date), style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
         Text(formatDuration(bucket.seconds), style = MaterialTheme.typography.labelSmall)
-        Text("$percent%", style = MaterialTheme.typography.labelSmall)
+        Text(formatPercent(bucket.progressionDelta), style = MaterialTheme.typography.labelSmall)
     }
 }
 
