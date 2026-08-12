@@ -80,6 +80,7 @@ import com.ishireader.app.data.model.ReaderLayout
 import com.ishireader.app.data.model.ReaderSettings
 import com.ishireader.app.data.model.formatPercent
 import com.ishireader.app.data.model.layoutFingerprint
+import com.ishireader.app.data.model.roundPercent
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.ExactPageLayout
@@ -1355,9 +1356,15 @@ class ReaderActivity : FragmentActivity() {
 
     private fun savePosition(locator: Locator) {
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL) ?: return
+        // Same page/total fraction the footer (positionDisplayText) is showing right now for this
+        // locator -- persisted so the book detail screen's dial can show that exact number instead
+        // of recomputing one from a page-count sweep that may be stale relative to these settings.
+        val dynamicPageCount = dynamicPageCountState.value.takeIf { readerSettingsState.value.layout != ReaderLayout.SCROLLED }
+        val fraction = pageFraction(locator, totalPositionsState.value, dynamicPageCount) ?: locator.locations.totalProgression
+        val exactPercent = fraction?.let { roundPercent(it) }
         lifecycleScope.launch {
             val locatorJson = Json.parseToJsonElement(locator.toJSON().toString())
-            app.positionRepository.setPosition(manifestUrl, locatorJson)
+            app.positionRepository.setPosition(manifestUrl, locatorJson, exactPercent)
         }
     }
 
@@ -1411,6 +1418,16 @@ private suspend fun View.awaitNextLayout() {
     }
 }
 
+/** The real, layout-aware page/total fraction [positionDisplayText]'s PAGE_PERCENT mode prefers
+ *  over `totalProgression` -- pulled out so [ReaderActivity.savePosition] can persist the exact
+ *  same figure the footer just displayed (see PositionEntity.exactPercent) instead of the two
+ *  drifting apart. Null when neither a dynamic nor a coarse page count is available yet. */
+private fun pageFraction(locator: Locator, totalPositions: Int?, dynamicPageCount: DynamicPageCountState?): Double? {
+    val page = dynamicPageCount?.currentPage ?: locator.locations.position
+    val total = dynamicPageCount?.totalPages ?: totalPositions
+    return if (page != null && total != null && total > 0) page.toDouble() / total else null
+}
+
 /** Builds the bottom position indicator's text per [mode], or null if there's nothing to show
  *  (mode is NONE, or the data it needs hasn't loaded/isn't available for this locator yet).
  *  [dynamicPageCount], when non-null, supplies real layout-aware page numbers (see
@@ -1438,7 +1455,7 @@ private fun positionDisplayText(
     val total = dynamicPageCount?.totalPages ?: totalPositions
     val pageText = if (page != null && total != null) "$page of $total" else null
     val totalProgression = locator.locations.totalProgression
-    val pageFraction = if (page != null && total != null && total > 0) page.toDouble() / total else null
+    val pageFraction = pageFraction(locator, totalPositions, dynamicPageCount)
 
     return when (mode) {
         PositionDisplayMode.NONE -> null

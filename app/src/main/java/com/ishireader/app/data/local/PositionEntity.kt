@@ -12,6 +12,15 @@ import androidx.room.PrimaryKey
  * (PositionReconciler resolves sync conflicts by [pendingSync] -- a pending local write always
  * wins -- not by progress, so paging backwards to re-read a chapter isn't clobbered by an older,
  * further-along save).
+ *
+ * [exactPercent] is the same page-accurate percent ReaderActivity's own footer displays at save
+ * time (see positionDisplayText/pageFraction), persisted verbatim so the book detail screen's
+ * progress dial can show that exact figure instead of recomputing one from whatever page-count
+ * sweep happens to be cached -- which can be stale relative to the settings/device this save was
+ * made under (see ExactPageCountRepository.getLatestForManifest) and so disagree with the reader.
+ * Null for audiobooks (which don't save through this path with a page fraction), pre-existing
+ * rows saved before this field existed, and positions adopted from the server (which doesn't
+ * carry this figure) -- callers fall back to the coarser recompute in that case.
  */
 @Entity(tableName = "positions")
 data class PositionEntity(
@@ -19,5 +28,6 @@ data class PositionEntity(
     val locatorJson: String,
     val progression: Double?,
     val updatedAtMillis: Long,
-    val pendingSync: Boolean
+    val pendingSync: Boolean,
+    val exactPercent: Double? = null
 )

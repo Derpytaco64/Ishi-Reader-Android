@@ -156,7 +156,8 @@ class BookDetailViewModel(
             val bookmarksDeferred = async { annotationsRepository.getBookmarks(book.manifestUrl()) }
 
             val locator = locatorDeferred.await()
-            val percentRead = resolvePercentRead(locator)
+            val exactPercent = positionRepository.getExactPercent(book.manifestUrl())
+            val percentRead = resolvePercentRead(locator, exactPercent)
             val notes = when (val result = notesDeferred.await()) {
                 is ApiResult.Success -> result.data
                 is ApiResult.Failure -> emptyList()
@@ -228,18 +229,19 @@ class BookDetailViewModel(
         }
     }
 
-    /** Prefers the same real, layout-aware percent the reader's own footer shows in
-     *  [com.ishireader.app.data.model.PositionDisplayMode.PAGE_PERCENT] mode over the coarse
-     *  totalProgression-based figure [percentFromLocator] alone would give -- so this screen's dial
-     *  doesn't show a different number than what the user was just looking at while reading (see
-     *  the reader footer's own fix for why those two disagree). Falls back to
-     *  [percentFromLocator] whenever the real one isn't available: this book has never been opened
-     *  in the reader (no sweep yet), or the saved locator itself doesn't parse -- there's no live
-     *  reader/layout here to sweep against on demand, so [ExactPageCountRepository.getLatestForManifest]
-     *  is a best-effort "whatever was last measured, even under different settings" rather than an
-     *  exact-fingerprint match; still far closer to the real page count than the chunk-based
-     *  estimate it replaces. */
-    private suspend fun resolvePercentRead(locatorJson: JsonElement?): Double? {
+    /** Prefers [exactPercent] -- the same page-accurate figure the reader's own footer showed at
+     *  the moment this position was saved (see PositionEntity.exactPercent) -- so this screen's
+     *  dial never disagrees with what the user was just looking at while reading. Recomputing that
+     *  figure here instead (from whatever page-count sweep happens to be cached) used to be the
+     *  source of that disagreement: [ExactPageCountRepository.getLatestForManifest] returns the
+     *  most recently swept layout for this book *regardless of settings*, which can differ from
+     *  the layout the saved locator's page was actually measured under, giving a different
+     *  page/total fraction for the same position. Recomputing remains as a fallback for rows saved
+     *  before [exactPercent] existed, or adopted from the server (which doesn't carry it yet).
+     *  Falls back further to [percentFromLocator]'s coarse totalProgression-based figure when
+     *  neither is available. */
+    private suspend fun resolvePercentRead(locatorJson: JsonElement?, exactPercent: Double?): Double? {
+        if (exactPercent != null) return exactPercent.takeIf { it > 0 }
         val fallback = percentFromLocator(locatorJson)
         val layout = exactPageCountRepository.getLatestForManifest(book.manifestUrl()) ?: return fallback
         if (layout.totalPages <= 0) return fallback

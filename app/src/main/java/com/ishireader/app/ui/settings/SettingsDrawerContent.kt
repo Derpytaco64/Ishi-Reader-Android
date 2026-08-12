@@ -1,5 +1,7 @@
 package com.ishireader.app.ui.settings
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -75,12 +78,30 @@ fun SettingsDrawerContent(
     onShelfVisibleChange: (HomeShelfId, Boolean) -> Unit,
     onMoveShelf: (HomeShelfId, Int) -> Unit
 ) {
+    val context = LocalContext.current
     ModalDrawerSheet {
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(16.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Settings",
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(
+                text = "V1.2.2",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clickable {
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://github.com/Derpytaco64/Ishi-Reader-Android")
+                    )
+                    context.startActivity(intent)
+                }
+            )
+        }
 
         SectionLabel("Theme")
         Row(

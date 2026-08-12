@@ -15,8 +15,7 @@ import kotlin.math.round
  */
 fun percentFromLocator(locator: JsonElement?): Double? {
     val totalProgression = progressionFromLocator(locator) ?: return null
-    val percent = round(min(1.0, max(0.0, totalProgression)) * 1000) / 10
-    return percent.takeIf { it > 0 }
+    return roundPercent(totalProgression).takeIf { it > 0 }
 }
 
 /** The raw 0..1 `locations.totalProgression` a saved Locator carries -- [percentFromLocator]'s
@@ -33,6 +32,11 @@ fun progressionFromLocator(locator: JsonElement?): Double? =
  *  input (e.g. a 0/0 division in a reading-history bucket) as 0%. */
 fun formatPercent(fraction: Double): String {
     val safeFraction = fraction.takeIf { it.isFinite() } ?: 0.0
-    val percent = round(min(1.0, max(0.0, safeFraction)) * 1000) / 10
-    return "%.1f%%".format(percent)
+    return "%.1f%%".format(roundPercent(safeFraction))
 }
+
+/** 0..1 fraction -> 0..100 percent, clamped and rounded to one decimal place -- the shared rounding
+ *  every percent figure in the app goes through (see [formatPercent]), including the exact percent
+ *  ReaderActivity persists alongside a saved position (see PositionEntity.exactPercent), so a
+ *  fraction always rounds to the same displayed number regardless of which caller formats it. */
+fun roundPercent(fraction: Double): Double = round(min(1.0, max(0.0, fraction)) * 1000) / 10
