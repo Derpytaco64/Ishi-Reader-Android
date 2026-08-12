@@ -61,6 +61,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -690,13 +691,25 @@ class ReaderActivity : FragmentActivity() {
                                     .padding(start = 12.dp, end = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                val chapterTitleBaseFontSize = MaterialTheme.typography.titleMedium.fontSize
+                                val chapterTitleMinFontSize = 10.sp
+                                var chapterTitleFontSize by remember(chapterTitle) { mutableStateOf(chapterTitleBaseFontSize) }
                                 Text(
                                     text = chapterTitle.orEmpty(),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = readerTextColor,
+                                    fontSize = chapterTitleFontSize,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = if (showChapterTitleHeader) TextAlign.Center else TextAlign.Start,
+                                    onTextLayout = { result ->
+                                        // Shrinks the title one sp at a time on overflow until it fits within
+                                        // two lines, so long chapter names stay fully visible instead of being
+                                        // cut off with an ellipsis.
+                                        if (result.hasVisualOverflow && chapterTitleFontSize > chapterTitleMinFontSize) {
+                                            chapterTitleFontSize = (chapterTitleFontSize.value - 1).sp
+                                        }
+                                    },
                                     modifier = Modifier
                                         .weight(1f)
                                         .padding(vertical = 4.dp)
