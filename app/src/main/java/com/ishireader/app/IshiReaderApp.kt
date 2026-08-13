@@ -96,7 +96,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         positionRepository = PositionRepository(
             database.positionDao(),
             syncScheduler,
-            PositionReconciler(database.positionDao(), network)
+            PositionReconciler(database.positionDao(), network),
+            database.exactPercentDao()
         )
         bookDownloadRepository = BookDownloadRepository(this, network)
         libraryPrefsRepository = LibraryPrefsRepository(

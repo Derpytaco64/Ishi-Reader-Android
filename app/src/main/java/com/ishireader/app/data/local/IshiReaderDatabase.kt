@@ -13,9 +13,10 @@ import androidx.room.RoomDatabase
         CachedUserStatsEntity::class,
         CachedUserEntity::class,
         PendingLibraryPrefsPatchEntity::class,
-        ExactPageCountEntity::class
+        ExactPageCountEntity::class,
+        ExactPercentEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class IshiReaderDatabase : RoomDatabase() {
@@ -27,6 +28,7 @@ abstract class IshiReaderDatabase : RoomDatabase() {
     abstract fun cachedUserDao(): CachedUserDao
     abstract fun pendingLibraryPrefsPatchDao(): PendingLibraryPrefsPatchDao
     abstract fun exactPageCountDao(): ExactPageCountDao
+    abstract fun exactPercentDao(): ExactPercentDao
 
     companion object {
         @Volatile

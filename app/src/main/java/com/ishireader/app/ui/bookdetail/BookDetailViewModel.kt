@@ -78,11 +78,12 @@ data class BookDetailUiState(
 )
 
 /**
- * Reads the saved Locator's `locations.totalProgression` to derive a percent-read figure, the
- * book's highlights/bookmarks/notes, its most recent completed-read run, and a point-in-time
- * "Reading Timer" snapshot (time read so far / current pace / estimated time left) -- matching
- * StatefulBookSheet.tsx's ReadProgressDial + annotations list + "Reading Timer" section +
- * "Completed Read" section.
+ * Reads the saved Locator to derive a percent-read figure (see [PositionRepository.localPercent]
+ * -- prefers the page-accurate percent the reader persisted alongside the position over the
+ * coarser `totalProgression`-based one), the book's highlights/bookmarks/notes, its most recent
+ * completed-read run, and a point-in-time "Reading Timer" snapshot (time read so far / current
+ * pace / estimated time left) -- matching StatefulBookSheet.tsx's ReadProgressDial + annotations
+ * list + "Reading Timer" section + "Completed Read" section.
  */
 class BookDetailViewModel(
     private val book: Book,
@@ -148,7 +149,12 @@ class BookDetailViewModel(
             val bookmarksDeferred = async { annotationsRepository.getBookmarks(book.manifestUrl()) }
 
             val locator = locatorDeferred.await()
-            val percentRead = percentFromLocator(locator)
+            // positionRepository.getPosition (locatorDeferred) already reconciled against the
+            // server and updated Room before this reads it back, so localPercent reflects the
+            // same save this locator came from -- falls back to the coarser recompute only for
+            // rows saved before exactPercent existed, or a locator with no matching Room row at
+            // all (e.g. adopted fresh from the server this same call).
+            val percentRead = positionRepository.localPercent(book.manifestUrl()) ?: percentFromLocator(locator)
             val notes = when (val result = notesDeferred.await()) {
                 is ApiResult.Success -> result.data
                 is ApiResult.Failure -> emptyList()

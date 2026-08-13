@@ -35,6 +35,7 @@ import com.ishireader.app.ui.login.LoginScreen
 import com.ishireader.app.ui.login.LoginViewModel
 import com.ishireader.app.ui.common.BookAvailability
 import com.ishireader.app.ui.common.LocalBookAvailability
+import com.ishireader.app.ui.common.LocalReadingProgress
 import com.ishireader.app.ui.main.MainTabsScreen
 import com.ishireader.app.ui.main.TopBarViewModel
 import com.ishireader.app.ui.series.SeriesViewModel
@@ -74,7 +75,11 @@ class MainActivity : ComponentActivity() {
             val bookAvailability = BookAvailability(isOffline, downloadsVersion, app.bookDownloadRepository)
 
             IshiReaderTheme(darkTheme = darkTheme, accentColor = parseAccentColor(settings.accentColor)) {
-                CompositionLocalProvider(LocalAppSettings provides settings, LocalBookAvailability provides bookAvailability) {
+                CompositionLocalProvider(
+                    LocalAppSettings provides settings,
+                    LocalBookAvailability provides bookAvailability,
+                    LocalReadingProgress provides app.positionRepository
+                ) {
                     val navController = rememberNavController()
 
                     NavHost(navController = navController, startDestination = ROUTE_LOGIN) {

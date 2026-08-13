@@ -275,7 +275,7 @@ private fun ContinueReadingCard(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        BookCoverCard(book = item.book, onClick = onClick, modifier = Modifier.fillMaxWidth(), onLongClick = onLongClick)
+        BookCoverCard(book = item.book, onClick = onClick, modifier = Modifier.fillMaxWidth(), onLongClick = onLongClick, showProgressBorder = false)
         // Reserves the progress bar's space even when there's no percent yet, so "Remove" lands
         // in the same spot across every card in a row instead of shifting up for books without one.
         Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(ProgressBarHeight)) {

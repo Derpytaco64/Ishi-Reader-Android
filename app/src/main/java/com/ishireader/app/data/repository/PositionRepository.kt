@@ -1,8 +1,11 @@
 package com.ishireader.app.data.repository
 
+import com.ishireader.app.data.local.ExactPercentDao
+import com.ishireader.app.data.local.ExactPercentEntity
 import com.ishireader.app.data.local.PositionDao
 import com.ishireader.app.data.local.PositionEntity
 import com.ishireader.app.data.local.totalProgressionOf
+import com.ishireader.app.data.model.roundPercent
 import com.ishireader.app.data.sync.PositionReconciler
 import com.ishireader.app.data.sync.SyncScheduler
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +26,8 @@ import kotlinx.serialization.json.JsonElement
 class PositionRepository(
     private val positionDao: PositionDao,
     private val syncScheduler: SyncScheduler,
-    private val reconciler: PositionReconciler
+    private val reconciler: PositionReconciler,
+    private val exactPercentDao: ExactPercentDao
 ) {
 
     fun observePosition(manifestUrl: String): Flow<JsonElement?> =
@@ -54,6 +58,18 @@ class PositionRepository(
         syncScheduler.schedulePositionSync()
     }
 
+    /** Caches [percent] purely for display (see ExactPercentEntity) -- entirely separate from
+     *  [setPosition]'s position-saving-and-sync system: no pendingSync, no server round-trip, and
+     *  nothing here ever factors into PositionReconciler's conflict resolution. Callers save this
+     *  alongside a [setPosition] call when they have a more accurate figure to offer (see
+     *  ReaderActivity.savePosition), but the two writes are independent -- this one failing or
+     *  lagging behind never affects whether the actual position saved/synced. */
+    suspend fun saveExactPercent(manifestUrl: String, percent: Double) = withContext(Dispatchers.IO) {
+        exactPercentDao.upsert(
+            ExactPercentEntity(manifestUrl = manifestUrl, percent = percent, updatedAtMillis = System.currentTimeMillis())
+        )
+    }
+
     /** Best-effort, time-boxed check against the server -- used when opening a book so a position
      *  saved elsewhere (web, another device) shows up on the very first open, not just the second.
      *  A book that's never been read on this device has no local row for the background sync
@@ -72,6 +88,22 @@ class PositionRepository(
      *  HomeViewModel, which takes the max of the two per book instead of trusting lastReadAt alone. */
     suspend fun localLastReadTimestamps(): Map<String, Long> = withContext(Dispatchers.IO) {
         positionDao.getAll().associate { it.manifestUrl to it.updatedAtMillis }
+    }
+
+    /** 0..100 reading percent for [manifestUrl] straight from Room, or null if never started --
+     *  unlike [getPosition] this never touches the network, so it's cheap enough for every cover in
+     *  a grid to call (see BookCoverCard's progress border) instead of just the handful of books
+     *  Continue Reading shows. Can lag a position set elsewhere until the next sync. Prefers the
+     *  page-accurate [ExactPercentEntity] cache (see [saveExactPercent]) over the coarser
+     *  [PositionEntity.progression]-based figure -- same preference BookDetailViewModel's own
+     *  percent uses -- so a book's progress border, book detail dial, and reader footer never
+     *  disagree on the same number. That cache is purely local/display-only, so it can go stale
+     *  relative to a position adopted from elsewhere; falling back to [PositionEntity.progression]
+     *  (which the reconciler always keeps current) is what keeps that bounded. */
+    suspend fun localPercent(manifestUrl: String): Double? = withContext(Dispatchers.IO) {
+        val exact = exactPercentDao.get(manifestUrl)?.percent
+        val fallback = positionDao.get(manifestUrl)?.progression?.let(::roundPercent)
+        (exact ?: fallback)?.takeIf { it > 0 }
     }
 }
 

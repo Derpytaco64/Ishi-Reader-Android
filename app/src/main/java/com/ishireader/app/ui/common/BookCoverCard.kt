@@ -1,5 +1,6 @@
 package com.ishireader.app.ui.common
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,12 +38,19 @@ import com.ishireader.app.data.model.manifestUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** Thin enough to read as a frame rather than a bar -- [ContinueReadingCard]'s own progress bar
+ *  stays the more prominent treatment there; this is the "everywhere else" discrete version. */
+private val ProgressBorderWidth = 2.5.dp
+
 /** Cover + title, used by the Books/Audiobooks grid and every Home shelf (carousel or wrapping).
  *  [onLongClick] opens the shared book context menu (Go to Series / Export Notes / shelf toggle /
  *  Remove from Continue Reading) where the caller wires it up -- null wherever that doesn't apply
  *  (e.g. the shelf "manage books" picker grid, where a tap already means something else). Dims
  *  itself while offline with no local download, since it can't actually be opened right now --
- *  see [com.ishireader.app.ui.common.LocalBookAvailability]. */
+ *  see [com.ishireader.app.ui.common.LocalBookAvailability]. Traces a thin progress border around
+ *  the cover for whatever reading percent is locally known (see [LocalReadingProgress]) --
+ *  [showProgressBorder] turns it off for ContinueReadingCard, which already shows its own more
+ *  prominent progress bar below the cover and would otherwise show the same progress twice. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BookCoverCard(
@@ -44,7 +58,8 @@ fun BookCoverCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    uniformCoverSlot: Boolean = true
+    uniformCoverSlot: Boolean = true,
+    showProgressBorder: Boolean = true
 ) {
     val availability = LocalBookAvailability.current
     // CLAUDE-ADDED: isDownloaded() hits the filesystem (File.listFiles()) -- every visible cover
@@ -55,6 +70,14 @@ fun BookCoverCard(
     LaunchedEffect(book.url, availability) {
         dimmed = availability.isOffline &&
             withContext(Dispatchers.IO) { availability.bookDownloadRepository?.isDownloaded(book.manifestUrl()) } == false
+    }
+
+    // Local-only (no network) so every cover in a grid can afford to look this up, unlike
+    // PositionRepository.getPosition's server refresh -- see LocalReadingProgress.
+    val positionRepository = LocalReadingProgress.current
+    var progressPercent by remember(book.url, positionRepository) { mutableStateOf<Double?>(null) }
+    LaunchedEffect(book.url, positionRepository) {
+        progressPercent = positionRepository?.localPercent(book.manifestUrl())
     }
     Column(
         modifier = modifier
@@ -98,6 +121,18 @@ fun BookCoverCard(
                         else Modifier.fillMaxHeight()
                     )
             )
+            val borderPercent = progressPercent
+            if (showProgressBorder && borderPercent != null) {
+                val trackColor = MaterialTheme.colorScheme.outlineVariant
+                val progressColor = MaterialTheme.colorScheme.primary
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    drawProgressBorder(
+                        fraction = (borderPercent / 100.0).toFloat(),
+                        trackColor = trackColor,
+                        progressColor = progressColor
+                    )
+                }
+            }
         }
         Text(
             text = book.title,
@@ -108,5 +143,30 @@ fun BookCoverCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+/** Traces [fraction] (0..1) of the cover's own rectangular perimeter in [progressColor], clockwise
+ *  from the top-left corner, over a full [trackColor] outline -- the "everywhere else" counterpart
+ *  to ContinueReadingCard's linear bar, stroked inward by half its own width so it never gets
+ *  clipped by the cover's bounds. */
+private fun DrawScope.drawProgressBorder(fraction: Float, trackColor: Color, progressColor: Color) {
+    val strokeWidthPx = ProgressBorderWidth.toPx()
+    val inset = strokeWidthPx / 2f
+    val perimeter = Path().apply {
+        moveTo(inset, inset)
+        lineTo(size.width - inset, inset)
+        lineTo(size.width - inset, size.height - inset)
+        lineTo(inset, size.height - inset)
+        close()
+    }
+    val stroke = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+    drawPath(perimeter, color = trackColor, style = stroke)
+
+    if (fraction > 0f) {
+        val measure = PathMeasure().apply { setPath(perimeter, forceClosed = false) }
+        val progressSegment = Path()
+        measure.getSegment(0f, measure.length * fraction.coerceIn(0f, 1f), progressSegment, startWithMoveTo = true)
+        drawPath(progressSegment, color = progressColor, style = stroke)
     }
 }
