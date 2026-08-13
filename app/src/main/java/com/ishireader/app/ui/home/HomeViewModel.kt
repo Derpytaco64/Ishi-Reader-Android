@@ -128,8 +128,14 @@ class HomeViewModel(
 
         candidates.map { (book, lastReadAt) ->
             async {
+                // getPosition's network refresh keeps positionDao (and so localPercent's coarse
+                // fallback) current for cross-device reads; localPercent itself then prefers the
+                // page-accurate exact-percent cache over that fallback -- same preference
+                // BookCoverCard's progress border and book detail use, so Continue Reading's bar
+                // never disagrees with either.
                 val locator = positionRepository.getPosition(book.manifestUrl())
-                Triple(book, lastReadAt, percentFromLocator(locator))
+                val percent = positionRepository.localPercent(book.manifestUrl()) ?: percentFromLocator(locator)
+                Triple(book, lastReadAt, percent)
             }
         }.awaitAll()
             .filter { (book, lastReadAt, percent) ->

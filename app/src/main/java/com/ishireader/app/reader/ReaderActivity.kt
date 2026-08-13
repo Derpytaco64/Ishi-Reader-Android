@@ -1360,7 +1360,7 @@ class ReaderActivity : FragmentActivity() {
         // short reading session may never reach. Only ever cache a fraction backed by a real,
         // finished sweep (see exactPageFraction) so a coarse figure never masquerades as exact.
         val dynamicPageCount = dynamicPageCountState.value.takeIf { readerSettingsState.value.layout != ReaderLayout.SCROLLED }
-        val exactPercent = exactPageFraction(dynamicPageCount)?.let { roundPercent(it) }
+        val exactPercent = exactPageFraction(dynamicPageCount, locator)?.let { roundPercent(it) }
         lifecycleScope.launch {
             val locatorJson = Json.parseToJsonElement(locator.toJSON().toString())
             app.positionRepository.setPosition(manifestUrl, locatorJson)
@@ -1435,10 +1435,20 @@ private fun pageFraction(locator: Locator, totalPositions: Int?, dynamicPageCoun
  *  [pageFraction] accepts. [ReaderActivity.savePosition] persists this (see
  *  PositionRepository.saveExactPercent) so a coarse figure never gets cached as if it were the
  *  real, page-accurate one -- which would otherwise stick around indistinguishable from
- *  `totalProgression` until some later locator change happened to fire after the sweep completed. */
-private fun exactPageFraction(dynamicPageCount: DynamicPageCountState?): Double? {
-    val page = dynamicPageCount?.currentPage ?: return null
-    val total = dynamicPageCount?.totalPages ?: return null
+ *  `totalProgression` until some later locator change happened to fire after the sweep completed.
+ *
+ *  Derives the page from [locator] itself via [dynamicPageForLocator] rather than
+ *  [dynamicPageCount]'s own `currentPage` -- that counter is updated by a *separate* flow
+ *  subscription driven by the navigator's pagination-listener callback, whose ordering relative to
+ *  the `currentLocator` emission that triggers [ReaderActivity.savePosition] isn't guaranteed. If
+ *  `currentPage` consistently landed after the locator on every turn, every save would cache the
+ *  *previous* page's fraction -- a permanent one-page lag between the reader's own live footer and
+ *  what book detail shows, not just an occasional race. Resolving straight from the locator ties
+ *  the cached fraction to the exact position being saved, independent of that ordering. */
+private fun exactPageFraction(dynamicPageCount: DynamicPageCountState?, locator: Locator): Double? {
+    if (dynamicPageCount == null) return null
+    val page = dynamicPageForLocator(dynamicPageCount, locator) ?: return null
+    val total = dynamicPageCount.totalPages ?: return null
     return if (total > 0) page.toDouble() / total else null
 }
 
