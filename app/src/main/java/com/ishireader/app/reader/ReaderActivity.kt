@@ -1349,15 +1349,18 @@ class ReaderActivity : FragmentActivity() {
 
     private fun savePosition(locator: Locator) {
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL) ?: return
-        // Same page/total fraction the footer (positionDisplayText) is showing right now for this
-        // locator -- cached separately (see PositionRepository.saveExactPercent) purely so the
-        // book detail screen's dial and every cover's progress border can show that exact number
-        // instead of recomputing one from `totalProgression`, which drifts from the real page
-        // count since chapters vary in text density. Display-only: the actual position save right
-        // below is untouched, still just the locator.
+        // Deliberately NOT pageFraction(...) here -- that helper falls back to the coarse
+        // locator.locations.position/totalPositions ratio whenever the real per-resource sweep
+        // hasn't finished yet (or this is scroll mode, which never sweeps at all -- see
+        // resolveExactPageCounts), which is fine for the footer's best-effort text but would
+        // silently cache that coarse figure as if it were the real thing here: once a coarse
+        // value lands in the exact-percent cache, book detail keeps showing it as "exact"
+        // (indistinguishable from the totalProgression-based fallback it's supposed to improve
+        // on) until another locator change happens to fire *after* the sweep completes -- which a
+        // short reading session may never reach. Only ever cache a fraction backed by a real,
+        // finished sweep (see exactPageFraction) so a coarse figure never masquerades as exact.
         val dynamicPageCount = dynamicPageCountState.value.takeIf { readerSettingsState.value.layout != ReaderLayout.SCROLLED }
-        val fraction = pageFraction(locator, totalPositionsState.value, dynamicPageCount) ?: locator.locations.totalProgression
-        val exactPercent = fraction?.let { roundPercent(it) }
+        val exactPercent = exactPageFraction(dynamicPageCount)?.let { roundPercent(it) }
         lifecycleScope.launch {
             val locatorJson = Json.parseToJsonElement(locator.toJSON().toString())
             app.positionRepository.setPosition(manifestUrl, locatorJson)
@@ -1416,13 +1419,27 @@ private suspend fun View.awaitNextLayout() {
 }
 
 /** The real, layout-aware page/total fraction [positionDisplayText]'s PAGE_PERCENT mode prefers
- *  over `totalProgression` -- pulled out so [ReaderActivity.savePosition] can persist the exact
- *  same figure the footer just displayed (see PositionEntity.exactPercent) instead of the two
- *  drifting apart. Null when neither a dynamic nor a coarse page count is available yet. */
+ *  over `totalProgression` for its own best-effort display text -- falls back to the coarse
+ *  positions()-derived page/total whenever a real one isn't available yet, which is fine for a
+ *  transient footer label but wrong to persist as if it were exact (see [exactPageFraction], which
+ *  [ReaderActivity.savePosition] uses instead for that). Null when neither a dynamic nor a coarse
+ *  page count is available yet. */
 private fun pageFraction(locator: Locator, totalPositions: Int?, dynamicPageCount: DynamicPageCountState?): Double? {
     val page = dynamicPageCount?.currentPage ?: locator.locations.position
     val total = dynamicPageCount?.totalPages ?: totalPositions
     return if (page != null && total != null && total > 0) page.toDouble() / total else null
+}
+
+/** The strict counterpart to [pageFraction] -- null unless [dynamicPageCount] carries a real,
+ *  finished-sweep page/total (see PageCountSweeper), never the coarse positions()-based fallback
+ *  [pageFraction] accepts. [ReaderActivity.savePosition] persists this (see
+ *  PositionRepository.saveExactPercent) so a coarse figure never gets cached as if it were the
+ *  real, page-accurate one -- which would otherwise stick around indistinguishable from
+ *  `totalProgression` until some later locator change happened to fire after the sweep completed. */
+private fun exactPageFraction(dynamicPageCount: DynamicPageCountState?): Double? {
+    val page = dynamicPageCount?.currentPage ?: return null
+    val total = dynamicPageCount?.totalPages ?: return null
+    return if (total > 0) page.toDouble() / total else null
 }
 
 /** Builds the bottom position indicator's text per [mode], or null if there's nothing to show
