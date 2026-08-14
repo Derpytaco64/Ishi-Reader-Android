@@ -4,6 +4,7 @@ package com.ishireader.app.reader
 
 import androidx.fragment.app.FragmentManager
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
@@ -78,6 +79,19 @@ class PageCountSweeper(
         )
         val fragment = fragmentFactory.instantiate(classLoader, EpubNavigatorFragment::class.java.name) as EpubNavigatorFragment
 
+        // Waits for the next onPageChanged matching [awaitingHref], returning its totalPages (or
+        // null on timeout). [trigger] is run *after* the continuation is registered, mirroring the
+        // original single-measurement version below -- callers just supply what kicks off that
+        // navigation (the initial fragment attach for the very first resource, fragment.go() for
+        // every other measurement).
+        suspend fun awaitPageCount(trigger: () -> Unit): Int? =
+            withTimeoutOrNull(RESOURCE_TIMEOUT_MS) {
+                suspendCancellableCoroutine { cont ->
+                    continuation = cont
+                    trigger()
+                }
+            }
+
         val results = mutableMapOf<String, Int>()
         try {
             // No explicit go() for the very first resource -- a null initialLocator already makes
@@ -86,15 +100,32 @@ class PageCountSweeper(
             // the fragment is attached, so whichever onPageChanged fires first (from that implicit
             // navigation) is guaranteed to be the one this catches -- calling go() here too would
             // race that implicit navigation instead of replacing it.
-            val firstHref = readingOrder.first().url()
+            val firstLink = readingOrder.first()
+            val firstHref = firstLink.url()
             awaitingHref = firstHref.toString().substringBefore("#")
-            val firstPages = withTimeoutOrNull(RESOURCE_TIMEOUT_MS) {
-                suspendCancellableCoroutine { cont ->
-                    continuation = cont
-                    fragmentManager.beginTransaction().add(containerId, fragment, SWEEP_FRAGMENT_TAG).commitNow()
-                }
+            var best = awaitPageCount {
+                fragmentManager.beginTransaction().add(containerId, fragment, SWEEP_FRAGMENT_TAG).commitNow()
+            } ?: 0
+
+            // Readium's R2WebView.numPages (what onPageChanged reports) is computed live from the
+            // WebView's *current* scrollWidth at the moment notifyCurrentLocation happens to poll
+            // it -- see R2WebView.numPages's getter and EpubNavigatorFragment.onContentReady, which
+            // resolves off a postVisualStateCallback the instant a frame is painted, not once every
+            // <img> in the resource has finished decoding and reflowed the page. An image without
+            // explicit width/height reserved in its markup grows the page *after* that first
+            // measurement lands, but nothing re-triggers notifyCurrentLocation during a headless
+            // sweep (no user scroll ever happens) to pick up the corrected, larger count -- so an
+            // image-containing resource's page count silently sticks at whatever it measured before
+            // its images finished loading, every single sweep. Re-issuing go() to the same locator
+            // after a short settle delay forces exactly that re-measurement (go() -> loadLocator ->
+            // onProgressionChanged -> notifyCurrentLocation, even when already on this resource --
+            // see EpubNavigatorFragment.go()'s unconditional loadLocatorAt call), so this takes the
+            // larger of the two readings rather than trusting whichever fired first.
+            publication.locatorFromLink(firstLink)?.let { locator ->
+                delay(IMAGE_SETTLE_DELAY_MS)
+                best = maxOf(best, awaitPageCount { fragment.go(locator, animated = false) } ?: 0)
             }
-            results[firstHref.toString()] = firstPages ?: 1
+            results[firstHref.toString()] = best.takeIf { it > 0 } ?: 1
             var processed = 1
             onProgress(processed, total)
 
@@ -107,13 +138,10 @@ class PageCountSweeper(
                 }
                 val href = link.url()
                 awaitingHref = href.toString().substringBefore("#")
-                val pages = withTimeoutOrNull(RESOURCE_TIMEOUT_MS) {
-                    suspendCancellableCoroutine { cont ->
-                        continuation = cont
-                        fragment.go(locator, animated = false)
-                    }
-                }
-                results[href.toString()] = pages ?: 1
+                val firstPass = awaitPageCount { fragment.go(locator, animated = false) } ?: 0
+                delay(IMAGE_SETTLE_DELAY_MS)
+                val settledPass = awaitPageCount { fragment.go(locator, animated = false) } ?: 0
+                results[href.toString()] = maxOf(firstPass, settledPass).takeIf { it > 0 } ?: 1
                 processed++
                 onProgress(processed, total)
             }
@@ -135,5 +163,11 @@ class PageCountSweeper(
     companion object {
         private const val SWEEP_FRAGMENT_TAG = "page_count_sweep_fragment"
         private const val RESOURCE_TIMEOUT_MS = 8_000L
+
+        /** How long to wait after a resource's first page-count measurement before forcing a
+         *  second one (see the sweep loop) -- long enough for a locally-bundled EPUB image to
+         *  finish decoding and reflow the page, short enough not to badly bloat total sweep time
+         *  across a few hundred resources. */
+        private const val IMAGE_SETTLE_DELAY_MS = 400L
     }
 }

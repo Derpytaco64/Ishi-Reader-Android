@@ -103,6 +103,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import org.json.JSONObject
 import org.readium.r2.navigator.DecorableNavigator
 import org.readium.r2.navigator.OverflowableNavigator
@@ -1361,12 +1365,34 @@ class ReaderActivity : FragmentActivity() {
         // short reading session may never reach. Only ever cache a fraction backed by a real,
         // finished sweep (see exactPageFraction) so a coarse figure never masquerades as exact.
         val dynamicPageCount = dynamicPageCountState.value.takeIf { readerSettingsState.value.layout != ReaderLayout.SCROLLED }
-        val exactPercent = exactPageFraction(dynamicPageCount, locator)?.let { roundPercent(it) }
+        val exactFraction = exactPageFraction(dynamicPageCount, locator)
+        val atBookEnd = exactFraction?.let { it >= 1.0 } ?: isAtBookEndByProgression(locator)
+        val exactPercent = if (atBookEnd) 100.0 else exactFraction?.let { roundPercent(it) }
         lifecycleScope.launch {
-            val locatorJson = Json.parseToJsonElement(locator.toJSON().toString())
+            var locatorJson = Json.parseToJsonElement(locator.toJSON().toString())
+            if (atBookEnd) locatorJson = locatorJson.withTotalProgressionOne()
             app.positionRepository.setPosition(manifestUrl, locatorJson)
             if (exactPercent != null) app.positionRepository.saveExactPercent(manifestUrl, exactPercent)
         }
+    }
+
+    /** Readium's own `totalProgression` -- chunk-weighted off [Publication.positions], not
+     *  page-based (see [pageFraction]'s doc comment) -- routinely lands a hair under 1.0 even on
+     *  the book's literal last page (e.g. 0.996), because the fixed-size content chunk the last
+     *  page happens to fall in isn't perfectly aligned with where rendered pagination actually
+     *  ends. That's exactly the value [savePosition] hands to [PositionRepository.setPosition],
+     *  which is what reaches the server unmodified (see totalProgressionOf) -- so a finished book
+     *  shows up there as "99.6% complete" instead of 100%. Used to detect that case so
+     *  [savePosition] can snap the synced totalProgression (and the cached exact percent) to
+     *  exactly 1.0/100 instead, without touching Readium's own measurement. Only consulted when
+     *  [exactPageFraction] itself came back null (scroll mode, or the sweep hasn't finished) --
+     *  its page/total >= 1.0 check is the primary, more precise signal. */
+    private fun isAtBookEndByProgression(locator: Locator): Boolean {
+        val lastHref = publication?.readingOrder?.lastOrNull()?.url()?.toString()?.substringBefore("#") ?: return false
+        val locatorHref = locator.href.toString().substringBefore("#")
+        if (locatorHref != lastHref) return false
+        val progression = locator.locations.progression ?: return false
+        return progression >= 0.999
     }
 
     /** Manual escape hatch for a stuck/wrong exact page-count sweep -- surfaced as "Recalculate
@@ -1453,6 +1479,16 @@ private suspend fun View.awaitNextLayout() {
         addOnLayoutChangeListener(listener)
         cont.invokeOnCancellation { removeOnLayoutChangeListener(listener) }
     }
+}
+
+/** Returns a copy of this Locator JSON with `locations.totalProgression` overridden to exactly
+ *  1.0 -- see [ReaderActivity.isAtBookEndByProgression] for why that's needed at all. */
+private fun JsonElement.withTotalProgressionOne(): JsonElement {
+    val root = jsonObject.toMutableMap()
+    val locations = (root["locations"] as? JsonObject)?.toMutableMap() ?: mutableMapOf()
+    locations["totalProgression"] = JsonPrimitive(1.0)
+    root["locations"] = JsonObject(locations)
+    return JsonObject(root)
 }
 
 /** The real, layout-aware page/total fraction [positionDisplayText]'s PAGE_PERCENT mode prefers
