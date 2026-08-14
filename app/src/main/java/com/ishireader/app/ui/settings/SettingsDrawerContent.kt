@@ -79,6 +79,13 @@ fun SettingsDrawerContent(
     onMoveShelf: (HomeShelfId, Int) -> Unit
 ) {
     val context = LocalContext.current
+    // CLAUDE-ADDED: Read off PackageManager instead of hardcoding the string here (or enabling the
+    // BuildConfig feature just for this one field, which IshiReaderApp already avoids elsewhere --
+    // see its own onCreate comment) so this label can't drift out of sync with build.gradle.kts'
+    // versionName the way the hardcoded "V1.2.3"/"V1.2.4" string previously did.
+    val versionName = remember(context) {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }
     ModalDrawerSheet {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -90,7 +97,7 @@ fun SettingsDrawerContent(
                 style = MaterialTheme.typography.titleLarge
             )
             Text(
-                text = "V1.2.4",
+                text = "V$versionName",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.clickable {
