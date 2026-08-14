@@ -28,12 +28,14 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.size.Size
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.CoverSize
 import com.ishireader.app.data.model.manifestUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -41,6 +43,13 @@ import kotlinx.coroutines.withContext
 /** Thin enough to read as a frame rather than a bar -- [ContinueReadingCard]'s own progress bar
  *  stays the more prominent treatment there; this is the "everywhere else" discrete version. */
 private val ProgressBorderWidth = 2.5.dp
+
+/** Upper bound for cover decode width, comfortably above the widest a grid cell can actually get:
+ *  [CoverSize]'s largest setting is 160dp, and GridCells.Adaptive can stretch a column up to just
+ *  under 2x its minSize before adding another one -- so this stays a strict upper bound (never
+ *  visibly softer than decoding at full source resolution) across every CoverSize/grid width
+ *  combination, while still avoiding decoding arbitrarily large source images into memory. */
+private val MaxCoverDecodeWidth = 360.dp
 
 /** Cover + title, used by the Books/Audiobooks grid and every Home shelf (carousel or wrapping).
  *  [onLongClick] opens the shared book context menu (Go to Series / Export Notes / shelf toggle /
@@ -95,15 +104,23 @@ fun BookCoverCard(
             contentAlignment = Alignment.Center
         ) {
             val context = LocalContext.current
+            // CLAUDE-ADDED: decoding at Size.ORIGINAL (full source resolution) used to keep covers
+            // sharp regardless of grid density/screen size, but it also meant a large source image
+            // (e.g. a 2000x3000 scan) stayed fully decoded in memory for a cell that only ever
+            // shows it at a couple hundred px -- a real cost on low-RAM devices when a whole grid
+            // of covers is on screen. Capping the decode to MaxCoverDecodeWidth keeps the same
+            // "always at least as sharp as the cell needs" guarantee (see its own doc comment)
+            // without paying for resolution no cell can actually display.
+            val maxDecodeWidthPx = with(LocalDensity.current) { MaxCoverDecodeWidth.roundToPx() }
+            val isSquareCover = book.isAudiobook
             AsyncImage(
-                // CLAUDE-ADDED: Size.ORIGINAL skips Coil's default behaviour of downsampling the
-                // decode to match this composable's (small) layout size -- covers are decoded at
-                // their full source resolution and Compose's Crop scaling does the downscale, so
-                // they stay sharp regardless of grid density or screen size.
-                model = remember(book.cover) {
+                model = remember(book.cover, maxDecodeWidthPx, isSquareCover) {
                     ImageRequest.Builder(context)
                         .data(book.cover)
-                        .size(Size.ORIGINAL)
+                        .size(
+                            if (isSquareCover) Size(maxDecodeWidthPx, maxDecodeWidthPx)
+                            else Size(maxDecodeWidthPx, maxDecodeWidthPx * 3 / 2)
+                        )
                         .build()
                 },
                 contentDescription = book.title,
