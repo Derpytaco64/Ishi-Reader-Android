@@ -90,7 +90,7 @@ fun SettingsDrawerContent(
                 style = MaterialTheme.typography.titleLarge
             )
             Text(
-                text = "V1.2.3",
+                text = "V1.2.4",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.clickable {
