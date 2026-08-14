@@ -55,6 +55,7 @@ import kotlin.math.roundToInt
 fun ReaderSettingsSheet(
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit,
+    onRecalculatePageCount: () -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -133,6 +134,29 @@ fun ReaderSettingsSheet(
                 valueLabel = if (settings.verticalMargin > 0) "${settings.verticalMargin.roundToInt()}dp" else "None",
                 onValueChange = { onSettingsChange(settings.copy(verticalMargin = it.toDouble())) }
             )
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                OutlinedButton(
+                    onClick = onRecalculatePageCount,
+                    enabled = settings.layout != ReaderLayout.SCROLLED,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Recalculate Page Numbers")
+                }
+                // CLAUDE-ADDED: Forces a fresh full-book page-count sweep and clears the derived
+                // exact-percent cache -- fixes both a page count stuck wrong from a sweep that
+                // timed out on some chapter, and a book detail progress percent stuck behind the
+                // reader's own (there's no automatic way for either to self-correct otherwise).
+                Text(
+                    if (settings.layout == ReaderLayout.SCROLLED) {
+                        "Not available in Scrolled layout"
+                    } else {
+                        "Fixes wrong page counts or a progress percent stuck behind your actual position"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
 
             SectionLabel("Display")
             Row(

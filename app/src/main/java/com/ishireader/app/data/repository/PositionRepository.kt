@@ -70,6 +70,17 @@ class PositionRepository(
         )
     }
 
+    /** Drops the cached exact percent for [manifestUrl] -- part of the reader's "Recalculate page
+     *  numbers" action (see ExactPageCountRepository.deleteForBook): the exact percent is derived
+     *  from the page-count sweep, so a stale/wrong one (e.g. cached back when the book was last
+     *  read in Paginated layout, then never refreshed because [saveExactPercent] is skipped
+     *  entirely in Scrolled layout -- see ExactPageFraction's caller in ReaderActivity) needs
+     *  clearing alongside the sweep cache. [localPercent] falls back to
+     *  [PositionEntity.progression] until the next paginated-mode save repopulates this. */
+    suspend fun clearExactPercent(manifestUrl: String) = withContext(Dispatchers.IO) {
+        exactPercentDao.delete(manifestUrl)
+    }
+
     /** Best-effort, time-boxed check against the server -- used when opening a book so a position
      *  saved elsewhere (web, another device) shows up on the very first open, not just the second.
      *  A book that's never been read on this device has no local row for the background sync

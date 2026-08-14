@@ -12,4 +12,7 @@ interface ExactPercentDao {
 
     @Upsert
     suspend fun upsert(entity: ExactPercentEntity)
+
+    @Query("DELETE FROM exact_percents WHERE manifestUrl = :manifestUrl")
+    suspend fun delete(manifestUrl: String)
 }

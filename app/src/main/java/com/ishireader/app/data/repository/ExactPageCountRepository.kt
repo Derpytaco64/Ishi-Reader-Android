@@ -27,4 +27,14 @@ class ExactPageCountRepository(private val dao: ExactPageCountDao) {
             )
         )
     }
+
+    /** Drops every cached sweep for [manifestUrl] regardless of which layout fingerprint it was
+     *  swept under -- used by the reader's "Recalculate page numbers" action, since a bad sweep
+     *  (e.g. a resource that hit PageCountSweeper's timeout and fell back to 1 page) has no other
+     *  way to get cleared short of app data. Deletes by manifestUrl prefix rather than a single
+     *  cacheKey since the current fingerprint isn't necessarily the only -- or the broken -- one
+     *  cached for this book. */
+    suspend fun deleteForBook(manifestUrl: String) = withContext(Dispatchers.IO) {
+        dao.deleteAllForManifest("$manifestUrl::")
+    }
 }

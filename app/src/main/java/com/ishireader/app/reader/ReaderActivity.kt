@@ -976,6 +976,7 @@ class ReaderActivity : FragmentActivity() {
                     ReaderSettingsSheet(
                         settings = settings,
                         onSettingsChange = ::applyReaderSettings,
+                        onRecalculatePageCount = ::recalculatePageCounts,
                         onDismiss = { settingsSheetOpen = false }
                     )
                 }
@@ -1365,6 +1366,42 @@ class ReaderActivity : FragmentActivity() {
             val locatorJson = Json.parseToJsonElement(locator.toJSON().toString())
             app.positionRepository.setPosition(manifestUrl, locatorJson)
             if (exactPercent != null) app.positionRepository.saveExactPercent(manifestUrl, exactPercent)
+        }
+    }
+
+    /** Manual escape hatch for a stuck/wrong exact page-count sweep -- surfaced as "Recalculate
+     *  page numbers" in Reader Settings. Deletes both this book's cached sweep (see
+     *  ExactPageCountRepository.deleteForBook -- a resource that hit PageCountSweeper's timeout and
+     *  fell back to 1 page stays wrong forever otherwise, there's no other invalidation path) and
+     *  its cached exact percent (see PositionRepository.clearExactPercent -- stuck stale for the
+     *  same underlying reason whenever a Scrolled-layout session skips refreshing it, since
+     *  [savePosition] only ever caches a fraction backed by a dynamic page count), then re-sweeps
+     *  and immediately re-saves the exact percent for the current locator rather than waiting on the
+     *  next page turn. Reads the tracker's own state directly (not the Compose-mirrored
+     *  [dynamicPageCountState]) since that mirror is updated by a separate flow collector whose
+     *  timing relative to this coroutine isn't guaranteed. A no-op in Scrolled layout, which has no
+     *  page concept to sweep (same gate [resolveExactPageCounts] itself applies). */
+    private fun recalculatePageCounts() {
+        val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL) ?: return
+        if (readerSettingsState.value.layout == ReaderLayout.SCROLLED) {
+            Toast.makeText(this, "Not available in Scrolled layout", Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            app.exactPageCountRepository.deleteForBook(manifestUrl)
+            app.positionRepository.clearExactPercent(manifestUrl)
+            lastPageCountFingerprint = null
+            dynamicPageCountTracker?.markLoading()
+            resolveExactPageCounts()
+
+            val freshState = dynamicPageCountTracker?.state?.value
+            val locator = currentLocatorState.value
+            if (freshState != null && locator != null) {
+                val exactPercent = exactPageFraction(freshState, locator)?.let { roundPercent(it) }
+                if (exactPercent != null) app.positionRepository.saveExactPercent(manifestUrl, exactPercent)
+            }
+
+            Toast.makeText(this@ReaderActivity, "Page numbers recalculated", Toast.LENGTH_SHORT).show()
         }
     }
 
