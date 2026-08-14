@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
-import org.readium.r2.shared.util.Url
 
 /** [resourceStartPages] mirrors the website's resourcePages (ExactPageResourceEntry[]) dispatched
  *  out to consumers beyond the reader's own footer -- the TOC panel and annotation rows remap
@@ -83,9 +82,23 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
     private val _state = MutableStateFlow(DynamicPageCountState())
     val state: StateFlow<DynamicPageCountState> = _state.asStateFlow()
 
-    private val readingOrderHrefs: List<Url> = publication.readingOrder.map { it.url() }
-    private var resourcePageCounts: Map<Url, Int> = emptyMap()
-    private var currentHref: Url? = null
+    /** Fragment-free href strings -- see [dynamicPageForLocator]'s own matching for why string,
+     *  not [org.readium.r2.shared.util.Url] equality: Url.equals is a *strict*, non-normalized
+     *  comparison of the raw URI string (see readium-shared's own Url.kt doc comment, which warns
+     *  exactly about this and recommends `isEquivalent` instead) -- so a live locator's href
+     *  carrying so much as a fragment the reading-order Link itself never had, or a differently
+     *  percent-encoded character, silently fails `==` against the matching [readingOrderHrefs]
+     *  entry. That's not a crash or a null callers would notice: [recompute]'s loop has no `break`,
+     *  so a failed match on the *current* resource just leaves [currentHref] unmatched while
+     *  whichever earlier resource happened to match last (if any) wins -- which showed up as the
+     *  live footer's page number/percent suddenly jumping backwards mid-session with no
+     *  corresponding navigation. Comparing the same normalized string [dynamicPageForLocator] and
+     *  [resourceStartPages][DynamicPageCountState.resourceStartPages] already use elsewhere in this
+     *  file removes that whole class of mismatch. */
+    private val readingOrderHrefs: List<String> =
+        publication.readingOrder.map { it.url().toString().substringBefore("#") }
+    private var resourcePageCounts: Map<String, Int> = emptyMap()
+    private var currentHref: String? = null
     private var currentPageIndex: Int = 0
     private var loadingProgress: Float? = null
 
@@ -115,12 +128,12 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
      *  loading state. Missing reading-order resources (shouldn't normally happen -- every resource
      *  is swept) fall back to 1 page rather than crashing on a lookup miss. */
     fun applyExactCounts(countsByHref: Map<String, Int>) {
-        resourcePageCounts = readingOrderHrefs.associateWith { href -> countsByHref[href.toString()] ?: 1 }
+        resourcePageCounts = readingOrderHrefs.associateWith { href -> countsByHref[href] ?: 1 }
         recompute()
     }
 
     override fun onPageChanged(pageIndex: Int, totalPages: Int, locator: Locator) {
-        currentHref = locator.href
+        currentHref = locator.href.toString().substringBefore("#")
         currentPageIndex = pageIndex
         recompute()
     }
@@ -137,11 +150,10 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
         val startPages = mutableMapOf<String, Int>()
         val pageCounts = mutableMapOf<String, Int>()
         for (resourceHref in readingOrderHrefs) {
-            val key = resourceHref.toString()
-            startPages[key] = pagesBefore + 1
+            startPages[resourceHref] = pagesBefore + 1
             if (resourceHref == href) currentResourceStart = pagesBefore
             val pages = resourcePageCounts[resourceHref] ?: 1
-            pageCounts[key] = pages
+            pageCounts[resourceHref] = pages
             pagesBefore += pages
         }
 

@@ -11,7 +11,6 @@ import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Publication
-import org.readium.r2.shared.util.Url
 import kotlin.coroutines.resume
 
 /**
@@ -49,12 +48,21 @@ class PageCountSweeper(
         if (readingOrder.isEmpty()) return emptyMap()
         val total = readingOrder.size
 
-        var awaitingHref: Url? = null
+        // Fragment-free href string, not org.readium.r2.shared.util.Url -- Url.equals is a strict,
+        // non-normalized comparison of the raw URI string (see its own doc comment, which warns
+        // about exactly this and recommends `isEquivalent` instead), so a live pagination locator's
+        // href carrying so much as a fragment the reading-order Link itself never had -- or any
+        // other difference in exact string form -- silently fails `==` against [awaitingHref] below.
+        // That's not a transient race: it fails the same way for the same resource on every sweep,
+        // so the affected resource permanently times out and falls back to 1 page (see the
+        // withTimeoutOrNull calls below) no matter how many times the book is re-swept. Same fix as
+        // DynamicPageCountTracker's own onPageChanged/recompute matching.
+        var awaitingHref: String? = null
         var continuation: CancellableContinuation<Int>? = null
 
         val listener = object : EpubNavigatorFragment.PaginationListener {
             override fun onPageChanged(pageIndex: Int, totalPages: Int, locator: org.readium.r2.shared.publication.Locator) {
-                if (totalPages > 0 && locator.href == awaitingHref) {
+                if (totalPages > 0 && locator.href.toString().substringBefore("#") == awaitingHref) {
                     continuation?.takeIf { it.isActive }?.resume(totalPages)
                     continuation = null
                 }
@@ -79,7 +87,7 @@ class PageCountSweeper(
             // navigation) is guaranteed to be the one this catches -- calling go() here too would
             // race that implicit navigation instead of replacing it.
             val firstHref = readingOrder.first().url()
-            awaitingHref = firstHref
+            awaitingHref = firstHref.toString().substringBefore("#")
             val firstPages = withTimeoutOrNull(RESOURCE_TIMEOUT_MS) {
                 suspendCancellableCoroutine { cont ->
                     continuation = cont
@@ -98,7 +106,7 @@ class PageCountSweeper(
                     continue
                 }
                 val href = link.url()
-                awaitingHref = href
+                awaitingHref = href.toString().substringBefore("#")
                 val pages = withTimeoutOrNull(RESOURCE_TIMEOUT_MS) {
                     suspendCancellableCoroutine { cont ->
                         continuation = cont
