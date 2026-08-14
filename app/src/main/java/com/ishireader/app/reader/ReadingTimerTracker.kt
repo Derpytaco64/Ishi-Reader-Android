@@ -116,7 +116,29 @@ class ReadingTimerTracker(
         tickerJob?.cancel()
         tickerJob = null
         _state.value = _state.value.copy(running = false)
+        creditDanglingSecondsToToday()
         scope.launch { flush() }
+    }
+
+    /** Credits whatever's ticked up in [accumulatedSeconds][ReadingTimerUiState.accumulatedSeconds]
+     *  since the last [onLocatorChanged] sample to today's daily bucket, so "Time read" and the sum
+     *  of daily-history/completed-read seconds stay in agreement. Without this, any reading between
+     *  the *last* locator change of a session and backing out/closing the app -- there being no
+     *  guaranteed locator change after it to carry the credit, unlike every other interval -- ticks
+     *  up accumulatedSeconds (every second, unconditionally, see [tick]) but is never folded into a
+     *  bucket (only [onLocatorChanged] does that), permanently leaving the daily-history sum short
+     *  of the lifetime total. Only touches the bucket's seconds, not words/progressionDelta -- there
+     *  is no locator delta to attribute here, just elapsed time with the book open, same as a
+     *  rejected sample's seconds still count in [onLocatorChanged]. */
+    private fun creditDanglingSecondsToToday() {
+        val nowSeconds = _state.value.accumulatedSeconds
+        val danglingSeconds = nowSeconds - lastSampleSeconds
+        if (danglingSeconds <= 0) return
+        lastSampleSeconds = nowSeconds
+
+        val dateKey = LocalDate.now().toString()
+        val existing = dailyBuckets[dateKey] ?: DailyReadingBucket(date = dateKey)
+        dailyBuckets[dateKey] = existing.copy(seconds = existing.seconds + danglingSeconds)
     }
 
     private fun tick() {
@@ -206,6 +228,11 @@ class ReadingTimerTracker(
      *  dialog (Discard vs Save), not two independent actions. */
     suspend fun reset(save: Boolean) {
         if (save && _state.value.accumulatedSeconds > 0) {
+            // Same gap [onPaused] closes: reset can be triggered from the timer sheet mid-session,
+            // with no pause in between to have already credited the dangling seconds -- without
+            // this, item.seconds could exceed the sum of item.dailyHistory by whatever's ticked up
+            // since the last locator change.
+            creditDanglingSecondsToToday()
             val item = StoredCompletedReadTime(
                 id = UUID.randomUUID().toString(),
                 seconds = _state.value.accumulatedSeconds,
