@@ -2,10 +2,14 @@ package com.ishireader.app.data.network
 
 import com.ishireader.app.data.model.AdminUserResponse
 import com.ishireader.app.data.model.AdminUsersResponse
+import com.ishireader.app.data.model.AvatarUploadRequest
+import com.ishireader.app.data.model.AvatarUploadResponse
 import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.BookmarkUpsertRequest
 import com.ishireader.app.data.model.BookmarksResponse
 import com.ishireader.app.data.model.BooksResponse
+import com.ishireader.app.data.model.ChangePasswordRequest
+import com.ishireader.app.data.model.ChangePasswordResponse
 import com.ishireader.app.data.model.ClearedManifestCacheResponse
 import com.ishireader.app.data.model.ClearedSpeedSamplesResponse
 import com.ishireader.app.data.model.CompletedListenUpsertRequest
@@ -44,6 +48,8 @@ import com.ishireader.app.data.model.ReadiumPortRequest
 import com.ishireader.app.data.model.ReadiumUrlField
 import com.ishireader.app.data.model.ResetPasswordRequest
 import com.ishireader.app.data.model.SetupPasswordRequest
+import com.ishireader.app.data.model.UpdateProfileRequest
+import com.ishireader.app.data.model.UpdateProfileResponse
 import com.ishireader.app.data.model.UserDataFolderField
 import com.ishireader.app.data.model.UserStats
 import com.ishireader.app.data.model.WordCountRequest
@@ -78,6 +84,16 @@ interface ApiService {
 
     @POST("api/auth/setup-password")
     suspend fun setupPassword(@Body request: SetupPasswordRequest): Response<LoginResponse>
+
+    @POST("api/auth/avatar")
+    suspend fun uploadAvatar(@Body request: AvatarUploadRequest): Response<AvatarUploadResponse>
+
+    /** Self-service display-name change only -- username changes stay admin-only. */
+    @POST("api/auth/profile")
+    suspend fun updateProfile(@Body request: UpdateProfileRequest): Response<UpdateProfileResponse>
+
+    @POST("api/auth/change-password")
+    suspend fun changePassword(@Body request: ChangePasswordRequest): Response<ChangePasswordResponse>
 
     @GET("api/books")
     suspend fun books(): Response<BooksResponse>

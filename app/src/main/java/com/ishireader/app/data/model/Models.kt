@@ -37,6 +37,26 @@ data class PublicUsersResponse(val users: List<PublicUser> = emptyList())
 @Serializable
 data class SetupPasswordRequest(val userId: String, val password: String)
 
+/** [image] is a data URL ("data:image/png;base64,...") -- mirrors the website's client-side
+ *  FileReader.readAsDataURL, since /api/auth/avatar expects the same JSON shape either way. */
+@Serializable
+data class AvatarUploadRequest(val image: String)
+
+@Serializable
+data class AvatarUploadResponse(val avatarUrl: String? = null)
+
+@Serializable
+data class UpdateProfileRequest(val name: String)
+
+@Serializable
+data class UpdateProfileResponse(val user: PublicUser? = null)
+
+@Serializable
+data class ChangePasswordRequest(val currentPassword: String, val newPassword: String)
+
+@Serializable
+data class ChangePasswordResponse(val ok: Boolean = false)
+
 @Serializable
 data class BookSeries(val name: String, val position: Double? = null)
 

@@ -20,6 +20,12 @@ class TopBarViewModel(private val authRepository: AuthRepository) : ViewModel() 
     val user: StateFlow<PublicUser?> = _user.asStateFlow()
 
     init {
+        refresh()
+    }
+
+    /** Re-fetches after the Edit User sheet closes, so a display-name or avatar change made there
+     *  shows up in the avatar pinned top-right without waiting for the next app launch. */
+    fun refresh() {
         viewModelScope.launch {
             when (val result = authRepository.fetchCurrentUser()) {
                 is ApiResult.Success -> _user.value = result.data

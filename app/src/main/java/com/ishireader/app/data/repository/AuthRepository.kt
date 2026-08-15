@@ -2,13 +2,19 @@ package com.ishireader.app.data.repository
 
 import com.ishireader.app.data.local.CachedUserDao
 import com.ishireader.app.data.local.CachedUserEntity
+import com.ishireader.app.data.model.AvatarUploadRequest
+import com.ishireader.app.data.model.ChangePasswordRequest
 import com.ishireader.app.data.model.LoginRequest
 import com.ishireader.app.data.model.PublicUser
 import com.ishireader.app.data.model.SetupPasswordRequest
+import com.ishireader.app.data.model.UpdateProfileRequest
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.NetworkModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import retrofit2.Response
 
 /** Richer than [ApiResult] because the site's own login flow (see LoginPageClient.tsx) branches
  *  three ways on the same /api/auth/login response -- signed in, this account has no password yet
@@ -136,6 +142,65 @@ class AuthRepository(
             network.cookieJar.clear()
         }
     }
+
+    /** [imageDataUrl] is a data URL ("data:image/png;base64,..."), same shape the website's
+     *  FileReader.readAsDataURL produces client-side. Returns the new cache-busted avatar path
+     *  (server-relative, needs [NetworkModule.baseUrl] prepended same as [PublicUser.avatarUrl]). */
+    suspend fun uploadAvatar(imageDataUrl: String): ApiResult<String> = withContext(Dispatchers.IO) {
+        try {
+            val response = network.api.uploadAvatar(AvatarUploadRequest(imageDataUrl))
+            val avatarUrl = response.body()?.avatarUrl
+            if (response.isSuccessful && avatarUrl != null) {
+                ApiResult.Success(avatarUrl)
+            } else {
+                ApiResult.Failure(response.serverErrorMessage("Couldn't upload picture"))
+            }
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error")
+        }
+    }
+
+    /** Self-service display-name change only -- username changes stay admin-only. */
+    suspend fun updateProfile(name: String): ApiResult<PublicUser> = withContext(Dispatchers.IO) {
+        try {
+            val response = network.api.updateProfile(UpdateProfileRequest(name))
+            val user = response.body()?.user
+            if (response.isSuccessful && user != null) {
+                cachedUserDao.set(user.toEntity())
+                ApiResult.Success(user)
+            } else {
+                ApiResult.Failure(response.serverErrorMessage("Couldn't save name"))
+            }
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error")
+        }
+    }
+
+    suspend fun changePassword(currentPassword: String, newPassword: String): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val response = network.api.changePassword(ChangePasswordRequest(currentPassword, newPassword))
+            if (response.isSuccessful && response.body()?.ok == true) {
+                ApiResult.Success(Unit)
+            } else {
+                ApiResult.Failure(response.serverErrorMessage("Couldn't change password"))
+            }
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error")
+        }
+    }
+}
+
+@Serializable
+private data class ErrorBody(val error: String? = null)
+
+/** These three endpoints' validation messages (password length, current-password mismatch, image
+ *  too large/unsupported type) are the whole point of surfacing them -- unlike this file's other
+ *  calls, a bare status code wouldn't tell the user what to fix. [Response.errorBody] holds the
+ *  server's `{error: "..."}` JSON on a non-2xx response (its success-shaped body is null then). */
+private fun <T> Response<T>.serverErrorMessage(fallback: String): String {
+    val raw = errorBody()?.string()
+    val parsed = raw?.let { runCatching { Json.decodeFromString<ErrorBody>(it) }.getOrNull() }
+    return parsed?.error?.takeIf { it.isNotBlank() } ?: "$fallback (${code()})"
 }
 
 private fun PublicUser.toEntity() = CachedUserEntity(
