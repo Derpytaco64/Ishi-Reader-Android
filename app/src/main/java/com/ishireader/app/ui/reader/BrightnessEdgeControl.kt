@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -74,6 +75,12 @@ private const val DRAG_SENSITIVITY = 1.5f
  * it -- a single needle pivoting at "system brightness" rather than one long fill that happens to
  * pass through an arbitrary midpoint. The percent readout sits directly underneath, in an
  * unbounded-width row so it can never wrap inside the narrow 40dp strip.
+ *
+ * [backgroundColor]/[contentColor] are the reader's own current theme colors (same
+ * readerBackgroundColor/readerTextColor ReaderActivity already passes to the chapter-title and
+ * position-indicator bars) rather than the app's chrome MaterialTheme -- this HUD sits directly
+ * over the page like those do, so it follows the book's theme (light/dark/sepia/custom) instead
+ * of clashing with it if the two ever disagree.
  */
 @Composable
 fun BrightnessEdgeControl(
@@ -81,6 +88,8 @@ fun BrightnessEdgeControl(
     onPreview: (Float) -> Unit,
     onCommit: (Float) -> Unit,
     onTap: () -> Unit,
+    backgroundColor: Color,
+    contentColor: Color,
     modifier: Modifier = Modifier
 ) {
     val currentValue = rememberUpdatedState(value)
@@ -138,7 +147,7 @@ fun BrightnessEdgeControl(
                     .width(4.dp)
                     .height(48.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f))
+                    .background(contentColor.copy(alpha = 0.18f))
             )
         }
 
@@ -146,24 +155,29 @@ fun BrightnessEdgeControl(
             visible = isDragging,
             enter = fadeIn(),
             exit = fadeOut(),
+            // fillMaxHeight(0.5f) (rather than the full height) keeps the whole HUD to about half
+            // the strip's height, vertically centered by the CenterStart alignment below.
             // wrapContentWidth(unbounded = true) lets the percent pill below the bar render at
             // its natural width instead of being squeezed (and wrapped) into this Box's own 40dp
-            // -- Box would otherwise measure this content with that same 40dp max-width cap.
+            // -- Box would otherwise measure this content with that same 40dp max-width cap. The
+            // extra start padding (beyond the idle marker's 6dp) keeps the pill's left edge clear
+            // of the screen edge -- at 6dp it was getting clipped by some devices' rounded
+            // corners/gesture-nav area.
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .fillMaxHeight()
+                .fillMaxHeight(0.5f)
                 .wrapContentWidth(unbounded = true)
-                .padding(start = 6.dp, top = 24.dp, bottom = 24.dp)
+                .padding(start = 16.dp)
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                // The fill bar: takes the control's full (current) height minus what the percent
+                // The fill bar: takes the HUD's own full (halved) height minus what the percent
                 // pill below needs, rather than a small fixed-size indicator.
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .width(10.dp)
                         .clip(RoundedCornerShape(5.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
+                        .background(contentColor.copy(alpha = 0.15f))
                 ) {
                     Column(modifier = Modifier.fillMaxHeight().fillMaxWidth()) {
                         // Upper half: 0f..1f normal brightness -- fills upward, flush against the
@@ -177,7 +191,7 @@ fun BrightnessEdgeControl(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .fillMaxHeight(upFraction)
-                                    .background(MaterialTheme.colorScheme.primary)
+                                    .background(contentColor)
                             )
                         }
                         // Notch marking the 0% boundary between the two zones.
@@ -185,7 +199,7 @@ fun BrightnessEdgeControl(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(3.dp)
-                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                .background(contentColor.copy(alpha = 0.7f))
                         )
                         // Lower half: -1f..0f extra-dim -- fills downward from the notch, the
                         // opposite direction from the upper half.
@@ -198,7 +212,7 @@ fun BrightnessEdgeControl(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .fillMaxHeight(downFraction)
-                                    .background(MaterialTheme.colorScheme.primary)
+                                    .background(contentColor)
                             )
                         }
                     }
@@ -210,20 +224,20 @@ fun BrightnessEdgeControl(
                     modifier = Modifier
                         .padding(top = 8.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                        .background(backgroundColor.copy(alpha = 0.92f))
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = brightnessIcon(dragValue),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = contentColor,
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
                         text = brightnessPercentLabel(dragValue),
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = contentColor,
                         maxLines = 1,
                         softWrap = false,
                         modifier = Modifier.padding(start = 4.dp)

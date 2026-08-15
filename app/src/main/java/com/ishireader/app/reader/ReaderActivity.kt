@@ -1051,6 +1051,8 @@ class ReaderActivity : FragmentActivity() {
                         onPreview = { applyBrightness(it) },
                         onCommit = { sessionBrightnessState.value = it },
                         onTap = { (navigatorFragment as? OverflowableNavigator)?.goBackward(animated = true) },
+                        backgroundColor = readerBackgroundColor,
+                        contentColor = readerTextColor,
                         modifier = Modifier.align(Alignment.CenterStart)
                     )
                 }
