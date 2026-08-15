@@ -208,7 +208,7 @@ class BookDetailViewModel(
             // isn't open while the book is actually being read.
             val wordCount = wordCountDeferred.await().dataOrNull()
             val speedSamples = speedSamplesDeferred.await().dataOrNull() ?: emptyList()
-            val wpm = computeCurrentWpm(speedSamples)
+            val wpm = computeCurrentWpm(speedSamples, source = "BookDetailViewModel")
 
             _uiState.value = BookDetailUiState(
                 percentRead = percentRead,

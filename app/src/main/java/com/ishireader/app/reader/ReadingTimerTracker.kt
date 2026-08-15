@@ -90,11 +90,12 @@ class ReadingTimerTracker(
 
         val completedReads = completedReadsRepository.getCompletedReadTimes(manifestUrl).dataOrNull() ?: emptyList()
 
+        val wpm = computeCurrentWpm(speedSamples, source = "start")
         _state.value = _state.value.copy(
             loading = false,
             accumulatedSeconds = seconds,
-            wpm = computeCurrentWpm(speedSamples),
-            secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples), lastTotalProgression),
+            wpm = wpm,
+            secondsLeft = computeSecondsLeft(wordCount, wpm, lastTotalProgression),
             completedReads = completedReads.sortedByDescending { it.completedAt }
         )
     }
@@ -154,7 +155,7 @@ class ReadingTimerTracker(
         val next = _state.value.accumulatedSeconds + 1.0
         _state.value = _state.value.copy(
             accumulatedSeconds = next,
-            secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples), lastTotalProgression)
+            secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples, source = "tick"), lastTotalProgression)
         )
         tickCount++
         if (tickCount % PERSIST_INTERVAL_TICKS == 0) {
@@ -196,7 +197,7 @@ class ReadingTimerTracker(
         if (totalProgression != null) lastTotalProgression = totalProgression
         if (previous == null || totalProgression == null) {
             _state.value = _state.value.copy(
-                secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples), lastTotalProgression)
+                secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples, source = "onLocatorChanged.reseed"), lastTotalProgression)
             )
             return
         }
@@ -207,7 +208,7 @@ class ReadingTimerTracker(
         lastSampleSeconds = nowSeconds
 
         if (deltaSeconds <= 0) {
-            val wpm = computeCurrentWpm(speedSamples)
+            val wpm = computeCurrentWpm(speedSamples, source = "onLocatorChanged.zeroDelta")
             _state.value = _state.value.copy(wpm = wpm, secondsLeft = computeSecondsLeft(wordCount, wpm, lastTotalProgression))
             return
         }
@@ -237,7 +238,7 @@ class ReadingTimerTracker(
             progressionDelta = existing.progressionDelta + (if (acceptedSample) deltaProgression else 0.0)
         )
 
-        val wpm = computeCurrentWpm(speedSamples)
+        val wpm = computeCurrentWpm(speedSamples, source = "onLocatorChanged.sample")
         _state.value = _state.value.copy(wpm = wpm, secondsLeft = computeSecondsLeft(wordCount, wpm, lastTotalProgression))
     }
 
@@ -264,7 +265,7 @@ class ReadingTimerTracker(
         lastSampleSeconds = 0.0
         _state.value = _state.value.copy(
             accumulatedSeconds = 0.0,
-            secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples), lastTotalProgression)
+            secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples, source = "reset"), lastTotalProgression)
         )
         repository.setReadingTimeSeconds(manifestUrl, 0.0)
         repository.setDailyReadingHistory(manifestUrl, emptyList())

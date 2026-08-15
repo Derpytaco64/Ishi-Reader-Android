@@ -18,7 +18,7 @@ private const val PLAUSIBLE_WPM_CEILING = 600.0
  *  genuine read trimmed out as an "outlier" against only a handful of other samples. Shared by the
  *  live in-reader ReadingTimerTracker and BookDetailViewModel's own point-in-time estimate, so both
  *  agree on the same pace for the same sample buffer. */
-fun computeCurrentWpm(speedSamples: List<ReadingSpeedSample>): Int? {
+fun computeCurrentWpm(speedSamples: List<ReadingSpeedSample>, source: String = "?"): Int? {
     if (speedSamples.isEmpty()) return null
 
     val rates = speedSamples.map { it.deltaWords / (it.deltaSeconds / 60.0) }
@@ -28,9 +28,15 @@ fun computeCurrentWpm(speedSamples: List<ReadingSpeedSample>): Int? {
     // to stop a minority of bad data from out-voting good data, not to cap a real reader's pace.
     val poolIndices = if (plausibleIndices.isNotEmpty()) plausibleIndices else rates.indices.toList()
 
+    // CLAUDE-ADDED: [source] identifies which caller triggered this computation (see the multiple
+    // call sites in ReadingTimerTracker/BookDetailViewModel) -- speedSamples is the cross-book
+    // global buffer, readable/writable from more than one place, so a bare buffer-size log can't
+    // tell a genuine buffer shrink apart from two different callers (e.g. the live tracker vs a
+    // BookDetailViewModel snapshot fetch of a server copy that hasn't caught up to an unflushed
+    // local addition yet) interleaving in logcat under the same tag.
     Timber.tag("WpmDebug").d(
-        "buffer=%d plausible(<=%.0fwpm)=%d rates=[%s]",
-        speedSamples.size, PLAUSIBLE_WPM_CEILING, plausibleIndices.size,
+        "[%s] buffer=%d plausible(<=%.0fwpm)=%d rates=[%s]",
+        source, speedSamples.size, PLAUSIBLE_WPM_CEILING, plausibleIndices.size,
         rates.joinToString { "%.0f".format(it) }
     )
 
