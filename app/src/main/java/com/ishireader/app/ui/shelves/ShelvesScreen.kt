@@ -124,7 +124,7 @@ fun ShelvesScreen(
                         modifier = Modifier.align(Alignment.Center).padding(24.dp)
                     )
                 }
-                selectedShelf == null -> ShelfOverviewList(shelves = state.shelves, viewModel = viewModel)
+                selectedShelf == null -> ShelfOverviewList(shelves = state.shelves, allBooks = state.allBooks, viewModel = viewModel)
                 state.isManagingBooks -> ManageShelfBooksGrid(shelf = selectedShelf, allBooks = state.allBooks, viewModel = viewModel)
                 else -> ShelfDetailGrid(
                     books = state.selectedShelfBooks,
@@ -153,7 +153,7 @@ fun ShelvesScreen(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ShelfOverviewList(shelves: List<CustomShelf>, viewModel: ShelvesViewModel) {
+private fun ShelfOverviewList(shelves: List<CustomShelf>, allBooks: List<Book>, viewModel: ShelvesViewModel) {
     if (shelves.isEmpty()) {
         Text(
             text = "No shelves yet. Tap \"+ Shelf\" to create one.",
@@ -161,6 +161,11 @@ private fun ShelfOverviewList(shelves: List<CustomShelf>, viewModel: ShelvesView
         )
         return
     }
+    // CLAUDE-ADDED: A shelf entry can outlive the book it points to (deleted/moved out of the
+    // library without being explicitly removed from the shelf) -- join against what's actually in
+    // the library so the counter matches selectedShelfBooks' own join instead of the raw stored
+    // CustomShelf.books size.
+    val libraryUrls = remember(allBooks) { allBooks.mapTo(mutableSetOf()) { it.url } }
     val listState = rememberLazyListState()
     var draggingId by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { mutableStateOf(0f) }
@@ -234,7 +239,7 @@ private fun ShelfOverviewList(shelves: List<CustomShelf>, viewModel: ShelvesView
                     modifier = Modifier.padding(start = 12.dp).weight(1f)
                 )
                 Text(
-                    text = "${shelf.books.size}",
+                    text = "${shelf.books.count { it.url in libraryUrls }}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(end = 8.dp)

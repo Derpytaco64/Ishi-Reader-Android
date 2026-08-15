@@ -113,6 +113,17 @@ fun BookCoverCard(
             // without paying for resolution no cell can actually display.
             val maxDecodeWidthPx = with(LocalDensity.current) { MaxCoverDecodeWidth.roundToPx() }
             val isSquareCover = book.isAudiobook
+            // CLAUDE-ADDED: Shared by the cover image and the progress border below so they always
+            // occupy identical bounds -- square only when it's being letterboxed into the taller
+            // portrait slot (see the Box's own aspectRatio comment above); when the slot is already
+            // 1:1 this just fills it, so the 4dp bottom padding can't force it wider than the space
+            // left for it.
+            val coverBoundsModifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (book.isAudiobook && uniformCoverSlot) Modifier.aspectRatio(1f)
+                    else Modifier.fillMaxHeight()
+                )
             AsyncImage(
                 model = remember(book.cover, maxDecodeWidthPx, isSquareCover) {
                     ImageRequest.Builder(context)
@@ -125,24 +136,20 @@ fun BookCoverCard(
                 },
                 contentDescription = book.title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // Audiobook cover art is conventionally distributed square (like an album/
-                    // podcast cover), unlike the portrait 2:3 book-jacket ratio everything else
-                    // here uses.
-                    // Square only when it's being letterboxed into the taller portrait slot --
-                    // when the slot is already 1:1 the image just fills it, so the 4dp bottom
-                    // padding can't force a square image wider than the space left for it.
-                    .then(
-                        if (book.isAudiobook && uniformCoverSlot) Modifier.aspectRatio(1f)
-                        else Modifier.fillMaxHeight()
-                    )
+                // Audiobook cover art is conventionally distributed square (like an album/podcast
+                // cover), unlike the portrait 2:3 book-jacket ratio everything else here uses.
+                modifier = coverBoundsModifier
             )
             val borderPercent = progressPercent
             if (showProgressBorder && borderPercent != null) {
                 val trackColor = MaterialTheme.colorScheme.outlineVariant
                 val progressColor = MaterialTheme.colorScheme.primary
-                Canvas(modifier = Modifier.matchParentSize()) {
+                // CLAUDE-ADDED: Was Modifier.matchParentSize(), which traces the outer 2:3 slot
+                // regardless of cover shape -- for an audiobook in a uniform (portrait) slot, that
+                // left the border outlining the tall box while the square cover sat smaller and
+                // centered inside it. Reusing coverBoundsModifier keeps the border matched to
+                // whatever bounds the cover itself actually occupies.
+                Canvas(modifier = coverBoundsModifier) {
                     drawProgressBorder(
                         fraction = (borderPercent / 100.0).toFloat(),
                         trackColor = trackColor,
