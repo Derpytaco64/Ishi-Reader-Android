@@ -61,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
@@ -742,8 +743,49 @@ class ReaderActivity : FragmentActivity() {
                 // mirrors the same "Auto" fallback as applyContainerAppearance/EpubPreferences.
                 val readerBackgroundColor = Color(android.graphics.Color.parseColor(settings.effectiveBackgroundHex() ?: "#FFFFFF"))
                 val readerTextColor = Color(android.graphics.Color.parseColor(settings.effectiveTextHex() ?: "#121212"))
+                // The chapter-title/position-indicator bars are page furniture (they sit directly
+                // against the page like the text itself), so the extra-dim scrim darkens them too
+                // -- blended directly into their own colors rather than via the full-screen scrim
+                // Box below, which is deliberately kept from covering the tap-menu/scrub/icon bars
+                // (real UI controls that must stay legible/tappable at any brightness setting).
+                val dimmedReaderBackgroundColor = lerp(readerBackgroundColor, Color.Black, scrimAlpha)
+                val dimmedReaderTextColor = lerp(readerTextColor, Color.Black, scrimAlpha)
 
                 Box(Modifier.fillMaxSize()) {
+                    // "Extra dim" scrim for sessionBrightnessState's negative range -- see
+                    // applyBrightness. Declared first (bottom of z-order) so it only dims the raw
+                    // page underneath everything else in this overlay -- the chapter-title/
+                    // position-indicator bars get their own dimmed colors above instead (so they
+                    // darken too without this scrim needing to visually sit on top of them), and
+                    // the tap-menu/scrub/icon bars below are real controls that must stay legible
+                    // and tappable at any brightness setting, so this deliberately does not cover
+                    // them either. Has no pointer input of its own either way.
+                    if (scrimAlpha > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = scrimAlpha))
+                        )
+                    }
+
+                    // Moon+ Reader-style brightness gesture -- see BrightnessEdgeControl's own doc
+                    // comment for why taps here still need to fall through to goBackward manually.
+                    // Drawn before the top/bottom bars below (not after) so their own buttons --
+                    // e.g. the back arrow, which sits in the same top-left corner as this strip's
+                    // full-height touch area -- win touch priority over this control in any
+                    // overlapping region, rather than this strip's tap-to-go-back silently
+                    // swallowing taps meant for them.
+                    BrightnessEdgeControl(
+                        value = sessionBrightness ?: currentSystemBrightnessFraction(),
+                        onPreview = { applyBrightness(it) },
+                        onCommit = { sessionBrightnessState.value = it },
+                        onTap = { (navigatorFragment as? OverflowableNavigator)?.goBackward(animated = true) },
+                        backgroundColor = readerBackgroundColor,
+                        contentColor = readerTextColor,
+                        chromeShown = chromeShown,
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    )
+
                     // Top: tap-menu bar (back + title) stacked above the persistent chapter-title
                     // header. When the tap-menu is hidden, the chapter title -- if enabled -- is
                     // the topmost element and needs the safe-drawing inset itself; when the
@@ -793,7 +835,7 @@ class ReaderActivity : FragmentActivity() {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(readerBackgroundColor.copy(alpha = 0.85f))
+                                    .background(dimmedReaderBackgroundColor.copy(alpha = 0.85f))
                                     .then(
                                         if (!chromeShown) {
                                             Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
@@ -810,7 +852,7 @@ class ReaderActivity : FragmentActivity() {
                                 Text(
                                     text = chapterTitle.orEmpty(),
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = readerTextColor,
+                                    color = dimmedReaderTextColor,
                                     fontSize = chapterTitleFontSize,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -839,7 +881,7 @@ class ReaderActivity : FragmentActivity() {
                                         Icon(
                                             Icons.AutoMirrored.Filled.Undo,
                                             contentDescription = "Return to previous position",
-                                            tint = readerTextColor
+                                            tint = dimmedReaderTextColor
                                         )
                                     }
                                     // Dismisses the bar without navigating -- it otherwise sits over the
@@ -848,7 +890,7 @@ class ReaderActivity : FragmentActivity() {
                                         Icon(
                                             Icons.Filled.Close,
                                             contentDescription = "Dismiss return to position",
-                                            tint = readerTextColor
+                                            tint = dimmedReaderTextColor
                                         )
                                     }
                                 }
@@ -872,7 +914,7 @@ class ReaderActivity : FragmentActivity() {
                                     // before the background so the gap stays empty rather than
                                     // getting filled in by it.
                                     .padding(bottom = 8.dp)
-                                    .background(readerBackgroundColor.copy(alpha = 0.85f))
+                                    .background(dimmedReaderBackgroundColor.copy(alpha = 0.85f))
                                     .then(
                                         if (!chromeShown) {
                                             Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
@@ -900,7 +942,7 @@ class ReaderActivity : FragmentActivity() {
                                         // sitting opposite the progress arc.
                                         CircularProgressIndicator(
                                             progress = { loadingProgress },
-                                            color = readerTextColor,
+                                            color = dimmedReaderTextColor,
                                             trackColor = Color.Transparent,
                                             strokeWidth = 2.dp,
                                             modifier = alignmentModifier.size(16.dp)
@@ -909,7 +951,7 @@ class ReaderActivity : FragmentActivity() {
                                         // No progress yet (still checking the cache before a sweep
                                         // even starts) -- indeterminate until the first report.
                                         CircularProgressIndicator(
-                                            color = readerTextColor,
+                                            color = dimmedReaderTextColor,
                                             trackColor = Color.Transparent,
                                             strokeWidth = 2.dp,
                                             modifier = alignmentModifier.size(16.dp)
@@ -919,7 +961,7 @@ class ReaderActivity : FragmentActivity() {
                                     Text(
                                         text = positionText.orEmpty(),
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = readerTextColor,
+                                        color = dimmedReaderTextColor,
                                         modifier = alignmentModifier
                                     )
                                 }
@@ -1029,32 +1071,6 @@ class ReaderActivity : FragmentActivity() {
                             }
                         }
                     }
-
-                    // "Extra dim" scrim for sessionBrightnessState's negative range -- see
-                    // applyBrightness. Declared after the chrome bars above (rather than before
-                    // them) so it dims the chapter-title/position bars too, not just the raw page
-                    // underneath them; has no pointer input of its own so it never blocks touches
-                    // meant for those bars or the brightness strip drawn on top of it below.
-                    if (scrimAlpha > 0f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = scrimAlpha))
-                        )
-                    }
-
-                    // Moon+ Reader-style brightness gesture -- see BrightnessEdgeControl's own doc
-                    // comment for why taps here still need to fall through to goBackward manually.
-                    // Drawn last (topmost) so its own HUD stays visible even at max scrim opacity.
-                    BrightnessEdgeControl(
-                        value = sessionBrightness ?: currentSystemBrightnessFraction(),
-                        onPreview = { applyBrightness(it) },
-                        onCommit = { sessionBrightnessState.value = it },
-                        onTap = { (navigatorFragment as? OverflowableNavigator)?.goBackward(animated = true) },
-                        backgroundColor = readerBackgroundColor,
-                        contentColor = readerTextColor,
-                        modifier = Modifier.align(Alignment.CenterStart)
-                    )
                 }
 
                 if (settingsSheetOpen) {

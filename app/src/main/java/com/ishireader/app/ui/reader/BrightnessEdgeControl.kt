@@ -67,14 +67,14 @@ private const val DRAG_SENSITIVITY = 1.5f
  * value rather than re-seeding from [value] mid-gesture, since [onPreview] itself doesn't feed back
  * into [value] until [onCommit] persists it.
  *
- * A faint always-on track marks the strip when idle -- there was previously no visual affordance
- * at all for this zone, so users had no way to discover it short of accidentally dragging there.
- * While dragging, that's replaced with a tall fill bar spanning the control's own full height
- * (rather than a small fixed-size indicator) with a notch marking the 0% boundary: positive
- * (brighter) values fill upward from the notch, negative (extra-dim) values fill downward from
- * it -- a single needle pivoting at "system brightness" rather than one long fill that happens to
- * pass through an arbitrary midpoint. The percent readout sits directly underneath, in an
- * unbounded-width row so it can never wrap inside the narrow 40dp strip.
+ * The bar (tall fill spanning the control's own full height, with a notch marking the 0%
+ * boundary: positive/brighter values fill upward from the notch, negative/extra-dim values fill
+ * downward from it -- a single needle pivoting at "system brightness" rather than one long fill
+ * that happens to pass through an arbitrary midpoint) is shown whenever [chromeShown] is true --
+ * i.e. it appears together with the reader's own top/bottom menu bars, discoverable without
+ * needing to first stumble into a drag -- or while actively dragging, so there's still feedback
+ * if the user adjusts brightness with the menu closed. The percent readout sits directly
+ * underneath the bar, in an unbounded-width row so it can never wrap inside the narrow 40dp strip.
  *
  * [backgroundColor]/[contentColor] are the reader's own current theme colors (same
  * readerBackgroundColor/readerTextColor ReaderActivity already passes to the chapter-title and
@@ -90,6 +90,7 @@ fun BrightnessEdgeControl(
     onTap: () -> Unit,
     backgroundColor: Color,
     contentColor: Color,
+    chromeShown: Boolean,
     modifier: Modifier = Modifier
 ) {
     val currentValue = rememberUpdatedState(value)
@@ -139,20 +140,8 @@ fun BrightnessEdgeControl(
                 }
             }
     ) {
-        if (!isDragging) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 6.dp)
-                    .width(4.dp)
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(contentColor.copy(alpha = 0.18f))
-            )
-        }
-
         AnimatedVisibility(
-            visible = isDragging,
+            visible = isDragging || chromeShown,
             enter = fadeIn(),
             exit = fadeOut(),
             // fillMaxHeight(0.5f) (rather than the full height) keeps the whole HUD to about half
@@ -160,8 +149,8 @@ fun BrightnessEdgeControl(
             // wrapContentWidth(unbounded = true) lets the percent pill below the bar render at
             // its natural width instead of being squeezed (and wrapped) into this Box's own 40dp
             // -- Box would otherwise measure this content with that same 40dp max-width cap. The
-            // extra start padding (beyond the idle marker's 6dp) keeps the pill's left edge clear
-            // of the screen edge -- at 6dp it was getting clipped by some devices' rounded
+            // 16dp start padding (rather than a smaller inset) keeps the pill's left edge clear of
+            // the screen edge -- a smaller inset was getting clipped by some devices' rounded
             // corners/gesture-nav area.
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -169,6 +158,13 @@ fun BrightnessEdgeControl(
                 .wrapContentWidth(unbounded = true)
                 .padding(start = 16.dp)
         ) {
+            // While not actively dragging, the bar is only shown because chromeShown just went
+            // true (not because the user touched this strip) -- track the live value prop rather
+            // than the remembered dragValue in that case, since dragValue is otherwise stale from
+            // whenever the last drag ended and wouldn't reflect e.g. an OS brightness change made
+            // outside the app in the meantime.
+            val displayValue = if (isDragging) dragValue else value
+
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 // The fill bar: takes the HUD's own full (halved) height minus what the percent
                 // pill below needs, rather than a small fixed-size indicator.
@@ -186,7 +182,7 @@ fun BrightnessEdgeControl(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                             contentAlignment = Alignment.BottomCenter
                         ) {
-                            val upFraction = dragValue.coerceIn(0f, 1f)
+                            val upFraction = displayValue.coerceIn(0f, 1f)
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -207,7 +203,7 @@ fun BrightnessEdgeControl(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                             contentAlignment = Alignment.TopCenter
                         ) {
-                            val downFraction = (-dragValue).coerceIn(0f, 1f)
+                            val downFraction = (-displayValue).coerceIn(0f, 1f)
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -229,13 +225,13 @@ fun BrightnessEdgeControl(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = brightnessIcon(dragValue),
+                        imageVector = brightnessIcon(displayValue),
                         contentDescription = null,
                         tint = contentColor,
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = brightnessPercentLabel(dragValue),
+                        text = brightnessPercentLabel(displayValue),
                         style = MaterialTheme.typography.labelLarge,
                         color = contentColor,
                         maxLines = 1,
