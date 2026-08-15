@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.AdminUser
+import com.ishireader.app.data.model.OrphanedDataReport
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.AdminRepository
@@ -58,7 +59,19 @@ data class AdminUiState(
     val resetPasswordUserId: String? = null,
     val resetPasswordValue: String = "",
 
-    val pendingDeleteUserId: String? = null
+    val pendingDeleteUserId: String? = null,
+
+    val orphanedReport: OrphanedDataReport? = null,
+    val isScanningOrphaned: Boolean = false,
+    val isDeletingOrphaned: Boolean = false,
+    val orphanedError: String? = null,
+    val deletedOrphanedReport: OrphanedDataReport? = null,
+    val pendingDeleteOrphaned: Boolean = false,
+
+    val isClearingSpeedSamples: Boolean = false,
+    val speedSamplesError: String? = null,
+    val clearedSpeedSamplesCount: Int? = null,
+    val pendingClearSpeedSamples: Boolean = false
 )
 
 private const val MIN_PASSWORD_LENGTH = 8
@@ -364,6 +377,65 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
             when (val result = repository.deleteUser(id)) {
                 is ApiResult.Success -> refreshUsers()
                 is ApiResult.Failure -> _uiState.value = _uiState.value.copy(actionError = result.message)
+            }
+        }
+    }
+
+    // --- Orphaned data cleanup ----------------------------------------------------------------
+
+    fun scanOrphanedData() {
+        _uiState.value = _uiState.value.copy(isScanningOrphaned = true, orphanedError = null, deletedOrphanedReport = null)
+        viewModelScope.launch {
+            when (val result = repository.scanOrphanedData()) {
+                is ApiResult.Success -> _uiState.value = _uiState.value.copy(isScanningOrphaned = false, orphanedReport = result.data)
+                is ApiResult.Failure -> _uiState.value = _uiState.value.copy(isScanningOrphaned = false, orphanedError = result.message)
+            }
+        }
+    }
+
+    fun requestDeleteOrphanedData() {
+        _uiState.value = _uiState.value.copy(pendingDeleteOrphaned = true)
+    }
+
+    fun cancelDeleteOrphanedData() {
+        _uiState.value = _uiState.value.copy(pendingDeleteOrphaned = false)
+    }
+
+    fun confirmDeleteOrphanedData() {
+        _uiState.value = _uiState.value.copy(pendingDeleteOrphaned = false, isDeletingOrphaned = true, orphanedError = null)
+        viewModelScope.launch {
+            when (val result = repository.deleteOrphanedData()) {
+                is ApiResult.Success -> _uiState.value = _uiState.value.copy(
+                    isDeletingOrphaned = false,
+                    deletedOrphanedReport = result.data,
+                    orphanedReport = null
+                )
+                is ApiResult.Failure -> _uiState.value = _uiState.value.copy(isDeletingOrphaned = false, orphanedError = result.message)
+            }
+        }
+    }
+
+    // --- Reading speed samples -----------------------------------------------------------------
+
+    fun requestClearSpeedSamples() {
+        _uiState.value = _uiState.value.copy(pendingClearSpeedSamples = true)
+    }
+
+    fun cancelClearSpeedSamples() {
+        _uiState.value = _uiState.value.copy(pendingClearSpeedSamples = false)
+    }
+
+    fun confirmClearSpeedSamples() {
+        _uiState.value = _uiState.value.copy(
+            pendingClearSpeedSamples = false,
+            isClearingSpeedSamples = true,
+            speedSamplesError = null,
+            clearedSpeedSamplesCount = null
+        )
+        viewModelScope.launch {
+            when (val result = repository.clearReadingSpeedSamples()) {
+                is ApiResult.Success -> _uiState.value = _uiState.value.copy(isClearingSpeedSamples = false, clearedSpeedSamplesCount = result.data)
+                is ApiResult.Failure -> _uiState.value = _uiState.value.copy(isClearingSpeedSamples = false, speedSamplesError = result.message)
             }
         }
     }

@@ -251,6 +251,28 @@ data class AdminUsersResponse(val users: List<AdminUser> = emptyList())
 @Serializable
 data class AdminUserResponse(val user: AdminUser? = null)
 
+/** Mirrors OrphanedBook/OrphanedUserData/OrphanedDataReport in the server's
+ *  next-lib/userData/orphanedData.ts -- the shape /api/admin/orphaned-data's GET/DELETE both return. */
+@Serializable
+data class OrphanedBook(val hash: String, val subdirs: List<String> = emptyList())
+
+@Serializable
+data class OrphanedUserData(
+    val userId: String,
+    val username: String,
+    val name: String,
+    val books: List<OrphanedBook> = emptyList(),
+    val fileCount: Int = 0
+)
+
+@Serializable
+data class OrphanedDataReport(val users: List<OrphanedUserData> = emptyList(), val totalFiles: Int = 0)
+
+/** /api/admin/reading-speed-samples' DELETE response -- how many users' rolling WPM buffers got
+ *  cleared. */
+@Serializable
+data class ClearedSpeedSamplesResponse(val clearedCount: Int = 0)
+
 @Serializable
 data class CreateUserRequest(val username: String, val name: String, val password: String, val isAdmin: Boolean)
 

@@ -11,10 +11,13 @@ import timber.log.Timber
  *  produce before the trim ever runs, so it can't be out-voted by a cluster of bad data. */
 private const val PLAUSIBLE_WPM_CEILING = 600.0
 
-/** <5 samples: simple weighted rate. >=5: median/MAD outlier-trimmed weighted rate -- mirrors
- *  computeCurrentWpm in the website's computeReadingSpeed.ts. Shared by the live in-reader
- *  ReadingTimerTracker and BookDetailViewModel's own point-in-time estimate, so both agree on
- *  the same pace for the same sample buffer. */
+/** <50 samples: simple weighted rate. >=50: median/MAD outlier-trimmed weighted rate -- mirrors
+ *  computeCurrentWpm in the website's computeReadingSpeed.ts. 50 matches MAX_SPEED_SAMPLES (the
+ *  rolling buffer's own cap, see ReadingTimerTracker), so trimming never kicks in until the buffer
+ *  is completely full of real samples -- otherwise an early, still-warming-up buffer could have a
+ *  genuine read trimmed out as an "outlier" against only a handful of other samples. Shared by the
+ *  live in-reader ReadingTimerTracker and BookDetailViewModel's own point-in-time estimate, so both
+ *  agree on the same pace for the same sample buffer. */
 fun computeCurrentWpm(speedSamples: List<ReadingSpeedSample>): Int? {
     if (speedSamples.isEmpty()) return null
 
@@ -31,7 +34,7 @@ fun computeCurrentWpm(speedSamples: List<ReadingSpeedSample>): Int? {
         rates.joinToString { "%.0f".format(it) }
     )
 
-    val survivorIndices = if (poolIndices.size < 5) {
+    val survivorIndices = if (poolIndices.size < 50) {
         poolIndices
     } else {
         val poolRates = poolIndices.map { rates[it] }

@@ -160,6 +160,10 @@ fun AdminScreen(
                         }
                     }
 
+                    item { OrphanedDataSection(state = state, viewModel = viewModel) }
+
+                    item { ReadingSpeedSamplesSection(state = state, viewModel = viewModel) }
+
                     item { AddUserSection(state = state, viewModel = viewModel) }
 
                     item { Text("Users", style = MaterialTheme.typography.titleMedium) }
@@ -190,6 +194,28 @@ fun AdminScreen(
             text = { Text("Delete \"${pendingUser?.name.orEmpty()}\"? This can't be undone.") },
             confirmButton = { TextButton(onClick = viewModel::confirmDeleteUser) { Text("Delete") } },
             dismissButton = { TextButton(onClick = viewModel::cancelDeleteUser) { Text("Cancel") } }
+        )
+    }
+
+    if (state.pendingDeleteOrphaned) {
+        val totalFiles = state.orphanedReport?.totalFiles ?: 0
+        val userCount = state.orphanedReport?.users?.size ?: 0
+        AlertDialog(
+            onDismissRequest = viewModel::cancelDeleteOrphanedData,
+            title = { Text("Delete orphaned data?") },
+            text = { Text("Delete $totalFiles orphaned data file(s) across $userCount user(s)? This can't be undone.") },
+            confirmButton = { TextButton(onClick = viewModel::confirmDeleteOrphanedData) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = viewModel::cancelDeleteOrphanedData) { Text("Cancel") } }
+        )
+    }
+
+    if (state.pendingClearSpeedSamples) {
+        AlertDialog(
+            onDismissRequest = viewModel::cancelClearSpeedSamples,
+            title = { Text("Clear WPM samples?") },
+            text = { Text("Clear the rolling WPM sample buffer for every user? This can't be undone.") },
+            confirmButton = { TextButton(onClick = viewModel::confirmClearSpeedSamples) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = viewModel::cancelClearSpeedSamples) { Text("Cancel") } }
         )
     }
 }
@@ -314,6 +340,112 @@ private fun AddUserSection(state: AdminUiState, viewModel: AdminViewModel) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(if (state.isCreating) "Creating…" else "Create User")
+        }
+    }
+}
+
+/** Reimplements AdminPageClient.tsx's "Orphaned Data Cleanup" disclosure -- scans every user for
+ *  reading progress, annotations, and other saved data left behind by books no longer in the
+ *  library, then deletes it on confirmation. */
+@Composable
+private fun OrphanedDataSection(state: AdminUiState, viewModel: AdminViewModel) {
+    val report = state.orphanedReport
+    SectionCard("Orphaned Data Cleanup") {
+        Text(
+            "Finds reading progress, annotations, and other saved data left behind by books that " +
+                "are no longer in the library (deleted or moved files), across every user. Review " +
+                "the preview before deleting -- this can't be undone.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = viewModel::scanOrphanedData,
+            enabled = !state.isScanningOrphaned,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (state.isScanningOrphaned) "Scanning…" else "Scan for Orphaned Data")
+        }
+
+        state.orphanedError?.let { error ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
+        if (report != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            if (report.totalFiles == 0) {
+                Text("No orphaned data found.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text(
+                    "Found ${report.totalFiles} orphaned file(s) across ${report.users.size} user(s):",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                report.users.forEach { user ->
+                    Column(modifier = Modifier.padding(bottom = 4.dp)) {
+                        Text("${user.name} (@${user.username})", style = MaterialTheme.typography.bodySmall)
+                        user.books.forEach { book ->
+                            Text(
+                                "${book.hash.take(12)}… — ${book.subdirs.joinToString(", ")}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Button(
+                    onClick = viewModel::requestDeleteOrphanedData,
+                    enabled = !state.isDeletingOrphaned,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isDeletingOrphaned) "Deleting…" else "Delete ${report.totalFiles} Orphaned File(s)")
+                }
+            }
+        }
+
+        state.deletedOrphanedReport?.let { deleted ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Deleted ${deleted.totalFiles} orphaned file(s) across ${deleted.users.size} user(s).",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+/** Reimplements AdminPageClient.tsx's "Reading Speed Samples" disclosure -- resets every user's
+ *  rolling WPM sample buffer (globalReadingSpeedSamples.json server-side) back to empty. */
+@Composable
+private fun ReadingSpeedSamplesSection(state: AdminUiState, viewModel: AdminViewModel) {
+    SectionCard("Reading Speed Samples") {
+        Text(
+            "Clears the rolling words-per-minute sample buffer for every user, resetting their " +
+                "live pace estimate back to \"not enough data\". Useful if a bad batch of samples " +
+                "(a bug, a device clock issue) has thrown off the estimate.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = viewModel::requestClearSpeedSamples,
+            enabled = !state.isClearingSpeedSamples,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (state.isClearingSpeedSamples) "Clearing…" else "Clear WPM Samples for All Users")
+        }
+
+        state.speedSamplesError?.let { error ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
+        state.clearedSpeedSamplesCount?.let { count ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Cleared WPM samples for $count user(s).", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

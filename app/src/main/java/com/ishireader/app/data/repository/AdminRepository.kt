@@ -5,6 +5,7 @@ import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.CreateUserRequest
 import com.ishireader.app.data.model.LoginAccentColorField
 import com.ishireader.app.data.model.LoginThemeModeField
+import com.ishireader.app.data.model.OrphanedDataReport
 import com.ishireader.app.data.model.ReadiumPortRequest
 import com.ishireader.app.data.model.ReadiumUrlField
 import com.ishireader.app.data.model.ResetPasswordRequest
@@ -58,6 +59,18 @@ class AdminRepository(private val network: NetworkModule) {
 
     suspend fun unlockUser(id: String): ApiResult<Unit> = withContext(Dispatchers.IO) {
         runCatching { network.api.adminUnlockUser(id) }.toApiResult("unlock user") {}
+    }
+
+    suspend fun scanOrphanedData(): ApiResult<OrphanedDataReport> = withContext(Dispatchers.IO) {
+        runCatching { network.api.adminScanOrphanedData() }.toApiResult("scan for orphaned data") { it }
+    }
+
+    suspend fun deleteOrphanedData(): ApiResult<OrphanedDataReport> = withContext(Dispatchers.IO) {
+        runCatching { network.api.adminDeleteOrphanedData() }.toApiResult("delete orphaned data") { it }
+    }
+
+    suspend fun clearReadingSpeedSamples(): ApiResult<Int> = withContext(Dispatchers.IO) {
+        runCatching { network.api.adminClearReadingSpeedSamples() }.toApiResult("clear WPM samples") { it.clearedCount }
     }
 
     suspend fun getBookFolder(): ApiResult<String> = withContext(Dispatchers.IO) {

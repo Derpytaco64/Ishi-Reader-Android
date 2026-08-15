@@ -6,6 +6,7 @@ import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.BookmarkUpsertRequest
 import com.ishireader.app.data.model.BookmarksResponse
 import com.ishireader.app.data.model.BooksResponse
+import com.ishireader.app.data.model.ClearedSpeedSamplesResponse
 import com.ishireader.app.data.model.CompletedListenUpsertRequest
 import com.ishireader.app.data.model.CompletedListensResponse
 import com.ishireader.app.data.model.CompletedReadTimeUpsertRequest
@@ -28,6 +29,7 @@ import com.ishireader.app.data.model.MeResponse
 import com.ishireader.app.data.model.MigrateBookDataRequest
 import com.ishireader.app.data.model.NoteUpsertRequest
 import com.ishireader.app.data.model.NotesResponse
+import com.ishireader.app.data.model.OrphanedDataReport
 import com.ishireader.app.data.model.PageCountResponse
 import com.ishireader.app.data.model.PositionRequest
 import com.ishireader.app.data.model.PositionResponse
@@ -211,6 +213,15 @@ interface ApiService {
 
     @POST("api/admin/users/{id}/unlock")
     suspend fun adminUnlockUser(@Path("id") id: String): Response<Unit>
+
+    @GET("api/admin/orphaned-data")
+    suspend fun adminScanOrphanedData(): Response<OrphanedDataReport>
+
+    @DELETE("api/admin/orphaned-data")
+    suspend fun adminDeleteOrphanedData(): Response<OrphanedDataReport>
+
+    @DELETE("api/admin/reading-speed-samples")
+    suspend fun adminClearReadingSpeedSamples(): Response<ClearedSpeedSamplesResponse>
 
     @GET("api/settings/book-folder")
     suspend fun getBookFolder(): Response<BookFolderField>
