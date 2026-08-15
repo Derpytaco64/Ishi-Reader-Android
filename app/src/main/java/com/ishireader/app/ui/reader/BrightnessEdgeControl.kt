@@ -7,12 +7,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Brightness3
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.unit.dp
@@ -35,8 +39,9 @@ import kotlin.math.roundToInt
 
 /** A full-height drag = roughly this much of the -1f..1f range, so the whole span (dim to
  *  brightest) is reachable well within one screen-length swipe, matching Moon+ Reader's feel
- *  rather than requiring an edge-to-edge drag for a small change. */
-private const val DRAG_SENSITIVITY = 2f
+ *  rather than requiring an edge-to-edge drag for a small change. Lowered from 2f to 1.5f (25%
+ *  less sensitive) at user request -- the original felt twitchy for small adjustments. */
+private const val DRAG_SENSITIVITY = 1.5f
 
 /**
  * Moon+ Reader-style brightness gesture: dragging vertically anywhere in this strip (meant to be
@@ -57,6 +62,12 @@ private const val DRAG_SENSITIVITY = 2f
  * without restarting the gesture loop) -- a running drag always continues from its own accumulated
  * value rather than re-seeding from [value] mid-gesture, since [onPreview] itself doesn't feed back
  * into [value] until [onCommit] persists it.
+ *
+ * A faint always-on track marks the strip when idle -- there was previously no visual affordance
+ * at all for this zone, so users had no way to discover it short of accidentally dragging there.
+ * While dragging, that's replaced with a HUD card (icon + percent + fill bar) instead of the old
+ * bare text label, so the current level reads at a glance rather than requiring parsing "Dim 20%"
+ * vs "65%" as two different scales.
  */
 @Composable
 fun BrightnessEdgeControl(
@@ -113,33 +124,80 @@ fun BrightnessEdgeControl(
                 }
             }
     ) {
+        if (!isDragging) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 6.dp)
+                    .width(4.dp)
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f))
+            )
+        }
+
         AnimatedVisibility(
             visible = isDragging,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.CenterStart)
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .padding(start = 6.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Filled.WbSunny, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    text = brightnessLabel(dragValue),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = 6.dp)
+                Icon(
+                    imageVector = brightnessIcon(dragValue),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
+                Text(
+                    text = brightnessPercentLabel(dragValue),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+                Text(
+                    text = brightnessModeLabel(dragValue),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // Small fill track spanning the full -1f..1f range (bottom = darkest extra-dim,
+                // top = brightest) -- a quick-glance analog to the number above it.
+                Box(
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .width(4.dp)
+                        .height(64.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    val fillFraction = ((dragValue + 1f) / 2f).coerceIn(0f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(fillFraction)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                }
             }
         }
     }
 }
 
-/** [value] > 0 is a normal screen-brightness fraction; [value] < 0 is past the hardware floor,
- *  into the black-scrim "extra dim" zone -- see ReaderSettings.brightness's own doc comment. */
-private fun brightnessLabel(value: Float): String =
-    if (value >= 0f) "${(value * 100).roundToInt()}%" else "Dim ${(-value * 100).roundToInt()}%"
+private fun brightnessIcon(value: Float): ImageVector =
+    if (value >= 0f) Icons.Filled.WbSunny else Icons.Filled.Brightness3
+
+/** [value] > 0 is a normal screen-brightness fraction, < 0 is past the hardware floor, into the
+ *  black-scrim "extra dim" zone -- see ReaderActivity.applyBrightness's own doc comment. Split
+ *  into a separate icon/mode label rather than folding "Dim" into the number itself, so the two
+ *  zones read as a continuous scale instead of two differently-formatted numbers. */
+private fun brightnessPercentLabel(value: Float): String = "${(abs(value) * 100).roundToInt()}%"
+
+private fun brightnessModeLabel(value: Float): String = if (value >= 0f) "Brightness" else "Extra Dim"

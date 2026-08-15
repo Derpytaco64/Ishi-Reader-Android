@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ishireader.app.data.model.AppSettings
 import com.ishireader.app.data.model.CoverSize
@@ -219,7 +220,13 @@ private fun AccentSwatch(color: Color, selected: Boolean, onClick: () -> Unit) {
  *  either snap the marker back on each event or (for a fully desaturated color, whose hue is
  *  undefined) fight the user's own hue choice mid-drag. */
 @Composable
-fun ColorWheelPicker(color: Color, onColorChange: (Color) -> Unit, modifier: Modifier = Modifier) {
+fun ColorWheelPicker(
+    color: Color,
+    onColorChange: (Color) -> Unit,
+    modifier: Modifier = Modifier,
+    wheelSize: Dp = 200.dp,
+    onDraggingChange: (Boolean) -> Unit = {}
+) {
     val initialHsv = remember { colorToHsv(color) }
     var hue by remember { mutableFloatStateOf(initialHsv[0]) }
     var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
@@ -237,12 +244,13 @@ fun ColorWheelPicker(color: Color, onColorChange: (Color) -> Unit, modifier: Mod
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Canvas(
             modifier = Modifier
-                .size(200.dp)
+                .size(wheelSize)
                 .pointerInput(Unit) {
                     val center = Offset(size.width / 2f, size.height / 2f)
                     val radius = min(size.width, size.height) / 2f
                     awaitEachGesture {
                         val down = awaitFirstDown()
+                        onDraggingChange(true)
                         updateFromOffset(down.position, radius, center)
                         do {
                             val event = awaitPointerEvent()
@@ -252,6 +260,7 @@ fun ColorWheelPicker(color: Color, onColorChange: (Color) -> Unit, modifier: Mod
                                 drag.consume()
                             }
                         } while (event.changes.any { it.pressed })
+                        onDraggingChange(false)
                     }
                 }
         ) {
@@ -288,7 +297,9 @@ fun ColorWheelPicker(color: Color, onColorChange: (Color) -> Unit, modifier: Mod
                 onValueChange = {
                     value = it
                     onColorChange(hsvToColor(hue, saturation, value))
+                    onDraggingChange(true)
                 },
+                onValueChangeFinished = { onDraggingChange(false) },
                 modifier = Modifier.weight(1f)
             )
         }

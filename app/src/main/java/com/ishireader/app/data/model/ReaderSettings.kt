@@ -103,14 +103,6 @@ data class ReaderSettings(
      *  placeholder hex -- see [effectiveBackgroundHex]/[effectiveTextHex]. */
     val customBackgroundHex: String? = null,
     val customTextHex: String? = null,
-    /** Per-window screen brightness override for the reader (see ReaderActivity.applyBrightness),
-     *  independent of the OS brightness slider. Null means "follow the system brightness," same
-     *  convention as every other nullable field here. Range -1f..1f: 0f..1f maps directly to
-     *  WindowManager.LayoutParams.screenBrightness (0 is that API's own dimmest backlight value);
-     *  -1f..0f goes past the hardware floor by fading in a black scrim over the page instead
-     *  (Moon+ Reader's "extra dim" -- there's no such thing as negative screenBrightness, so this
-     *  is a compositing trick, not a real brightness value). */
-    val brightness: Float? = null,
     val fontFamily: ReaderFontFamily? = null,
     val fontSize: Double = 1.0,
     val textAlign: ReaderTextAlign? = null,

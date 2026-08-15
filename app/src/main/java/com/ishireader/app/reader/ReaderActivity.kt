@@ -193,7 +193,7 @@ class ReaderActivity : FragmentActivity() {
         private const val POSITION_PIN_TIMEOUT_MS = 3000L
 
         /** Ceiling on the black scrim's opacity in [applyBrightness]'s "extra dim" zone (negative
-         *  [ReaderSettings.brightness]) -- kept below 1.0 so text stays barely legible at the
+         *  session brightness values) -- kept below 1.0 so text stays barely legible at the
          *  darkest setting instead of the screen going fully black, matching Moon+ Reader's own
          *  "extra dim" ceiling. */
         private const val MAX_DIM_SCRIM_ALPHA = 0.85f
@@ -216,10 +216,19 @@ class ReaderActivity : FragmentActivity() {
      *  this the same way it would a remembered one. */
     private val readerSettingsState = mutableStateOf(ReaderSettings())
 
-    /** Black-scrim opacity for the "extra dim" zone of [ReaderSettings.brightness] (negative
-     *  values) -- see [applyBrightness]. Separate from readerSettingsState so the drag gesture can
-     *  update it every frame without going through a full settings copy/persist each time. */
+    /** Black-scrim opacity for the "extra dim" zone of [sessionBrightnessState] (negative values)
+     *  -- see [applyBrightness]. Separate state so the drag gesture can update it every frame
+     *  without going through a full settings copy/persist each time. */
     private val scrimAlphaState = mutableFloatStateOf(0f)
+
+    /** Per-window screen brightness override for the reader, -1f..1f (0f..1f = normal backlight,
+     *  -1f..0f = past-the-floor "extra dim" scrim -- see [applyBrightness]'s own doc comment).
+     *  Null means "follow the system brightness." Deliberately NOT part of [ReaderSettings] / not
+     *  persisted -- at user request, brightness always starts back at "follow system" the moment a
+     *  book is opened ([openBook]); the left-edge drag only adjusts it for the rest of that
+     *  reading session (surviving pause/resume within the session via [onResume], but reset on the
+     *  next fresh [openBook] call). */
+    private val sessionBrightnessState = mutableStateOf<Float?>(null)
     private var navigatorFragment: EpubNavigatorFragment? = null
     private var publication: Publication? = null
 
@@ -320,7 +329,7 @@ class ReaderActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         readingTimerTracker.onResumed()
-        applyBrightness(readerSettingsState.value.brightness)
+        applyBrightness(sessionBrightnessState.value)
     }
 
     /** Volume-down/up turn pages instead of adjusting media volume when the "Volume buttons turn
@@ -392,7 +401,10 @@ class ReaderActivity : FragmentActivity() {
         lifecycleScope.launch {
             readerSettingsState.value = app.readerPreferencesStore.settings.first()
             applyContainerAppearance(readerSettingsState.value)
-            applyBrightness(readerSettingsState.value.brightness)
+            // Always starts a fresh book-open at the system brightness, per user request --
+            // any left-edge adjustment from a previous session is intentionally not restored here.
+            sessionBrightnessState.value = null
+            applyBrightness(null)
             val localFile = ensureDownloaded(manifestUrl) ?: return@launch
             showSyncingOverlay()
             openPublication(localFile, manifestUrl)
@@ -400,7 +412,7 @@ class ReaderActivity : FragmentActivity() {
     }
 
     /** Per-window screen brightness override, independent of the OS brightness slider -- see
-     *  ReaderSettings.brightness's own doc comment for the -1f..1f range/"extra dim" split. Reapplied
+     *  sessionBrightnessState's own doc comment for the -1f..1f range/"extra dim" split. Reapplied
      *  in onResume too: window attributes aren't guaranteed to survive every pause/resume on every
      *  OEM skin, so this re-asserts rather than assuming it stuck. */
     private fun applyBrightness(value: Float?) {
@@ -414,10 +426,10 @@ class ReaderActivity : FragmentActivity() {
         scrimAlphaState.floatValue = if (value != null && value < 0f) (-value).coerceIn(0f, 1f) * MAX_DIM_SCRIM_ALPHA else 0f
     }
 
-    /** Seeds the brightness gesture/slider's starting point when [ReaderSettings.brightness] is
-     *  still null (follow-system) -- reads the OS's own current backlight level so the first drag
-     *  continues smoothly from what's already on screen instead of jumping to an arbitrary default.
-     *  Reading this system setting needs no permission (only writing one does). */
+    /** Seeds the brightness gesture's starting point when [sessionBrightnessState] is still null
+     *  (follow-system) -- reads the OS's own current backlight level so the first drag continues
+     *  smoothly from what's already on screen instead of jumping to an arbitrary default. Reading
+     *  this system setting needs no permission (only writing one does). */
     private fun currentSystemBrightnessFraction(): Float =
         (Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128) / 255f).coerceIn(0f, 1f)
 
@@ -675,6 +687,7 @@ class ReaderActivity : FragmentActivity() {
                 var scrubProgress by remember { mutableStateOf<Float?>(null) }
                 val settings by readerSettingsState
                 val scrimAlpha by scrimAlphaState
+                val sessionBrightness by sessionBrightnessState
                 val timerState by readingTimerTracker.state.collectAsState()
                 val annotationsState by annotationsController.state.collectAsState()
                 val pendingNote by pendingNewNoteLocator
@@ -731,28 +744,6 @@ class ReaderActivity : FragmentActivity() {
                 val readerTextColor = Color(android.graphics.Color.parseColor(settings.effectiveTextHex() ?: "#121212"))
 
                 Box(Modifier.fillMaxSize()) {
-                    // "Extra dim" scrim for ReaderSettings.brightness's negative range -- see
-                    // applyBrightness. Declared first (bottom of z-order) so it sits over the page
-                    // but under every other overlay below, and has no pointer input of its own so
-                    // it never blocks touches meant for them.
-                    if (scrimAlpha > 0f) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = scrimAlpha))
-                        )
-                    }
-
-                    // Moon+ Reader-style brightness gesture -- see BrightnessEdgeControl's own doc
-                    // comment for why taps here still need to fall through to goBackward manually.
-                    BrightnessEdgeControl(
-                        value = settings.brightness ?: currentSystemBrightnessFraction(),
-                        onPreview = { applyBrightness(it) },
-                        onCommit = { applyReaderSettings(settings.copy(brightness = it)) },
-                        onTap = { (navigatorFragment as? OverflowableNavigator)?.goBackward(animated = true) },
-                        modifier = Modifier.align(Alignment.CenterStart)
-                    )
-
                     // Top: tap-menu bar (back + title) stacked above the persistent chapter-title
                     // header. When the tap-menu is hidden, the chapter title -- if enabled -- is
                     // the topmost element and needs the safe-drawing inset itself; when the
@@ -1038,6 +1029,30 @@ class ReaderActivity : FragmentActivity() {
                             }
                         }
                     }
+
+                    // "Extra dim" scrim for sessionBrightnessState's negative range -- see
+                    // applyBrightness. Declared after the chrome bars above (rather than before
+                    // them) so it dims the chapter-title/position bars too, not just the raw page
+                    // underneath them; has no pointer input of its own so it never blocks touches
+                    // meant for those bars or the brightness strip drawn on top of it below.
+                    if (scrimAlpha > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = scrimAlpha))
+                        )
+                    }
+
+                    // Moon+ Reader-style brightness gesture -- see BrightnessEdgeControl's own doc
+                    // comment for why taps here still need to fall through to goBackward manually.
+                    // Drawn last (topmost) so its own HUD stays visible even at max scrim opacity.
+                    BrightnessEdgeControl(
+                        value = sessionBrightness ?: currentSystemBrightnessFraction(),
+                        onPreview = { applyBrightness(it) },
+                        onCommit = { sessionBrightnessState.value = it },
+                        onTap = { (navigatorFragment as? OverflowableNavigator)?.goBackward(animated = true) },
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    )
                 }
 
                 if (settingsSheetOpen) {
@@ -1179,10 +1194,6 @@ class ReaderActivity : FragmentActivity() {
      *  application inside this same lambda -- never call it separately above/below this block. */
     private fun applyReaderSettings(updated: ReaderSettings) {
         readerSettingsState.value = updated
-        // Not layout-affecting (no reflow, nothing submitted to the navigator) -- applied
-        // immediately rather than inside preservePositionAcross below, unlike everything that
-        // block's own doc comment actually requires.
-        applyBrightness(updated.brightness)
         lifecycleScope.launch {
             preservePositionAcross {
                 applyContainerAppearance(updated)

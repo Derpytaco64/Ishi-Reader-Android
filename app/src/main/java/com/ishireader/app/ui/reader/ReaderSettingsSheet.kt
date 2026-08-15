@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,7 +63,20 @@ fun ReaderSettingsSheet(
     onRecalculatePageCount: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    // While a custom-theme color wheel is being dragged, the sheet itself fades toward
+    // transparent (both its surface and the modal scrim behind it) so the reader page shows
+    // through live as colors change, instead of being fully hidden behind an opaque sheet.
+    var colorPickerDragging by remember { mutableStateOf(false) }
+    val sheetAlpha by animateFloatAsState(
+        targetValue = if (colorPickerDragging) 0.2f else 1f,
+        label = "readerSettingsSheetAlpha"
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = sheetAlpha),
+        scrimColor = Color.Black.copy(alpha = 0.32f * sheetAlpha)
+    ) {
         Column(
             modifier = Modifier
                 .verticalScroll(rememberScrollState())
@@ -87,7 +101,8 @@ fun ReaderSettingsSheet(
             if (settings.theme == ReaderTheme.CUSTOM) {
                 CustomThemeColorPickers(
                     settings = settings,
-                    onSettingsChange = onSettingsChange
+                    onSettingsChange = onSettingsChange,
+                    onDraggingChange = { colorPickerDragging = it }
                 )
             }
             SegmentedOptionRow(
@@ -193,33 +208,6 @@ fun ReaderSettingsSheet(
                     selected = settings.positionDisplayAlignment,
                     optionLabel = { it.label() },
                     onSelect = { onSettingsChange(settings.copy(positionDisplayAlignment = it)) }
-                )
-            }
-
-            SectionLabel("Brightness")
-            LabeledSlider(
-                label = "Brightness",
-                value = settings.brightness ?: currentSystemBrightnessFraction(),
-                valueRange = -1f..1f,
-                steps = 199,
-                valueLabel = brightnessValueLabel(settings.brightness),
-                onValueChange = { onSettingsChange(settings.copy(brightness = it)) }
-            )
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                OutlinedButton(
-                    onClick = { onSettingsChange(settings.copy(brightness = null)) },
-                    enabled = settings.brightness != null,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Use System Brightness")
-                }
-                Text(
-                    "Drag up/down along the far-left edge of the page to adjust brightness while " +
-                        "reading -- past the dimmest the screen can normally go, it keeps darkening " +
-                        "with an overlay instead.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
 
@@ -462,45 +450,36 @@ private fun ReaderTheme?.label(): String = when (this) {
 
 /** Background/text color wheels shown under the theme row when [ReaderTheme.CUSTOM] is selected --
  *  reuses the same ColorWheelPicker/hex helpers the app's own accent-color picker uses (see
- *  SettingsDrawerContent), so this doesn't reimplement a second hue/saturation wheel. */
+ *  SettingsDrawerContent), so this doesn't reimplement a second hue/saturation wheel. Sized down
+ *  from the accent picker's default 200dp (two side-by-side-ish wheels in a bottom sheet read as
+ *  cramped/oversized at full size) and reports drag state up so the caller can fade the sheet
+ *  while a color is actively being picked, previewing against the reader underneath. */
+private val CUSTOM_THEME_WHEEL_SIZE = 130.dp
+
 @Composable
-private fun CustomThemeColorPickers(settings: ReaderSettings, onSettingsChange: (ReaderSettings) -> Unit) {
+private fun CustomThemeColorPickers(
+    settings: ReaderSettings,
+    onSettingsChange: (ReaderSettings) -> Unit,
+    onDraggingChange: (Boolean) -> Unit
+) {
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text("Background", style = MaterialTheme.typography.labelLarge)
         ColorWheelPicker(
             color = parseAccentColor(settings.customBackgroundHex) ?: Color(android.graphics.Color.parseColor(ReaderTheme.CUSTOM.backgroundHex)),
             onColorChange = { onSettingsChange(settings.copy(customBackgroundHex = it.toHex())) },
+            wheelSize = CUSTOM_THEME_WHEEL_SIZE,
+            onDraggingChange = onDraggingChange,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp)
         )
         Text("Text", style = MaterialTheme.typography.labelLarge)
         ColorWheelPicker(
             color = parseAccentColor(settings.customTextHex) ?: Color(android.graphics.Color.parseColor(ReaderTheme.CUSTOM.textHex)),
             onColorChange = { onSettingsChange(settings.copy(customTextHex = it.toHex())) },
+            wheelSize = CUSTOM_THEME_WHEEL_SIZE,
+            onDraggingChange = onDraggingChange,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
         )
     }
-}
-
-/** Seeds the slider's thumb position when [ReaderSettings.brightness] is null (follow-system) --
- *  same reasoning as ReaderActivity's own currentSystemBrightnessFraction (duplicated rather than
- *  shared since it's a two-line read with no other logic to factor out across the Activity/sheet
- *  boundary). Reading this system setting needs no permission (only writing one does). */
-@Composable
-private fun currentSystemBrightnessFraction(): Float {
-    val context = LocalContext.current
-    return remember {
-        (android.provider.Settings.System.getInt(context.contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS, 128) / 255f)
-            .coerceIn(0f, 1f)
-    }
-}
-
-/** [value] > 0 is a normal screen-brightness fraction, < 0 is the "extra dim" scrim zone past the
- *  hardware floor, null is "follow system" -- mirrors BrightnessEdgeControl's own label, kept in
- *  sync manually since the two live in different Compose scopes/files. */
-private fun brightnessValueLabel(value: Float?): String = when {
-    value == null -> "System"
-    value >= 0f -> "${(value * 100).roundToInt()}%"
-    else -> "Dim ${(-value * 100).roundToInt()}%"
 }
 
 private fun ReaderFontFamily?.label(): String = when (this) {
