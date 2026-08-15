@@ -8,11 +8,14 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Brightness3
@@ -65,9 +68,12 @@ private const val DRAG_SENSITIVITY = 1.5f
  *
  * A faint always-on track marks the strip when idle -- there was previously no visual affordance
  * at all for this zone, so users had no way to discover it short of accidentally dragging there.
- * While dragging, that's replaced with a HUD card (icon + percent + fill bar) instead of the old
- * bare text label, so the current level reads at a glance rather than requiring parsing "Dim 20%"
- * vs "65%" as two different scales.
+ * While dragging, that's replaced with a tall fill bar spanning the control's own full height
+ * (rather than a small fixed-size indicator) with a notch marking the 0% boundary: positive
+ * (brighter) values fill upward from the notch, negative (extra-dim) values fill downward from
+ * it -- a single needle pivoting at "system brightness" rather than one long fill that happens to
+ * pass through an arbitrary midpoint. The percent readout sits directly underneath, in an
+ * unbounded-width row so it can never wrap inside the narrow 40dp strip.
  */
 @Composable
 fun BrightnessEdgeControl(
@@ -140,50 +146,87 @@ fun BrightnessEdgeControl(
             visible = isDragging,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.CenterStart)
+            // wrapContentWidth(unbounded = true) lets the percent pill below the bar render at
+            // its natural width instead of being squeezed (and wrapped) into this Box's own 40dp
+            // -- Box would otherwise measure this content with that same 40dp max-width cap.
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxHeight()
+                .wrapContentWidth(unbounded = true)
+                .padding(start = 6.dp, top = 24.dp, bottom = 24.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(start = 6.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = brightnessIcon(dragValue),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = brightnessPercentLabel(dragValue),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-                Text(
-                    text = brightnessModeLabel(dragValue),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                // Small fill track spanning the full -1f..1f range (bottom = darkest extra-dim,
-                // top = brightest) -- a quick-glance analog to the number above it.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // The fill bar: takes the control's full (current) height minus what the percent
+                // pill below needs, rather than a small fixed-size indicator.
                 Box(
                     modifier = Modifier
-                        .padding(top = 8.dp)
-                        .width(4.dp)
-                        .height(64.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.BottomCenter
+                        .weight(1f)
+                        .width(10.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
                 ) {
-                    val fillFraction = ((dragValue + 1f) / 2f).coerceIn(0f, 1f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight(fillFraction)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(MaterialTheme.colorScheme.primary)
+                    Column(modifier = Modifier.fillMaxHeight().fillMaxWidth()) {
+                        // Upper half: 0f..1f normal brightness -- fills upward, flush against the
+                        // notch below it.
+                        Box(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            val upFraction = dragValue.coerceIn(0f, 1f)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .fillMaxHeight(upFraction)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                        // Notch marking the 0% boundary between the two zones.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        )
+                        // Lower half: -1f..0f extra-dim -- fills downward from the notch, the
+                        // opposite direction from the upper half.
+                        Box(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            val downFraction = (-dragValue).coerceIn(0f, 1f)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .fillMaxHeight(downFraction)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                    }
+                }
+
+                // Percent readout, pinned directly underneath the bar -- single line, never wraps
+                // (see the unbounded-width modifier on the AnimatedVisibility above).
+                Row(
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = brightnessIcon(dragValue),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = brightnessPercentLabel(dragValue),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(start = 4.dp)
                     )
                 }
             }
@@ -195,9 +238,7 @@ private fun brightnessIcon(value: Float): ImageVector =
     if (value >= 0f) Icons.Filled.WbSunny else Icons.Filled.Brightness3
 
 /** [value] > 0 is a normal screen-brightness fraction, < 0 is past the hardware floor, into the
- *  black-scrim "extra dim" zone -- see ReaderActivity.applyBrightness's own doc comment. Split
- *  into a separate icon/mode label rather than folding "Dim" into the number itself, so the two
- *  zones read as a continuous scale instead of two differently-formatted numbers. */
+ *  black-scrim "extra dim" zone -- see ReaderActivity.applyBrightness's own doc comment. The icon
+ *  above this label (see [brightnessIcon]) is what distinguishes the two zones now; the number
+ *  itself is always an unsigned magnitude. */
 private fun brightnessPercentLabel(value: Float): String = "${(abs(value) * 100).roundToInt()}%"
-
-private fun brightnessModeLabel(value: Float): String = if (value >= 0f) "Brightness" else "Extra Dim"
