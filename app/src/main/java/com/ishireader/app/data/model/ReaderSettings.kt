@@ -10,11 +10,14 @@ import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.shared.ExperimentalReadiumApi
 
 /**
- * Matches the website's 7-theme palette (src/preferences/models/theme.ts) exactly, including hex
- * values. Deliberately NOT mapped to Readium's own `Theme` enum (LIGHT/DARK/SEPIA only) -- the
- * website itself never sets that field either, driving every theme including its own "light"/
- * "dark"/"sepia" purely through backgroundColor/textColor preference overrides so all 7 themes go
- * through one uniform mechanism. See [toReadiumColors].
+ * The first 7 entries match the website's theme palette (src/preferences/models/theme.ts)
+ * exactly, including hex values. Deliberately NOT mapped to Readium's own `Theme` enum
+ * (LIGHT/DARK/SEPIA only) -- the website itself never sets that field either, driving every theme
+ * including its own "light"/"dark"/"sepia" purely through backgroundColor/textColor preference
+ * overrides, which is also the only per-theme mechanism Readium's EpubPreferences actually
+ * exposes (theme.ts's own link/hover/select/etc. roles are never submitted anywhere, web or
+ * Android). See [ReaderSettings.effectiveBackgroundHex]/[ReaderSettings.effectiveTextHex]. CUSTOM
+ * is Android-only, with no website counterpart.
  */
 enum class ReaderTheme(val backgroundHex: String, val textHex: String) {
     LIGHT("#FFFFFF", "#121212"),
@@ -23,7 +26,14 @@ enum class ReaderTheme(val backgroundHex: String, val textHex: String) {
     PAPER("#faf4e8", "#121212"),
     CONTRAST1("#000000", "#ffff00"),
     CONTRAST2("#181842", "#ffffff"),
-    CONTRAST3("#c5e7cd", "#000000")
+    CONTRAST3("#c5e7cd", "#000000"),
+
+    /** User-picked background/text pair (see ReaderSettings.customBackgroundHex/customTextHex) --
+     *  this entry's own hex values are never actually rendered, just a placeholder so [label]/enum
+     *  iteration have something to show before the user has picked a color; [ReaderSettings.
+     *  effectiveBackgroundHex]/[effectiveTextHex] always resolve CUSTOM through those two fields
+     *  instead of reading backgroundHex/textHex directly. */
+    CUSTOM("#FFFFFF", "#121212")
 }
 
 enum class ReaderFontFamily { SERIF, SANS_SERIF, MONOSPACE, OPEN_DYSLEXIC }
@@ -87,6 +97,20 @@ enum class PositionDisplayAlignment { LEFT, CENTER, RIGHT }
 @Serializable
 data class ReaderSettings(
     val theme: ReaderTheme? = null,
+    /** Only meaningful when [theme] is [ReaderTheme.CUSTOM] -- "#RRGGBB" hex strings, same
+     *  convention as [com.ishireader.app.data.model.AppSettings.accentColor], picked via
+     *  ColorWheelPicker. Null (before the user has picked yet) falls back to CUSTOM's own
+     *  placeholder hex -- see [effectiveBackgroundHex]/[effectiveTextHex]. */
+    val customBackgroundHex: String? = null,
+    val customTextHex: String? = null,
+    /** Per-window screen brightness override for the reader (see ReaderActivity.applyBrightness),
+     *  independent of the OS brightness slider. Null means "follow the system brightness," same
+     *  convention as every other nullable field here. Range -1f..1f: 0f..1f maps directly to
+     *  WindowManager.LayoutParams.screenBrightness (0 is that API's own dimmest backlight value);
+     *  -1f..0f goes past the hardware floor by fading in a black scrim over the page instead
+     *  (Moon+ Reader's "extra dim" -- there's no such thing as negative screenBrightness, so this
+     *  is a compositing trick, not a real brightness value). */
+    val brightness: Float? = null,
     val fontFamily: ReaderFontFamily? = null,
     val fontSize: Double = 1.0,
     val textAlign: ReaderTextAlign? = null,
@@ -116,8 +140,26 @@ data class ReaderSettings(
     val dictionaryAppComponent: String? = null
 )
 
+/** Resolves [ReaderSettings.theme] to the background hex actually rendered -- routes
+ *  [ReaderTheme.CUSTOM] through [ReaderSettings.customBackgroundHex] instead of that enum entry's
+ *  own placeholder value. Null means "Auto" (no override, let Readium/the publisher decide), same
+ *  as a null theme always has. */
+fun ReaderSettings.effectiveBackgroundHex(): String? = when (theme) {
+    null -> null
+    ReaderTheme.CUSTOM -> customBackgroundHex ?: ReaderTheme.CUSTOM.backgroundHex
+    else -> theme.backgroundHex
+}
+
+/** Text-color counterpart to [effectiveBackgroundHex]. */
+fun ReaderSettings.effectiveTextHex(): String? = when (theme) {
+    null -> null
+    ReaderTheme.CUSTOM -> customTextHex ?: ReaderTheme.CUSTOM.textHex
+    else -> theme.textHex
+}
+
 fun ReaderSettings.toEpubPreferences(): EpubPreferences {
-    val (backgroundColor, textColor) = theme?.toReadiumColors() ?: (null to null)
+    val backgroundColor = effectiveBackgroundHex()?.toReadiumColor()
+    val textColor = effectiveTextHex()?.toReadiumColor()
     return EpubPreferences(
         backgroundColor = backgroundColor,
         textColor = textColor,
@@ -138,9 +180,7 @@ fun ReaderSettings.toEpubPreferences(): EpubPreferences {
 
 /** Readium's Color is a Kotlin inline value class wrapping a plain @ColorInt Int, not
  *  androidx.compose.ui.graphics.Color -- construct via android.graphics.Color.parseColor. */
-private fun ReaderTheme.toReadiumColors(): Pair<ReadiumColor, ReadiumColor> =
-    ReadiumColor(android.graphics.Color.parseColor(backgroundHex)) to
-        ReadiumColor(android.graphics.Color.parseColor(textHex))
+private fun String.toReadiumColor(): ReadiumColor = ReadiumColor(android.graphics.Color.parseColor(this))
 
 private fun ReaderFontFamily.toReadium(): FontFamily = when (this) {
     ReaderFontFamily.SERIF -> FontFamily.SERIF

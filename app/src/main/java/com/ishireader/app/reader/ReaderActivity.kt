@@ -11,8 +11,10 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.RectF
 import android.os.Bundle
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.View
+import android.view.WindowManager
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -52,6 +54,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -78,12 +81,15 @@ import com.ishireader.app.data.model.PositionDisplayAlignment
 import com.ishireader.app.data.model.PositionDisplayMode
 import com.ishireader.app.data.model.ReaderLayout
 import com.ishireader.app.data.model.ReaderSettings
+import com.ishireader.app.data.model.effectiveBackgroundHex
+import com.ishireader.app.data.model.effectiveTextHex
 import com.ishireader.app.data.model.formatPercent
 import com.ishireader.app.data.model.layoutFingerprint
 import com.ishireader.app.data.model.roundPercent
 import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.ui.reader.AnnotationsPanelSheet
+import com.ishireader.app.ui.reader.BrightnessEdgeControl
 import com.ishireader.app.ui.reader.HighlightColorPopover
 import com.ishireader.app.ui.reader.ImageViewerOverlay
 import com.ishireader.app.ui.reader.NoteEditorDialog
@@ -185,6 +191,12 @@ class ReaderActivity : FragmentActivity() {
          *  giving up -- guards against fighting a genuine user page-turn forever if the anchor can
          *  never be reproduced (e.g. its underlying text no longer exists after some other change). */
         private const val POSITION_PIN_TIMEOUT_MS = 3000L
+
+        /** Ceiling on the black scrim's opacity in [applyBrightness]'s "extra dim" zone (negative
+         *  [ReaderSettings.brightness]) -- kept below 1.0 so text stays barely legible at the
+         *  darkest setting instead of the screen going fully black, matching Moon+ Reader's own
+         *  "extra dim" ceiling. */
+        private const val MAX_DIM_SCRIM_ALPHA = 0.85f
     }
 
     private val app: IshiReaderApp by lazy { application as IshiReaderApp }
@@ -203,6 +215,11 @@ class ReaderActivity : FragmentActivity() {
      *  see setUpSettingsOverlay/applyReaderSettings. Compose's snapshot system observes writes to
      *  this the same way it would a remembered one. */
     private val readerSettingsState = mutableStateOf(ReaderSettings())
+
+    /** Black-scrim opacity for the "extra dim" zone of [ReaderSettings.brightness] (negative
+     *  values) -- see [applyBrightness]. Separate from readerSettingsState so the drag gesture can
+     *  update it every frame without going through a full settings copy/persist each time. */
+    private val scrimAlphaState = mutableFloatStateOf(0f)
     private var navigatorFragment: EpubNavigatorFragment? = null
     private var publication: Publication? = null
 
@@ -303,6 +320,7 @@ class ReaderActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         readingTimerTracker.onResumed()
+        applyBrightness(readerSettingsState.value.brightness)
     }
 
     /** Volume-down/up turn pages instead of adjusting media volume when the "Volume buttons turn
@@ -374,24 +392,47 @@ class ReaderActivity : FragmentActivity() {
         lifecycleScope.launch {
             readerSettingsState.value = app.readerPreferencesStore.settings.first()
             applyContainerAppearance(readerSettingsState.value)
+            applyBrightness(readerSettingsState.value.brightness)
             val localFile = ensureDownloaded(manifestUrl) ?: return@launch
             showSyncingOverlay()
             openPublication(localFile, manifestUrl)
         }
     }
 
+    /** Per-window screen brightness override, independent of the OS brightness slider -- see
+     *  ReaderSettings.brightness's own doc comment for the -1f..1f range/"extra dim" split. Reapplied
+     *  in onResume too: window attributes aren't guaranteed to survive every pause/resume on every
+     *  OEM skin, so this re-asserts rather than assuming it stuck. */
+    private fun applyBrightness(value: Float?) {
+        window.attributes = window.attributes.apply {
+            screenBrightness = when {
+                value == null -> WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                value >= 0f -> value.coerceIn(0f, 1f)
+                else -> 0f
+            }
+        }
+        scrimAlphaState.floatValue = if (value != null && value < 0f) (-value).coerceIn(0f, 1f) * MAX_DIM_SCRIM_ALPHA else 0f
+    }
+
+    /** Seeds the brightness gesture/slider's starting point when [ReaderSettings.brightness] is
+     *  still null (follow-system) -- reads the OS's own current backlight level so the first drag
+     *  continues smoothly from what's already on screen instead of jumping to an arbitrary default.
+     *  Reading this system setting needs no permission (only writing one does). */
+    private fun currentSystemBrightnessFraction(): Float =
+        (Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128) / 255f).coerceIn(0f, 1f)
+
     /** [ReaderSettings.verticalMargin] has no Readium preference counterpart -- applied directly
      *  as padding on the navigator's own container view instead (see ReaderSettings' doc comment
      *  for why). That padding is outside the WebView, so it doesn't pick up the page's own
      *  background color automatically -- without this it shows through as a plain white bar
      *  regardless of the active reader theme, so the container's own background is kept in sync
-     *  with [ReaderTheme.backgroundHex] too (falling back to white, ReadiumCSS's own default,
-     *  when theme is null/"Auto"). Safe to call before the navigator fragment exists -- padding
-     *  and background on the container are independent of when its child view gets attached. */
+     *  with [ReaderSettings.effectiveBackgroundHex] too (falling back to white, ReadiumCSS's own
+     *  default, when theme is null/"Auto"). Safe to call before the navigator fragment exists --
+     *  padding and background on the container are independent of when its child view gets attached. */
     private fun applyContainerAppearance(settings: ReaderSettings) {
         val px = (settings.verticalMargin * resources.displayMetrics.density).roundToInt()
         readerContainer.setPadding(readerContainer.paddingLeft, px, readerContainer.paddingRight, px)
-        readerContainer.setBackgroundColor(android.graphics.Color.parseColor(settings.theme?.backgroundHex ?: "#FFFFFF"))
+        readerContainer.setBackgroundColor(android.graphics.Color.parseColor(settings.effectiveBackgroundHex() ?: "#FFFFFF"))
     }
 
     /** [Selection.rect]/[DecorableNavigator.OnActivatedEvent.rect] are documented as "in the
@@ -633,6 +674,7 @@ class ReaderActivity : FragmentActivity() {
                 // state (not a class field) since nothing outside the composition needs it.
                 var scrubProgress by remember { mutableStateOf<Float?>(null) }
                 val settings by readerSettingsState
+                val scrimAlpha by scrimAlphaState
                 val timerState by readingTimerTracker.state.collectAsState()
                 val annotationsState by annotationsController.state.collectAsState()
                 val pendingNote by pendingNewNoteLocator
@@ -685,10 +727,32 @@ class ReaderActivity : FragmentActivity() {
                 // track the reader's own theme colors rather than the app's Material chrome
                 // theme (unlike the tap-menu bars, which stay on the app theme). White/#121212
                 // mirrors the same "Auto" fallback as applyContainerAppearance/EpubPreferences.
-                val readerBackgroundColor = Color(android.graphics.Color.parseColor(settings.theme?.backgroundHex ?: "#FFFFFF"))
-                val readerTextColor = Color(android.graphics.Color.parseColor(settings.theme?.textHex ?: "#121212"))
+                val readerBackgroundColor = Color(android.graphics.Color.parseColor(settings.effectiveBackgroundHex() ?: "#FFFFFF"))
+                val readerTextColor = Color(android.graphics.Color.parseColor(settings.effectiveTextHex() ?: "#121212"))
 
                 Box(Modifier.fillMaxSize()) {
+                    // "Extra dim" scrim for ReaderSettings.brightness's negative range -- see
+                    // applyBrightness. Declared first (bottom of z-order) so it sits over the page
+                    // but under every other overlay below, and has no pointer input of its own so
+                    // it never blocks touches meant for them.
+                    if (scrimAlpha > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = scrimAlpha))
+                        )
+                    }
+
+                    // Moon+ Reader-style brightness gesture -- see BrightnessEdgeControl's own doc
+                    // comment for why taps here still need to fall through to goBackward manually.
+                    BrightnessEdgeControl(
+                        value = settings.brightness ?: currentSystemBrightnessFraction(),
+                        onPreview = { applyBrightness(it) },
+                        onCommit = { applyReaderSettings(settings.copy(brightness = it)) },
+                        onTap = { (navigatorFragment as? OverflowableNavigator)?.goBackward(animated = true) },
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    )
+
                     // Top: tap-menu bar (back + title) stacked above the persistent chapter-title
                     // header. When the tap-menu is hidden, the chapter title -- if enabled -- is
                     // the topmost element and needs the safe-drawing inset itself; when the
@@ -1115,6 +1179,10 @@ class ReaderActivity : FragmentActivity() {
      *  application inside this same lambda -- never call it separately above/below this block. */
     private fun applyReaderSettings(updated: ReaderSettings) {
         readerSettingsState.value = updated
+        // Not layout-affecting (no reflow, nothing submitted to the navigator) -- applied
+        // immediately rather than inside preservePositionAcross below, unlike everything that
+        // block's own doc comment actually requires.
+        applyBrightness(updated.brightness)
         lifecycleScope.launch {
             preservePositionAcross {
                 applyContainerAppearance(updated)
