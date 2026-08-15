@@ -80,7 +80,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.annotation.ExperimentalCoilApi
 import coil.compose.AsyncImage
+import coil.imageLoader
 import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
 import com.ishireader.app.data.model.Book
@@ -122,7 +124,7 @@ private val RingStrokeWidth = 3.dp
 /** Home/Library/Series as swipeable pages under one tab strip, instead of separate pushed
  *  destinations -- each keeps its own ViewModel (scoped to this composable's back stack entry,
  *  same as before) so state survives swiping away and back. */
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalCoilApi::class)
 @Composable
 fun MainTabsScreen(
     homeViewModel: HomeViewModel,
@@ -149,8 +151,10 @@ fun MainTabsScreen(
     var isStatsOpen by remember { mutableStateOf(false) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
     var isMigrateOpen by remember { mutableStateOf(false) }
+    var isClearingCache by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val app = context.applicationContext as IshiReaderApp
+    val isOffline by app.libraryRepository.isOffline.collectAsState()
     val migrateBookDataViewModel: MigrateBookDataViewModel = viewModel(
         factory = MigrateBookDataViewModel.Factory(
             app.libraryRepository,
@@ -251,6 +255,33 @@ fun MainTabsScreen(
             when (val result = app.bookDownloadRepository.download(book.manifestUrl())) {
                 is ApiResult.Success -> Toast.makeText(context, "Downloaded \"${book.title}\"", Toast.LENGTH_SHORT).show()
                 is ApiResult.Failure -> Toast.makeText(context, "Couldn't download: ${result.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // CLAUDE-ADDED: Mirrors the website's "Refresh Manifest Cache" user-menu action, plus the
+    // local half a browser's own HTTP cache would otherwise cover -- Coil's memory/disk cache can
+    // keep serving a bad cover bitmap even after the server-side manifest cache (title/author/cover
+    // resolution) is cleared, since it's a different cache keyed by a different thing. Disabled
+    // while offline: clearing local covers with nothing to re-fetch them from would just blank the
+    // library instead of fixing it.
+    fun clearManifestAndImageCache() {
+        if (isClearingCache || isOffline) return
+        isClearingCache = true
+        scope.launch {
+            val result = app.libraryRepository.clearManifestCache()
+            withContext(Dispatchers.IO) {
+                context.imageLoader.memoryCache?.clear()
+                context.imageLoader.diskCache?.clear()
+            }
+            homeViewModel.refresh()
+            libraryViewModel.refresh()
+            seriesViewModel.refresh()
+            shelvesViewModel.refresh()
+            isClearingCache = false
+            when (result) {
+                is ApiResult.Success -> Toast.makeText(context, "Cache cleared", Toast.LENGTH_SHORT).show()
+                is ApiResult.Failure -> Toast.makeText(context, "Couldn't clear server cache: ${result.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -359,6 +390,14 @@ fun MainTabsScreen(
                             onClick = {
                                 userMenuExpanded = false
                                 isMigrateOpen = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isClearingCache) "Clearing…" else "Clear Manifest/Image Cache") },
+                            enabled = !isOffline && !isClearingCache,
+                            onClick = {
+                                userMenuExpanded = false
+                                clearManifestAndImageCache()
                             }
                         )
                         if (user?.isAdmin == true) {

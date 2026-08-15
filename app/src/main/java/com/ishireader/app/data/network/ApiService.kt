@@ -6,6 +6,7 @@ import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.BookmarkUpsertRequest
 import com.ishireader.app.data.model.BookmarksResponse
 import com.ishireader.app.data.model.BooksResponse
+import com.ishireader.app.data.model.ClearedManifestCacheResponse
 import com.ishireader.app.data.model.ClearedSpeedSamplesResponse
 import com.ishireader.app.data.model.CompletedListenUpsertRequest
 import com.ishireader.app.data.model.CompletedListensResponse
@@ -80,6 +81,12 @@ interface ApiService {
 
     @GET("api/books")
     suspend fun books(): Response<BooksResponse>
+
+    /** Clears the server's in-memory manifest cache (title/author/cover resolution) so the next
+     *  GET re-resolves every book from scratch -- the mobile counterpart to the website's
+     *  "Refresh Manifest Cache" user-menu action. */
+    @DELETE("api/books")
+    suspend fun clearManifestCache(): Response<ClearedManifestCacheResponse>
 
     /** Streams the raw publication file (epub/pdf/cbz) so the Readium navigator can open it as a
      *  local asset -- @Streaming keeps Retrofit from buffering the whole body into memory first. */

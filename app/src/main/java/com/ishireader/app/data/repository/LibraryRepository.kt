@@ -55,6 +55,23 @@ class LibraryRepository(
 
     fun findCached(manifestUrl: String): Book? = cachedBooks.find { it.manifestUrl() == manifestUrl }
 
+    /** Clears the server's manifest cache -- the network half of "Clear Manifest/Image Cache" in
+     *  the user menu; the other half (Coil's local image cache) is cleared by the caller since it
+     *  has no business living in a network repository. */
+    suspend fun clearManifestCache(): ApiResult<Int> = withContext(Dispatchers.IO) {
+        try {
+            val response = network.api.clearManifestCache()
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                ApiResult.Success(body.clearedCount)
+            } else {
+                ApiResult.Failure("Couldn't clear manifest cache (${response.code()})")
+            }
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error")
+        }
+    }
+
     private suspend fun fallBackToLocalCache(errorMessage: String): ApiResult<List<Book>> {
         val cached = readLocalCache()
         if (cached.isEmpty()) return ApiResult.Failure(errorMessage)

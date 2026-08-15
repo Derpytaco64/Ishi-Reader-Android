@@ -273,6 +273,11 @@ data class OrphanedDataReport(val users: List<OrphanedUserData> = emptyList(), v
 @Serializable
 data class ClearedSpeedSamplesResponse(val clearedCount: Int = 0)
 
+/** /api/books' DELETE response -- how many entries were in the server's in-memory manifest cache
+ *  (title/author/cover resolution, keyed by content fingerprint) before it was cleared. */
+@Serializable
+data class ClearedManifestCacheResponse(val clearedCount: Int = 0)
+
 @Serializable
 data class CreateUserRequest(val username: String, val name: String, val password: String, val isAdmin: Boolean)
 
