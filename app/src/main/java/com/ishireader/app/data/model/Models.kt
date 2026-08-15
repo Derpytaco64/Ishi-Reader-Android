@@ -274,7 +274,12 @@ data class AdminUserResponse(val user: AdminUser? = null)
 /** Mirrors OrphanedBook/OrphanedUserData/OrphanedDataReport in the server's
  *  next-lib/userData/orphanedData.ts -- the shape /api/admin/orphaned-data's GET/DELETE both return. */
 @Serializable
-data class OrphanedBook(val hash: String, val subdirs: List<String> = emptyList())
+data class OrphanedBook(
+    val hash: String,
+    val subdirs: List<String> = emptyList(),
+    val title: String? = null,
+    val manifestUrl: String? = null
+)
 
 @Serializable
 data class OrphanedUserData(

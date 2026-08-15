@@ -386,8 +386,13 @@ private fun OrphanedDataSection(state: AdminUiState, viewModel: AdminViewModel) 
                     Column(modifier = Modifier.padding(bottom = 4.dp)) {
                         Text("${user.name} (@${user.username})", style = MaterialTheme.typography.bodySmall)
                         user.books.forEach { book ->
+                            val label = if (book.title != null) {
+                                "\"${book.title}\" (${book.hash.take(12)}…)"
+                            } else {
+                                "${book.hash.take(12)}…"
+                            }
                             Text(
-                                "${book.hash.take(12)}… — ${book.subdirs.joinToString(", ")}",
+                                "$label — ${book.subdirs.joinToString(", ")}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
