@@ -179,10 +179,19 @@ class ReadingTimerTracker(
      *  daily-bucket seconds on the same accept/reject check as the WPM sample (as this used to)
      *  silently left the daily-history sum short of the lifetime total by however much reading
      *  happened to involve navigation rather than straight-through page turns -- see the equivalent
-     *  fix in the website's useReadingSpeedSampler.ts. */
-    fun onLocatorChanged(locator: Locator) {
+     *  fix in the website's useReadingSpeedSampler.ts.
+     *
+     *  [exactProgression], when supplied, is a real layout-aware page/total fraction (see
+     *  ReaderActivity's exactPageFraction) used in place of `locator.locations.totalProgression`
+     *  for every progression/wpm computation below. Readium's totalProgression is chunk-weighted
+     *  off Publication.positions, not actual rendered pages -- it can disagree with real page
+     *  density enough per chapter that a wholly plausible-looking, well within every ceiling here,
+     *  sample's implied wpm is wrong by multiples even though nothing about it looks rejectable.
+     *  Falls back to totalProgression when null (scroll mode, or the per-resource sweep hasn't
+     *  finished sweeping this book's pages yet). */
+    fun onLocatorChanged(locator: Locator, exactProgression: Double? = null) {
         if (!::manifestUrl.isInitialized) return
-        val totalProgression = locator.locations.totalProgression
+        val totalProgression = exactProgression ?: locator.locations.totalProgression
         val previous = lastTotalProgression
         if (totalProgression != null) lastTotalProgression = totalProgression
         if (previous == null || totalProgression == null) {

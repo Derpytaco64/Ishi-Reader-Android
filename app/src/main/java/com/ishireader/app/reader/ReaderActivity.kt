@@ -604,7 +604,18 @@ class ReaderActivity : FragmentActivity() {
             .onEach { locator ->
                 currentLocatorState.value = locator
                 savePosition(locator)
-                readingTimerTracker.onLocatorChanged(locator)
+                // Same real, layout-aware page/total fraction savePosition caches as "exact" --
+                // preferred over locator.locations.totalProgression for wpm sampling too, since
+                // totalProgression is chunk-weighted off Publication.positions (see pageFraction's
+                // doc comment), not actual rendered pages, and can disagree with real page density
+                // enough per chapter to make a wholly plausible-looking sample's implied wpm wrong
+                // by multiples. Null (scroll mode, or the per-resource sweep hasn't finished) falls
+                // back to the same totalProgression ReadingTimerTracker always used.
+                val exactProgression = exactPageFraction(
+                    dynamicPageCountState.value.takeIf { readerSettingsState.value.layout != ReaderLayout.SCROLLED },
+                    locator
+                )
+                readingTimerTracker.onLocatorChanged(locator, exactProgression)
                 // Belt-and-suspenders against decorations silently missing on a chapter that
                 // wasn't the visible one yet when annotationsController.start() first fetched and
                 // applied them (Readium's own re-apply-on-load only fires for a resource the very
