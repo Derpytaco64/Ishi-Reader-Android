@@ -129,12 +129,21 @@ class ReadingTimerTracker(
      *  bucket (only [onLocatorChanged] does that), permanently leaving the daily-history sum short
      *  of the lifetime total. Only touches the bucket's seconds, not words/progressionDelta -- there
      *  is no locator delta to attribute here, just elapsed time with the book open, same as a
-     *  rejected sample's seconds still count in [onLocatorChanged]. */
+     *  rejected sample's seconds still count in [onLocatorChanged].
+     *
+     *  Also clears [lastTotalProgression], forcing the *next* [onLocatorChanged] to re-seed instead
+     *  of computing a sample -- this pause just spent the dangling seconds as zero-word bucket time,
+     *  so diffing the next locator against the pre-pause position would credit that same span's words
+     *  a second time against only the post-resume elapsed seconds (word count intact, denominator cut
+     *  short), producing an inflated wpm sample. Same "discard and re-seed" the website's sampler
+     *  already applies to a rejected backward-jump/big-jump, just triggered by a pause boundary
+     *  instead of a bad delta. */
     private fun creditDanglingSecondsToToday() {
         val nowSeconds = _state.value.accumulatedSeconds
         val danglingSeconds = nowSeconds - lastSampleSeconds
         if (danglingSeconds <= 0) return
         lastSampleSeconds = nowSeconds
+        lastTotalProgression = null
 
         val dateKey = LocalDate.now().toString()
         val existing = dailyBuckets[dateKey] ?: DailyReadingBucket(date = dateKey)
