@@ -251,7 +251,7 @@ fun BookDetailScreen(
             }
 
             if (book.narrators.isNotEmpty()) {
-                ChipSection(title = "Narrators") { Chip("Narrated by: ${book.narrators.joinToString(", ")}") }
+                ChipSection(title = "Narrators") { Chip(book.narrators.joinToString(", ")) }
             }
 
             book.description?.takeIf { it.isNotBlank() }?.let { description ->
