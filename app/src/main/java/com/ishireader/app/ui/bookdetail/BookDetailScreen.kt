@@ -167,6 +167,9 @@ fun BookDetailScreen(
 
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(book.title, style = MaterialTheme.typography.titleLarge)
+                    book.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
+                        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     if (book.author.isNotBlank()) {
                         Text(book.author, style = MaterialTheme.typography.bodyMedium)
                     }
@@ -245,6 +248,10 @@ fun BookDetailScreen(
 
             if (book.tags.isNotEmpty()) {
                 ChipSection(title = "Genres") { book.tags.forEach { tag -> Chip(tag) } }
+            }
+
+            if (book.narrators.isNotEmpty()) {
+                ChipSection(title = "Narrators") { Chip("Narrated by: ${book.narrators.joinToString(", ")}") }
             }
 
             book.description?.takeIf { it.isNotBlank() }?.let { description ->
@@ -442,9 +449,10 @@ fun BookDetailScreen(
                 ChipSection(title = "Publisher") { Chip(book.publisher) }
             }
 
-            if (book.isbn != null || book.calibreId != null || book.uuid != null) {
+            if (book.isbn != null || book.asin != null || book.calibreId != null || book.uuid != null) {
                 ChipSection(title = "Identifiers") {
                     book.isbn?.let { Chip("ISBN: $it") }
+                    book.asin?.let { Chip("ASIN: $it") }
                     book.calibreId?.let { Chip("Calibre ID: $it") }
                     book.uuid?.let { uuid ->
                         Chip("UUID: $uuid", trailing = {
@@ -620,6 +628,10 @@ private fun MetadataChips(book: Book, pageCount: Int?) {
         // CLAUDE-ADDED: 0 is a real but uninformative result for a pathological empty-text book --
         // excluded the same way the website's own !!pageCount check drops it.
         pageCount?.takeIf { it > 0 }?.let { add("# of pages" to it.toString()) }
+        // CLAUDE-ADDED: Only ever populated for audiobooks (see Book.duration) -- shown here
+        // immediately from the library list response, unlike the dial-adjacent "Length" line which
+        // waits on a separate manifest round trip (see BookDetailViewModel.totalListeningDurationSeconds).
+        book.duration?.takeIf { it > 0 }?.let { add("Length" to formatDuration(it)) }
     }
 
     FlowRow(

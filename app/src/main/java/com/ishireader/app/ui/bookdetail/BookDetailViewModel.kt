@@ -126,8 +126,16 @@ class BookDetailViewModel(
     }
 
     /** Audiobook counterpart of [fetchPageCount] -- the manifest's single track duration is this
-     *  book's fixed "length", fetched once rather than on every [refresh] for the same reason. */
+     *  book's fixed "length", fetched once rather than on every [refresh] for the same reason.
+     *  Prefers [Book.duration] (already delivered with the library list, see api/books/route.ts's
+     *  RWPM metadata.duration) so the figure is available instantly with no extra round trip; only
+     *  falls back to fetching the manifest directly (same one AudiobookPlayerActivity's chapter list
+     *  comes from) for the rare case a cached list entry predates that field. */
     private fun fetchAudiobookDuration() {
+        book.duration?.let {
+            _uiState.value = _uiState.value.copy(totalListeningDurationSeconds = it)
+            return
+        }
         viewModelScope.launch {
             val duration = audiobookRepository.fetchManifestInfo(book.manifestUrl())?.trackDurationSeconds
             _uiState.value = _uiState.value.copy(totalListeningDurationSeconds = duration)

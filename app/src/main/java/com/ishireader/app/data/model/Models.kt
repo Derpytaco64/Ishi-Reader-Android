@@ -63,7 +63,13 @@ data class BookSeries(val name: String, val position: Double? = null)
 @Serializable
 data class Book(
     val title: String,
+    val subtitle: String? = null,
     val author: String,
+    /** Contributor names read straight off the audiobook file's own MP4 tags (composer atom, the
+     *  established audiobook-tagging convention) -- see extractAudiobookMetadata server-side, since
+     *  the bundled Go Readium server's M4B manifest support doesn't surface a narrator field. Always
+     *  empty for non-audiobooks. */
+    val narrators: List<String> = emptyList(),
     val cover: String,
     val url: String,
     val rendition: String? = null,
@@ -78,9 +84,13 @@ data class Book(
     val language: String? = null,
     val tags: List<String> = emptyList(),
     val isbn: String? = null,
+    val asin: String? = null,
     val calibreId: String? = null,
     val uuid: String? = null,
-    val fileSize: String? = null
+    val fileSize: String? = null,
+    /** RWPM metadata.duration in seconds -- only ever populated for audiobooks, straight off the
+     *  manifest rather than a file-tag fallback (see api/books/route.ts's server-side comment). */
+    val duration: Double? = null
 )
 
 @Serializable
