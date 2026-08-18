@@ -52,7 +52,11 @@ fun ReadingTimerSheet(
     state: ReadingTimerUiState,
     onReset: (save: Boolean) -> Unit,
     onDeleteCompleted: (id: String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Page-rate ("pagesRead/timeSpent" ratio, this book only, no rolling sample buffer) time-left
+     *  for a comic -- see ReaderActivity/BookDetailScreen's own comicSecondsLeft. Only shown when
+     *  [ReadingTimerUiState.isComic], replacing the wpm/word-count-based stat block. */
+    comicSecondsLeft: Double? = null
 ) {
     var tabIndex by remember { mutableIntStateOf(0) }
     var showResetConfirm by remember { mutableStateOf(false) }
@@ -79,7 +83,7 @@ fun ReadingTimerSheet(
             }
 
             when (tabIndex) {
-                0 -> TimerTab(state = state, onResetClick = { showResetConfirm = true })
+                0 -> TimerTab(state = state, comicSecondsLeft = comicSecondsLeft, onResetClick = { showResetConfirm = true })
                 1 -> CompletedTab(items = state.completedReads, onDeleteClick = { pendingDeleteId = it })
             }
         }
@@ -115,7 +119,7 @@ fun ReadingTimerSheet(
 }
 
 @Composable
-private fun TimerTab(state: ReadingTimerUiState, onResetClick: () -> Unit) {
+private fun TimerTab(state: ReadingTimerUiState, comicSecondsLeft: Double?, onResetClick: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
         Text(
             text = formatHms(state.accumulatedSeconds),
@@ -127,8 +131,16 @@ private fun TimerTab(state: ReadingTimerUiState, onResetClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            StatBlock(label = "WPM", value = state.wpm?.toString() ?: "--")
-            StatBlock(label = "Time left", value = state.secondsLeft?.let { formatDuration(it) } ?: "--")
+            // CLAUDE-ADDED: A comic has no words -- state.wpm/secondsLeft are pace-from-wordCount
+            // figures that don't apply to it (see ReadingTimerTracker.start's isComic gate), so this
+            // shows the page-rate time-left instead of a pace stat, mirroring the website's
+            // StatefulReadingTimerContainer isComic branch.
+            if (state.isComic) {
+                StatBlock(label = "Time left", value = comicSecondsLeft?.let { formatDuration(it) } ?: "--")
+            } else {
+                StatBlock(label = "WPM", value = state.wpm?.toString() ?: "--")
+                StatBlock(label = "Time left", value = state.secondsLeft?.let { formatDuration(it) } ?: "--")
+            }
         }
         OutlinedButton(onClick = onResetClick, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
             Text("Reset")

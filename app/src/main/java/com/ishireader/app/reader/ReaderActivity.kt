@@ -84,6 +84,7 @@ import com.ishireader.app.data.model.ReaderLayout
 import com.ishireader.app.data.model.ReaderSettings
 import com.ishireader.app.data.model.effectiveBackgroundHex
 import com.ishireader.app.data.model.effectiveTextHex
+import com.ishireader.app.data.model.forComicRendering
 import com.ishireader.app.data.model.formatPercent
 import com.ishireader.app.data.model.layoutFingerprint
 import com.ishireader.app.data.model.roundPercent
@@ -216,6 +217,12 @@ class ReaderActivity : FragmentActivity() {
      *  see setUpSettingsOverlay/applyReaderSettings. Compose's snapshot system observes writes to
      *  this the same way it would a remembered one. */
     private val readerSettingsState = mutableStateOf(ReaderSettings())
+
+    /** Whether the open book is a comic (CBZ/Divina) -- known only once [publication] is loaded
+     *  (see [showNavigator]), false until then. Drives [ReaderSettings.forComicRendering] (theme
+     *  restricted to Light/Dark, defaulting Dark) and gates the wpm/word-count reading-speed UI in
+     *  favor of a page-rate time-left (see setUpSettingsOverlay's comicSecondsLeft). */
+    private val isComicState = mutableStateOf(false)
 
     /** Black-scrim opacity for the "extra dim" zone of [sessionBrightnessState] (negative values)
      *  -- see [applyBrightness]. Separate state so the drag gesture can update it every frame
@@ -552,6 +559,8 @@ class ReaderActivity : FragmentActivity() {
     private fun showNavigator(publication: Publication, initialLocator: Locator?, manifestUrl: String) {
         progressOverlay.visibility = View.GONE
         this.publication = publication
+        isComicState.value = publication.metadata.conformsTo.contains(Publication.Profile.DIVINA)
+        applyContainerAppearance(readerSettingsState.value.forComicRendering(isComicState.value))
 
         val pageCountTracker = DynamicPageCountTracker(publication)
         dynamicPageCountTracker = pageCountTracker
@@ -585,7 +594,7 @@ class ReaderActivity : FragmentActivity() {
         val navigatorFactory = EpubNavigatorFactory(publication = publication)
         val fragmentFactory = navigatorFactory.createFragmentFactory(
             initialLocator = initialLocator,
-            initialPreferences = readerSettingsState.value.toEpubPreferences(),
+            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(),
             paginationListener = pageCountTracker,
             configuration = EpubNavigatorFragment.Configuration(
                 selectionActionModeCallback = selectionCallback,
@@ -698,6 +707,12 @@ class ReaderActivity : FragmentActivity() {
                 // state (not a class field) since nothing outside the composition needs it.
                 var scrubProgress by remember { mutableStateOf<Float?>(null) }
                 val settings by readerSettingsState
+                val isComic by isComicState
+                // CLAUDE-ADDED: What's actually rendered -- see ReaderSettings.forComicRendering.
+                // [settings] itself (passed to ReaderSettingsSheet below) stays the raw persisted
+                // value so unrelated edits never silently commit a comic's forced Dark theme back
+                // to the shared, cross-book reader settings.
+                val renderSettings = settings.forComicRendering(isComic)
                 val scrimAlpha by scrimAlphaState
                 val sessionBrightness by sessionBrightnessState
                 val timerState by readingTimerTracker.state.collectAsState()
@@ -752,8 +767,24 @@ class ReaderActivity : FragmentActivity() {
                 // track the reader's own theme colors rather than the app's Material chrome
                 // theme (unlike the tap-menu bars, which stay on the app theme). White/#121212
                 // mirrors the same "Auto" fallback as applyContainerAppearance/EpubPreferences.
-                val readerBackgroundColor = Color(android.graphics.Color.parseColor(settings.effectiveBackgroundHex() ?: "#FFFFFF"))
-                val readerTextColor = Color(android.graphics.Color.parseColor(settings.effectiveTextHex() ?: "#121212"))
+                val readerBackgroundColor = Color(android.graphics.Color.parseColor(renderSettings.effectiveBackgroundHex() ?: "#FFFFFF"))
+                val readerTextColor = Color(android.graphics.Color.parseColor(renderSettings.effectiveTextHex() ?: "#121212"))
+                // CLAUDE-ADDED: Page-rate "time left" for a comic -- mirrors the website's
+                // StatefulReadingTimerContainer.comicSecondsLeft, a plain pagesRead/timeSpent ratio
+                // for *this* book (not the rolling wpm sample buffer, which is cross-book and
+                // meaningless for a wordless comic -- see ReadingTimerTracker.start's isComic gate).
+                // dynamicPageCount already tracks real on-screen pages live, so no separate
+                // page-count fetch is needed the way the website's fetchPageCountFromServer is.
+                val comicSecondsLeft = if (!isComic) null else {
+                    val totalPages = dynamicPageCount?.totalPages
+                    val pagesRead = dynamicPageCount?.currentPage
+                    if (totalPages == null || pagesRead == null || pagesRead <= 0 || timerState.accumulatedSeconds <= 0) {
+                        null
+                    } else {
+                        val pagesRemaining = totalPages - pagesRead
+                        if (pagesRemaining <= 0) 0.0 else (pagesRemaining.toDouble() / pagesRead) * timerState.accumulatedSeconds
+                    }
+                }
                 // The chapter-title/position-indicator bars are page furniture (they sit directly
                 // against the page like the text itself), so the extra-dim scrim darkens them too
                 // -- blended directly into their own colors rather than via the full-screen scrim
@@ -1089,7 +1120,8 @@ class ReaderActivity : FragmentActivity() {
                         settings = settings,
                         onSettingsChange = ::applyReaderSettings,
                         onRecalculatePageCount = ::recalculatePageCounts,
-                        onDismiss = { settingsSheetOpen = false }
+                        onDismiss = { settingsSheetOpen = false },
+                        isComic = isComic
                     )
                 }
 
@@ -1098,7 +1130,8 @@ class ReaderActivity : FragmentActivity() {
                         state = timerState,
                         onReset = { save -> lifecycleScope.launch { readingTimerTracker.reset(save) } },
                         onDeleteCompleted = { id -> lifecycleScope.launch { readingTimerTracker.deleteCompletedRead(id) } },
-                        onDismiss = { timerSheetOpen = false }
+                        onDismiss = { timerSheetOpen = false },
+                        comicSecondsLeft = comicSecondsLeft
                     )
                 }
 
@@ -1223,10 +1256,11 @@ class ReaderActivity : FragmentActivity() {
      *  application inside this same lambda -- never call it separately above/below this block. */
     private fun applyReaderSettings(updated: ReaderSettings) {
         readerSettingsState.value = updated
+        val rendered = updated.forComicRendering(isComicState.value)
         lifecycleScope.launch {
             preservePositionAcross {
-                applyContainerAppearance(updated)
-                navigatorFragment?.submitPreferences(updated.toEpubPreferences())
+                applyContainerAppearance(rendered)
+                navigatorFragment?.submitPreferences(rendered.toEpubPreferences())
             }
             resolveExactPageCounts()
         }

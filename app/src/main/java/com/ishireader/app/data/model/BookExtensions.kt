@@ -10,3 +10,8 @@ import java.net.URLDecoder
  */
 fun Book.manifestUrl(): String =
     URLDecoder.decode(url.substringAfter("/read/manifest/"), "UTF-8")
+
+/** Mirrors the website's `displayed.rendition === "Comic"` (StatefulBookSheet.tsx) -- "Comic" is
+ *  the only other value api/books/route.ts ever sets [Book.rendition] to besides "Audiobook", but a
+ *  named check reads clearer at call sites than a bare string comparison. */
+val Book.isComic: Boolean get() = rendition == "Comic"

@@ -61,7 +61,13 @@ fun ReaderSettingsSheet(
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit,
     onRecalculatePageCount: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** A comic (CBZ/Divina) has no publisher CSS to theme and no sepia/paper/contrast variant that
+     *  reads well against photographic/inked art -- restricts the Theme row to Light/Dark only (see
+     *  ReaderSettings.forComicRendering, which is what actually applies the Dark default this mirrors
+     *  for display). [settings] itself is left untouched here: picking Light/Dark still writes
+     *  through [onSettingsChange] normally, same as any other theme change. */
+    isComic: Boolean = false
 ) {
     // While a custom-theme color wheel is being dragged, the sheet itself fades toward
     // transparent (both its surface and the modal scrim behind it) so the reader page shows
@@ -91,19 +97,29 @@ fun ReaderSettingsSheet(
             HorizontalDivider()
 
             SectionLabel("Appearance")
-            SegmentedOptionRow(
-                label = "Theme",
-                options = listOf(null) + ReaderTheme.entries,
-                selected = settings.theme,
-                optionLabel = { it.label() },
-                onSelect = { onSettingsChange(settings.copy(theme = it)) }
-            )
-            if (settings.theme == ReaderTheme.CUSTOM) {
-                CustomThemeColorPickers(
-                    settings = settings,
-                    onSettingsChange = onSettingsChange,
-                    onDraggingChange = { colorPickerDragging = it }
+            if (isComic) {
+                SegmentedOptionRow(
+                    label = "Theme",
+                    options = listOf(ReaderTheme.LIGHT, ReaderTheme.DARK),
+                    selected = if (settings.theme == ReaderTheme.LIGHT) ReaderTheme.LIGHT else ReaderTheme.DARK,
+                    optionLabel = { it.label() },
+                    onSelect = { onSettingsChange(settings.copy(theme = it)) }
                 )
+            } else {
+                SegmentedOptionRow(
+                    label = "Theme",
+                    options = listOf(null) + ReaderTheme.entries,
+                    selected = settings.theme,
+                    optionLabel = { it.label() },
+                    onSelect = { onSettingsChange(settings.copy(theme = it)) }
+                )
+                if (settings.theme == ReaderTheme.CUSTOM) {
+                    CustomThemeColorPickers(
+                        settings = settings,
+                        onSettingsChange = onSettingsChange,
+                        onDraggingChange = { colorPickerDragging = it }
+                    )
+                }
             }
             SegmentedOptionRow(
                 label = "Font",

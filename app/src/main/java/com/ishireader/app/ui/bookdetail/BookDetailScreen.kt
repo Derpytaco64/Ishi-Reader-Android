@@ -70,6 +70,7 @@ import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.DailyListeningBucket
 import com.ishireader.app.data.model.DailyReadingBucket
 import com.ishireader.app.data.model.formatPercent
+import com.ishireader.app.data.model.isComic
 import com.ishireader.app.reader.AnnotationsUiState
 import com.ishireader.app.reader.ReadingTimerUiState
 import com.ishireader.app.reader.TappedImage
@@ -98,6 +99,26 @@ fun BookDetailScreen(
     onJumpToLocator: (Locator) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val isComic = book.isComic
+    // CLAUDE-ADDED: Page-rate "time left" for a comic -- mirrors the website's
+    // StatefulBookSheet.tsx comicSecondsLeft, a one-off pagesRead/timeSpent ratio against this
+    // screen's point-in-time percentRead/totalReadingSeconds snapshot (state.wpm/secondsLeft are
+    // wordCount-derived and always null for a comic, see BookDetailViewModel/ReadingTimerTracker's
+    // isComic gate -- there's no pace to show, just a page count and elapsed time).
+    val comicSecondsLeft = if (!isComic) null else {
+        val pageCount = state.pageCount
+        val percent = state.percentRead
+        val totalSeconds = state.totalReadingSeconds
+        if (pageCount == null || pageCount <= 0 || percent == null || totalSeconds == null || totalSeconds <= 0) {
+            null
+        } else {
+            val pagesRead = (percent / 100.0) * pageCount
+            if (pagesRead <= 0) null else {
+                val pagesRemaining = pageCount - pagesRead
+                if (pagesRemaining <= 0) 0.0 else (pagesRemaining / pagesRead) * totalSeconds
+            }
+        }
+    }
     val clipboard = LocalClipboardManager.current
     var annotationTab by remember { mutableStateOf(AnnotationTab.ALL) }
     var annotationsDescending by remember { mutableStateOf(false) }
@@ -213,11 +234,21 @@ fun BookDetailScreen(
                                     state.totalReadingSeconds?.takeIf { it > 0 }?.let {
                                         Text("Time read: ${formatDuration(it)}", style = MaterialTheme.typography.labelSmall)
                                     }
-                                    state.wpm?.let {
-                                        Text("Pace: $it wpm", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                    state.secondsLeft?.let {
-                                        Text("Time left: ${formatEstimatedTime(it)}", style = MaterialTheme.typography.labelSmall)
+                                    // CLAUDE-ADDED: A comic has no words -- state.wpm/secondsLeft are
+                                    // always null for it (wordCount-derived, see
+                                    // BookDetailViewModel/ReadingTimerTracker's isComic gate), so this
+                                    // shows the page-rate comicSecondsLeft instead of a pace stat.
+                                    if (isComic) {
+                                        comicSecondsLeft?.let {
+                                            Text("Time left: ${formatEstimatedTime(it)}", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    } else {
+                                        state.wpm?.let {
+                                            Text("Pace: $it wpm", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                        state.secondsLeft?.let {
+                                            Text("Time left: ${formatEstimatedTime(it)}", style = MaterialTheme.typography.labelSmall)
+                                        }
                                     }
                                 }
                             }
@@ -484,11 +515,13 @@ fun BookDetailScreen(
                     accumulatedSeconds = state.totalReadingSeconds ?: 0.0,
                     wpm = state.wpm,
                     secondsLeft = state.secondsLeft,
-                    completedReads = state.completedReads
+                    completedReads = state.completedReads,
+                    isComic = isComic
                 ),
                 onReset = { save -> viewModel.resetCurrentRead(save) },
                 onDeleteCompleted = { id -> viewModel.deleteCompletedRead(id) },
-                onDismiss = { showTimerSheet = false }
+                onDismiss = { showTimerSheet = false },
+                comicSecondsLeft = comicSecondsLeft
             )
         }
 

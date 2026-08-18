@@ -29,7 +29,11 @@ data class ReadingTimerUiState(
     val running: Boolean = false,
     val wpm: Int? = null,
     val secondsLeft: Double? = null,
-    val completedReads: List<StoredCompletedReadTime> = emptyList()
+    val completedReads: List<StoredCompletedReadTime> = emptyList(),
+    /** Whether the current book is a comic (CBZ/Divina) -- wordCount/wpm/secondsLeft above are all
+     *  meaningless for it (see [start]'s isComic gate), so the UI shows a page-rate time-left
+     *  instead of hiding behind a misleading "0 wpm"/empty pace block. */
+    val isComic: Boolean = false
 )
 
 /**
@@ -58,6 +62,7 @@ class ReadingTimerTracker(
 
     private lateinit var manifestUrl: String
     private var wordCount: Double? = null
+    private var isComic: Boolean = false
     private var lastTotalProgression: Double? = null
     private var lastSampleSeconds: Double = 0.0
     private val speedSamples = mutableListOf<ReadingSpeedSample>()
@@ -81,8 +86,17 @@ class ReadingTimerTracker(
         speedSamples.addAll(repository.getReadingSpeedSamples().dataOrNull() ?: emptyList())
         lastSampleSeconds = seconds
 
-        wordCount = repository.getWordCount(manifestUrl).dataOrNull()
-        if (wordCount == null) {
+        // CLAUDE-ADDED: A comic's readingOrder is raw bitmap bytes -- computeWordCount's UTF-8
+        // decode-and-tokenize would produce a huge, meaningless "word count" from binary image data
+        // (the same class of bug PAGE_COUNT_ALGORITHM_VERSION=2 fixed server-side for page counts,
+        // which were coming back as raw-byte character counts for CBZ). A comic has no words, so
+        // wordCount is left null rather than computed/cached -- computeSecondsLeft already returns
+        // null whenever wordCount is null, and onLocatorChanged's `words != null` gate already keeps
+        // a null wordCount from ever adding a sample to the global wpm buffer, so no separate isComic
+        // check is needed in either place.
+        isComic = publication.metadata.conformsTo.contains(Publication.Profile.DIVINA)
+        wordCount = if (isComic) null else repository.getWordCount(manifestUrl).dataOrNull()
+        if (!isComic && wordCount == null) {
             val computed = withContext(Dispatchers.IO) { computeWordCount(publication) }
             wordCount = computed
             repository.setWordCount(manifestUrl, computed)
@@ -96,7 +110,8 @@ class ReadingTimerTracker(
             accumulatedSeconds = seconds,
             wpm = wpm,
             secondsLeft = computeSecondsLeft(wordCount, wpm, lastTotalProgression),
-            completedReads = completedReads.sortedByDescending { it.completedAt }
+            completedReads = completedReads.sortedByDescending { it.completedAt },
+            isComic = isComic
         )
     }
 

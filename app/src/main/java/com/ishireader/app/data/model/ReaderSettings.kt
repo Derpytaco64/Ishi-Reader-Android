@@ -149,6 +149,17 @@ fun ReaderSettings.effectiveTextHex(): String? = when (theme) {
     else -> theme.textHex
 }
 
+/** A comic (CBZ/Divina) page is a raw bitmap with no publisher CSS to theme, and Sepia/Paper/
+ *  Contrast/Custom don't read well against photographic or inked art -- so rendering is restricted
+ *  to plain Light or Dark, defaulting to Dark whenever the persisted theme isn't already one of
+ *  those two. Only used to compute what's actually *rendered* (navigator preferences, container
+ *  background); the persisted [ReaderSettings] itself is left untouched, so an explicit Light/Dark
+ *  pick made while reading a comic still persists as a normal theme change, same as any other book. */
+fun ReaderSettings.forComicRendering(isComic: Boolean): ReaderSettings {
+    if (!isComic || theme == ReaderTheme.LIGHT || theme == ReaderTheme.DARK) return this
+    return copy(theme = ReaderTheme.DARK)
+}
+
 fun ReaderSettings.toEpubPreferences(): EpubPreferences {
     val backgroundColor = effectiveBackgroundHex()?.toReadiumColor()
     val textColor = effectiveTextHex()?.toReadiumColor()
