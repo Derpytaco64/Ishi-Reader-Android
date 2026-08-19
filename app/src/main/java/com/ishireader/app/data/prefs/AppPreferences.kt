@@ -23,6 +23,7 @@ class AppPreferences(private val context: Context) {
         val SERVER_URL = stringPreferencesKey("server_url")
         val WAS_LOGGED_IN = booleanPreferencesKey("was_logged_in")
         val SHOW_DOWNLOADED_ONLY = booleanPreferencesKey("show_downloaded_only")
+        val LAST_DISMISSED_UPDATE_VERSION = stringPreferencesKey("last_dismissed_update_version")
     }
 
     val serverUrl: Flow<String?> = context.dataStore.data.map { it[Keys.SERVER_URL] }
@@ -44,5 +45,15 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setShowDownloadedOnly(value: Boolean) {
         context.dataStore.edit { it[Keys.SHOW_DOWNLOADED_ONLY] = value }
+    }
+
+    /** GitHub tag of the newest release the user has already dismissed the update prompt for --
+     *  so the prompt doesn't reappear every launch for a version they've already said no to, but
+     *  still comes back once an even newer release ships. */
+    val lastDismissedUpdateVersion: Flow<String?> =
+        context.dataStore.data.map { it[Keys.LAST_DISMISSED_UPDATE_VERSION] }
+
+    suspend fun setLastDismissedUpdateVersion(version: String) {
+        context.dataStore.edit { it[Keys.LAST_DISMISSED_UPDATE_VERSION] = version }
     }
 }

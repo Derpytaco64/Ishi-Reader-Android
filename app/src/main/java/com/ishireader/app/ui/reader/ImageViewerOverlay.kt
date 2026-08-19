@@ -3,6 +3,7 @@ package com.ishireader.app.ui.reader
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.ishireader.app.reader.TappedImage
@@ -52,6 +54,10 @@ fun ImageViewerOverlay(image: TappedImage, onClose: () -> Unit) {
         offset = if (newScale <= 1f) Offset.Zero else offset + panChange * newScale
     }
 
+    // Double tap toggles between fit and a fixed zoom level, same gesture either way -- tap once
+    // to zoom in centered on the tap point, tap again anywhere to snap back out.
+    val doubleTapScale = 3f
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -70,6 +76,20 @@ fun ImageViewerOverlay(image: TappedImage, onClose: () -> Unit) {
                     translationY = offset.y
                 )
                 .transformable(transformState)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = { tapPoint ->
+                            if (scale > 1f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                val center = Offset(size.width / 2f, size.height / 2f)
+                                scale = doubleTapScale
+                                offset = (center - tapPoint) * doubleTapScale
+                            }
+                        }
+                    )
+                }
         )
         IconButton(
             onClick = onClose,

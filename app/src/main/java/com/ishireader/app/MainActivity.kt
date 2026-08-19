@@ -11,6 +11,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -20,8 +23,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.GithubRelease
 import com.ishireader.app.data.model.ThemeMode
 import com.ishireader.app.data.model.manifestUrl
+import com.ishireader.app.data.network.ApiResult
+import com.ishireader.app.data.repository.isNewerVersion
 import com.ishireader.app.audiobook.AudiobookPlayerActivity
 import com.ishireader.app.reader.ReaderActivity
 import com.ishireader.app.ui.admin.AdminScreen
@@ -36,6 +42,7 @@ import com.ishireader.app.ui.login.LoginViewModel
 import com.ishireader.app.ui.common.BookAvailability
 import com.ishireader.app.ui.common.LocalBookAvailability
 import com.ishireader.app.ui.common.LocalReadingProgress
+import com.ishireader.app.ui.common.UpdateAvailableDialog
 import com.ishireader.app.ui.main.MainTabsScreen
 import com.ishireader.app.ui.main.TopBarViewModel
 import com.ishireader.app.ui.series.SeriesViewModel
@@ -45,6 +52,7 @@ import com.ishireader.app.ui.settings.SettingsViewModel
 import com.ishireader.app.ui.settings.parseAccentColor
 import com.ishireader.app.ui.shelves.ShelvesViewModel
 import com.ishireader.app.ui.theme.IshiReaderTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val ROUTE_LOGIN = "login"
@@ -74,6 +82,24 @@ class MainActivity : ComponentActivity() {
             val downloadsVersion by app.bookDownloadRepository.downloadsVersion.collectAsState()
             val bookAvailability = BookAvailability(isOffline, downloadsVersion, app.bookDownloadRepository)
 
+            // Sideloaded app, no Play Store auto-update -- check GitHub's latest release once per
+            // process launch and nag only if it's newer than what's installed and the user hasn't
+            // already dismissed that same version.
+            var pendingUpdate by remember { mutableStateOf<GithubRelease?>(null) }
+            LaunchedEffect(Unit) {
+                val result = app.updateCheckRepository.latestRelease()
+                if (result is ApiResult.Success) {
+                    val release = result.data
+                    val currentVersion = packageManager.getPackageInfo(packageName, 0).versionName
+                    if (currentVersion != null &&
+                        isNewerVersion(release.tagName, currentVersion) &&
+                        app.preferences.lastDismissedUpdateVersion.first() != release.tagName
+                    ) {
+                        pendingUpdate = release
+                    }
+                }
+            }
+
             IshiReaderTheme(darkTheme = darkTheme, accentColor = parseAccentColor(settings.accentColor)) {
                 CompositionLocalProvider(
                     LocalAppSettings provides settings,
@@ -81,6 +107,20 @@ class MainActivity : ComponentActivity() {
                     LocalReadingProgress provides app.positionRepository
                 ) {
                     val navController = rememberNavController()
+
+                    pendingUpdate?.let { release ->
+                        UpdateAvailableDialog(
+                            release = release,
+                            onUpdate = {
+                                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl)))
+                                pendingUpdate = null
+                            },
+                            onDismiss = {
+                                lifecycleScope.launch { app.preferences.setLastDismissedUpdateVersion(release.tagName) }
+                                pendingUpdate = null
+                            }
+                        )
+                    }
 
                     NavHost(navController = navController, startDestination = ROUTE_LOGIN) {
                         composable(ROUTE_LOGIN) {

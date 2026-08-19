@@ -24,6 +24,7 @@ import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.PositionRepository
 import com.ishireader.app.data.repository.ReadingTimerRepository
 import com.ishireader.app.data.repository.StatsRepository
+import com.ishireader.app.data.repository.UpdateCheckRepository
 import com.ishireader.app.data.sync.IshiWorkerFactory
 import com.ishireader.app.data.sync.PositionReconciler
 import com.ishireader.app.data.sync.SyncScheduler
@@ -76,6 +77,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
     lateinit var bookMigrationRepository: BookMigrationRepository
         private set
     lateinit var exactPageCountRepository: ExactPageCountRepository
+        private set
+    lateinit var updateCheckRepository: UpdateCheckRepository
         private set
 
     override fun onCreate() {
@@ -143,6 +146,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         adminRepository = AdminRepository(network)
         bookMigrationRepository = BookMigrationRepository(network)
         exactPageCountRepository = ExactPageCountRepository(database.exactPageCountDao())
+        updateCheckRepository = UpdateCheckRepository()
 
         // CLAUDE-ADDED: So a downloaded-for-offline book shows real time/pace/sessions/annotations
         // without ever having been opened -- see LibraryMetadataPrefetcher's doc comment. The
