@@ -44,6 +44,36 @@ class SyncScheduler(private val context: Context) {
             .enqueueUniqueWork(LIBRARY_PREFS_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
     }
 
+    fun scheduleReadingTimerSync() {
+        val request = OneTimeWorkRequestBuilder<ReadingTimerSyncWorker>()
+            .setConstraints(connectedConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(READING_TIMER_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
+    fun scheduleAnnotationsSync() {
+        val request = OneTimeWorkRequestBuilder<AnnotationsSyncWorker>()
+            .setConstraints(connectedConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(ANNOTATIONS_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
+    fun scheduleListeningTimerSync() {
+        val request = OneTimeWorkRequestBuilder<ListeningTimerSyncWorker>()
+            .setConstraints(connectedConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(LISTENING_TIMER_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
     private fun connectedConstraints() = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
@@ -56,14 +86,20 @@ class SyncScheduler(private val context: Context) {
         val workManager = WorkManager.getInstance(context)
         return combine(
             workManager.getWorkInfosForUniqueWorkFlow(POSITION_SYNC_WORK_NAME),
-            workManager.getWorkInfosForUniqueWorkFlow(LIBRARY_PREFS_SYNC_WORK_NAME)
-        ) { position, prefs ->
-            (position + prefs).any { it.state == WorkInfo.State.RUNNING }
+            workManager.getWorkInfosForUniqueWorkFlow(LIBRARY_PREFS_SYNC_WORK_NAME),
+            workManager.getWorkInfosForUniqueWorkFlow(READING_TIMER_SYNC_WORK_NAME),
+            workManager.getWorkInfosForUniqueWorkFlow(ANNOTATIONS_SYNC_WORK_NAME),
+            workManager.getWorkInfosForUniqueWorkFlow(LISTENING_TIMER_SYNC_WORK_NAME)
+        ) { position, prefs, readingTimer, annotations, listeningTimer ->
+            (position + prefs + readingTimer + annotations + listeningTimer).any { it.state == WorkInfo.State.RUNNING }
         }
     }
 
     companion object {
         private const val POSITION_SYNC_WORK_NAME = "position-sync"
         private const val LIBRARY_PREFS_SYNC_WORK_NAME = "library-prefs-sync"
+        private const val READING_TIMER_SYNC_WORK_NAME = "reading-timer-sync"
+        private const val ANNOTATIONS_SYNC_WORK_NAME = "annotations-sync"
+        private const val LISTENING_TIMER_SYNC_WORK_NAME = "listening-timer-sync"
     }
 }

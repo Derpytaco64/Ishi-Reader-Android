@@ -4,9 +4,17 @@ import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
+import com.ishireader.app.data.local.AnnotationOutboxDao
 import com.ishireader.app.data.local.CachedLibraryPrefsDao
+import com.ishireader.app.data.local.DailyListeningBucketDao
+import com.ishireader.app.data.local.DailyReadingBucketDao
+import com.ishireader.app.data.local.ListeningTimeCacheDao
+import com.ishireader.app.data.local.PageCountCacheDao
 import com.ishireader.app.data.local.PendingLibraryPrefsPatchDao
 import com.ishireader.app.data.local.PositionDao
+import com.ishireader.app.data.local.ReadingSpeedSampleDao
+import com.ishireader.app.data.local.ReadingTimeCacheDao
+import com.ishireader.app.data.local.WordCountCacheDao
 import com.ishireader.app.data.network.NetworkModule
 
 /**
@@ -20,6 +28,14 @@ class IshiWorkerFactory(
     private val positionDao: PositionDao,
     private val cachedLibraryPrefsDao: CachedLibraryPrefsDao,
     private val pendingLibraryPrefsPatchDao: PendingLibraryPrefsPatchDao,
+    private val readingTimeDao: ReadingTimeCacheDao,
+    private val dailyReadingBucketDao: DailyReadingBucketDao,
+    private val readingSpeedSampleDao: ReadingSpeedSampleDao,
+    private val wordCountCacheDao: WordCountCacheDao,
+    private val pageCountCacheDao: PageCountCacheDao,
+    private val annotationOutboxDao: AnnotationOutboxDao,
+    private val listeningTimeDao: ListeningTimeCacheDao,
+    private val dailyListeningBucketDao: DailyListeningBucketDao,
     private val network: NetworkModule
 ) : WorkerFactory() {
 
@@ -32,6 +48,16 @@ class IshiWorkerFactory(
             PositionSyncWorker(appContext, workerParameters, positionDao, network)
         LibraryPrefsSyncWorker::class.java.name ->
             LibraryPrefsSyncWorker(appContext, workerParameters, cachedLibraryPrefsDao, pendingLibraryPrefsPatchDao, network)
+        ReadingTimerSyncWorker::class.java.name ->
+            ReadingTimerSyncWorker(
+                appContext, workerParameters,
+                readingTimeDao, dailyReadingBucketDao, readingSpeedSampleDao, wordCountCacheDao, pageCountCacheDao,
+                network
+            )
+        AnnotationsSyncWorker::class.java.name ->
+            AnnotationsSyncWorker(appContext, workerParameters, annotationOutboxDao, network)
+        ListeningTimerSyncWorker::class.java.name ->
+            ListeningTimerSyncWorker(appContext, workerParameters, listeningTimeDao, dailyListeningBucketDao, network)
         else -> null
     }
 }

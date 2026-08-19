@@ -14,9 +14,21 @@ import androidx.room.RoomDatabase
         CachedUserEntity::class,
         PendingLibraryPrefsPatchEntity::class,
         ExactPageCountEntity::class,
-        ExactPercentEntity::class
+        ExactPercentEntity::class,
+        ReadingTimeCacheEntity::class,
+        DailyReadingBucketCacheEntity::class,
+        PendingDailyReadingBucketDeltaEntity::class,
+        ReadingSpeedSampleCacheEntity::class,
+        PendingReadingSpeedSamplesEntity::class,
+        WordCountCacheEntity::class,
+        PageCountCacheEntity::class,
+        AnnotationCacheEntity::class,
+        AnnotationOutboxEntity::class,
+        ListeningTimeCacheEntity::class,
+        DailyListeningBucketCacheEntity::class,
+        PendingDailyListeningBucketDeltaEntity::class
     ],
-    version = 6,
+    version = 8,
     exportSchema = false
 )
 abstract class IshiReaderDatabase : RoomDatabase() {
@@ -29,6 +41,15 @@ abstract class IshiReaderDatabase : RoomDatabase() {
     abstract fun pendingLibraryPrefsPatchDao(): PendingLibraryPrefsPatchDao
     abstract fun exactPageCountDao(): ExactPageCountDao
     abstract fun exactPercentDao(): ExactPercentDao
+    abstract fun readingTimeCacheDao(): ReadingTimeCacheDao
+    abstract fun dailyReadingBucketDao(): DailyReadingBucketDao
+    abstract fun readingSpeedSampleDao(): ReadingSpeedSampleDao
+    abstract fun wordCountCacheDao(): WordCountCacheDao
+    abstract fun pageCountCacheDao(): PageCountCacheDao
+    abstract fun annotationCacheDao(): AnnotationCacheDao
+    abstract fun annotationOutboxDao(): AnnotationOutboxDao
+    abstract fun listeningTimeCacheDao(): ListeningTimeCacheDao
+    abstract fun dailyListeningBucketDao(): DailyListeningBucketDao
 
     companion object {
         @Volatile

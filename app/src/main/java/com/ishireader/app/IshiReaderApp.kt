@@ -106,11 +106,26 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
             database.pendingLibraryPrefsPatchDao(),
             syncScheduler
         )
-        notesRepository = NotesRepository(network)
-        annotationsRepository = AnnotationsRepository(network)
+        notesRepository = NotesRepository(network, database.annotationCacheDao(), database.annotationOutboxDao(), syncScheduler)
+        annotationsRepository = AnnotationsRepository(network, database.annotationCacheDao(), database.annotationOutboxDao(), syncScheduler)
         completedReadsRepository = CompletedReadsRepository(network)
-        readingTimerRepository = ReadingTimerRepository(network)
-        listeningTimeRepository = ListeningTimeRepository(network)
+        readingTimerRepository = ReadingTimerRepository(
+            network,
+            database.readingTimeCacheDao(),
+            database.dailyReadingBucketDao(),
+            database.readingSpeedSampleDao(),
+            database.wordCountCacheDao(),
+            database.pageCountCacheDao(),
+            syncScheduler
+        )
+        listeningTimeRepository = ListeningTimeRepository(
+            network,
+            database.listeningTimeCacheDao(),
+            database.dailyListeningBucketDao(),
+            database.annotationCacheDao(),
+            database.annotationOutboxDao(),
+            syncScheduler
+        )
         statsRepository = StatsRepository(network, database.cachedUserStatsDao())
         adminRepository = AdminRepository(network)
         bookMigrationRepository = BookMigrationRepository(network)
@@ -136,6 +151,14 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
                     database.positionDao(),
                     database.cachedLibraryPrefsDao(),
                     database.pendingLibraryPrefsPatchDao(),
+                    database.readingTimeCacheDao(),
+                    database.dailyReadingBucketDao(),
+                    database.readingSpeedSampleDao(),
+                    database.wordCountCacheDao(),
+                    database.pageCountCacheDao(),
+                    database.annotationOutboxDao(),
+                    database.listeningTimeCacheDao(),
+                    database.dailyListeningBucketDao(),
                     network
                 )
             )

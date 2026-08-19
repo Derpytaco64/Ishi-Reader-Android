@@ -41,9 +41,11 @@ data class ReadingTimerUiState(
  * Ishi-Read repo) to a plain lifecycle-driven controller: [onResumed]/[onPaused] stand in for the
  * website's Page Visibility API gating (tab hidden == Activity not resumed), a 1-second ticker
  * accumulates active seconds only while resumed, and a 30-second cadence flushes to the server --
- * same PERSIST_INTERVAL_MS the website uses. Network-first, no local Room buffering (see
- * ReadingTimerRepository's doc comment) -- an unflushed partial 30s window can be lost if the
- * process dies, same fidelity as the website losing an unsaved beforeunload race.
+ * same PERSIST_INTERVAL_MS the website uses. [flush] hands the repository only what's changed
+ * since the last flush ([pendingBucketDeltas]/[pendingNewSpeedSamples]) rather than a whole
+ * snapshot -- ReadingTimerRepository is local-first and durably queues/merges every write (see
+ * its doc comment), so an unflushed partial 30s window survives a process death and a session that
+ * starts offline can no longer clobber real history once connectivity returns.
  */
 class ReadingTimerTracker(
     private val scope: CoroutineScope,
@@ -67,6 +69,16 @@ class ReadingTimerTracker(
     private var lastSampleSeconds: Double = 0.0
     private val speedSamples = mutableListOf<ReadingSpeedSample>()
     private val dailyBuckets = linkedMapOf<String, DailyReadingBucket>()
+
+    /** Increments not yet handed to the repository -- cleared after each [flush]/[reset], separate
+     *  from [dailyBuckets] (the full local view) and [speedSamples] (the full local WPM buffer) so
+     *  only what's actually new goes over the wire. The repository does its own GET-merge-POST
+     *  against the server before ever writing (see ReadingTimerReconciler), so sending a delta
+     *  instead of the whole snapshot is what stops a session that started offline -- and so seeded
+     *  these from an empty/zeroed read -- from clobbering real history once a flush finally
+     *  reaches the server. */
+    private val pendingBucketDeltas = linkedMapOf<String, DailyReadingBucket>()
+    private val pendingNewSpeedSamples = mutableListOf<ReadingSpeedSample>()
 
     private var tickerJob: Job? = null
     private var tickCount = 0
@@ -161,9 +173,25 @@ class ReadingTimerTracker(
         lastSampleSeconds = nowSeconds
         lastTotalProgression = null
 
-        val dateKey = LocalDate.now().toString()
+        creditBucket(LocalDate.now().toString(), seconds = danglingSeconds)
+    }
+
+    /** Applies one increment to both [dailyBuckets] (the full local view) and [pendingBucketDeltas]
+     *  (what's still owed to the repository) in lockstep, so the two can never drift apart. */
+    private fun creditBucket(dateKey: String, seconds: Double = 0.0, words: Double = 0.0, progressionDelta: Double = 0.0) {
         val existing = dailyBuckets[dateKey] ?: DailyReadingBucket(date = dateKey)
-        dailyBuckets[dateKey] = existing.copy(seconds = existing.seconds + danglingSeconds)
+        dailyBuckets[dateKey] = existing.copy(
+            seconds = existing.seconds + seconds,
+            words = existing.words + words,
+            progressionDelta = existing.progressionDelta + progressionDelta
+        )
+
+        val pending = pendingBucketDeltas[dateKey] ?: DailyReadingBucket(date = dateKey)
+        pendingBucketDeltas[dateKey] = pending.copy(
+            seconds = pending.seconds + seconds,
+            words = pending.words + words,
+            progressionDelta = pending.progressionDelta + progressionDelta
+        )
     }
 
     private fun tick() {
@@ -180,9 +208,16 @@ class ReadingTimerTracker(
 
     private suspend fun flush() {
         if (!::manifestUrl.isInitialized) return
-        repository.setReadingTimeSeconds(manifestUrl, _state.value.accumulatedSeconds)
-        repository.setDailyReadingHistory(manifestUrl, dailyBuckets.values.toList())
-        repository.setReadingSpeedSamples(speedSamples)
+        repository.syncReadingTimeSeconds(manifestUrl, _state.value.accumulatedSeconds)
+
+        if (pendingBucketDeltas.isNotEmpty()) {
+            repository.addDailyReadingHistoryDelta(manifestUrl, pendingBucketDeltas.values.toList())
+            pendingBucketDeltas.clear()
+        }
+        if (pendingNewSpeedSamples.isNotEmpty()) {
+            repository.addReadingSpeedSamples(pendingNewSpeedSamples.toList())
+            pendingNewSpeedSamples.clear()
+        }
     }
 
     /** Feed every navigator locator change -- mirrors notifyLocatorChanged/computeReadingSpeed.ts.
@@ -241,16 +276,17 @@ class ReadingTimerTracker(
         }
 
         if (acceptedSample) {
-            speedSamples.add(ReadingSpeedSample(deltaWords, deltaSeconds, System.currentTimeMillis().toDouble()))
+            val sample = ReadingSpeedSample(deltaWords, deltaSeconds, System.currentTimeMillis().toDouble())
+            speedSamples.add(sample)
+            pendingNewSpeedSamples.add(sample)
             while (speedSamples.size > MAX_SPEED_SAMPLES) speedSamples.removeAt(0)
         }
 
-        val dateKey = LocalDate.now().toString()
-        val existing = dailyBuckets[dateKey] ?: DailyReadingBucket(date = dateKey)
-        dailyBuckets[dateKey] = existing.copy(
-            seconds = existing.seconds + deltaSeconds,
-            words = existing.words + deltaWords,
-            progressionDelta = existing.progressionDelta + (if (acceptedSample) deltaProgression else 0.0)
+        creditBucket(
+            LocalDate.now().toString(),
+            seconds = deltaSeconds,
+            words = deltaWords,
+            progressionDelta = if (acceptedSample) deltaProgression else 0.0
         )
 
         val wpm = computeCurrentWpm(speedSamples, source = "onLocatorChanged.sample")
@@ -277,13 +313,14 @@ class ReadingTimerTracker(
         }
 
         dailyBuckets.clear()
+        pendingBucketDeltas.clear()
         lastSampleSeconds = 0.0
         _state.value = _state.value.copy(
             accumulatedSeconds = 0.0,
             secondsLeft = computeSecondsLeft(wordCount, computeCurrentWpm(speedSamples, source = "reset"), lastTotalProgression)
         )
-        repository.setReadingTimeSeconds(manifestUrl, 0.0)
-        repository.setDailyReadingHistory(manifestUrl, emptyList())
+        repository.resetReadingTimeSeconds(manifestUrl)
+        repository.resetDailyReadingHistory(manifestUrl)
 
         val completedReads = completedReadsRepository.getCompletedReadTimes(manifestUrl).dataOrNull() ?: emptyList()
         _state.value = _state.value.copy(completedReads = completedReads.sortedByDescending { it.completedAt })

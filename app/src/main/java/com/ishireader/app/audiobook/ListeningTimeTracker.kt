@@ -21,6 +21,11 @@ data class ListeningTimeUiState(
  * AudiobookPlayerViewModel's Player.Listener. Elapsed time is measured by wall-clock delta between
  * ticks (not "+1 per tick"), the same reasoning the website's own comment gives: a backgrounded
  * process still needs correct elapsed time even if the ticker itself gets throttled or coalesced.
+ *
+ * [flush] hands the repository only what's changed since the last flush ([pendingBucketDeltas])
+ * rather than a whole snapshot -- ListeningTimeRepository is local-first and durably queues/merges
+ * every write (see ListeningTimerReconciler's doc comment), mirroring ReadingTimerTracker's own fix
+ * for the identical whole-overwrite data-loss bug.
  */
 class ListeningTimeTracker(
     private val scope: CoroutineScope,
@@ -46,6 +51,10 @@ class ListeningTimeTracker(
     private var lastPersistMs: Long = 0L
     private var lastProgression: Double? = null
     private val dailyBuckets = linkedMapOf<String, DailyListeningBucket>()
+
+    /** Increments not yet handed to the repository -- cleared after each [flush]/[completeListen],
+     *  separate from [dailyBuckets] (the full local view). See the class doc comment. */
+    private val pendingBucketDeltas = linkedMapOf<String, DailyListeningBucket>()
 
     suspend fun start(manifestUrl: String) {
         this.manifestUrl = manifestUrl
@@ -100,13 +109,25 @@ class ListeningTimeTracker(
         if (progression != null) lastProgression = progression
 
         val dateKey = LocalDate.now().toString()
-        val existing = dailyBuckets[dateKey] ?: DailyListeningBucket(date = dateKey)
         val deltaProgression = if (progression != null && previous != null) progression - previous else 0.0
         val acceptedDelta = if (deltaProgression in 0.0..JUMP_DISCARD_THRESHOLD) deltaProgression else 0.0
 
+        creditBucket(dateKey, elapsedSeconds, acceptedDelta)
+    }
+
+    /** Applies one increment to both [dailyBuckets] (the full local view) and [pendingBucketDeltas]
+     *  (what's still owed to the repository) in lockstep, so the two can never drift apart. */
+    private fun creditBucket(dateKey: String, seconds: Double, progressionDelta: Double) {
+        val existing = dailyBuckets[dateKey] ?: DailyListeningBucket(date = dateKey)
         dailyBuckets[dateKey] = existing.copy(
-            seconds = existing.seconds + elapsedSeconds,
-            progressionDelta = existing.progressionDelta + acceptedDelta
+            seconds = existing.seconds + seconds,
+            progressionDelta = existing.progressionDelta + progressionDelta
+        )
+
+        val pending = pendingBucketDeltas[dateKey] ?: DailyListeningBucket(date = dateKey)
+        pendingBucketDeltas[dateKey] = pending.copy(
+            seconds = pending.seconds + seconds,
+            progressionDelta = pending.progressionDelta + progressionDelta
         )
     }
 
@@ -121,10 +142,11 @@ class ListeningTimeTracker(
         if (!::manifestUrl.isInitialized) return
         val seconds = state.accumulatedSeconds
         val started = startedAt
-        val buckets = dailyBuckets.values.toList()
+        val deltas = pendingBucketDeltas.values.toList()
+        pendingBucketDeltas.clear()
         scope.launch {
-            repository.setListeningTime(manifestUrl, seconds, started)
-            repository.setDailyListeningHistory(manifestUrl, buckets)
+            repository.syncListeningTime(manifestUrl, seconds, started)
+            if (deltas.isNotEmpty()) repository.addDailyListeningHistoryDelta(manifestUrl, deltas)
         }
     }
 
@@ -145,11 +167,13 @@ class ListeningTimeTracker(
         state = state.copy(completedListens = listOf(item) + state.completedListens)
         startedAt = null
         dailyBuckets.clear()
+        pendingBucketDeltas.clear()
         lastProgression = null
+        val seconds = state.accumulatedSeconds
         scope.launch {
             repository.saveCompletedListen(manifestUrl, item)
-            repository.setListeningTime(manifestUrl, state.accumulatedSeconds, null)
-            repository.setDailyListeningHistory(manifestUrl, emptyList())
+            repository.syncListeningTime(manifestUrl, seconds, null)
+            repository.resetDailyListeningHistory(manifestUrl)
         }
     }
 

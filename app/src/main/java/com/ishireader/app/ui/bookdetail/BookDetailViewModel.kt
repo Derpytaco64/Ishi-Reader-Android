@@ -255,8 +255,8 @@ class BookDetailViewModel(
                 completedReadsRepository.saveCompletedReadTime(manifestUrl, item)
             }
 
-            readingTimerRepository.setReadingTimeSeconds(manifestUrl, 0.0)
-            readingTimerRepository.setDailyReadingHistory(manifestUrl, emptyList())
+            readingTimerRepository.resetReadingTimeSeconds(manifestUrl)
+            readingTimerRepository.resetDailyReadingHistory(manifestUrl)
             refresh()
         }
     }
