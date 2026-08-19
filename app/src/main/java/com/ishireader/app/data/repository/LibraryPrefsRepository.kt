@@ -13,6 +13,8 @@ import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.NetworkModule
 import com.ishireader.app.data.sync.SyncScheduler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -60,6 +62,15 @@ private data class SettingsFields(
  * device and pushed by [com.ishireader.app.data.sync.LibraryPrefsSyncWorker] once connectivity
  * returns. A live push still happens inline when possible so the common case doesn't wait on
  * WorkManager's scheduling latency.
+ *
+ * [outboxMutex] serializes every read-patch-push-clear cycle against the pending-patch outbox row,
+ * shared with [com.ishireader.app.data.sync.LibraryPrefsSyncWorker]: without it, a worker run could
+ * capture the pending patch, lose a race with a newer inline [patchPrefs] call that pushes and
+ * clears the outbox first, then push its own now-stale (smaller) patch afterward -- since
+ * customShelves/shelfOrder/etc. are always sent as a full-value replace rather than a diff, that
+ * stale push would silently overwrite the newer edit back out on the server (and back into the
+ * local cache on the worker's post-success re-merge), e.g. wiping a shelf that was added in that
+ * window.
  */
 class LibraryPrefsRepository(
     private val network: NetworkModule,
@@ -168,12 +179,12 @@ class LibraryPrefsRepository(
      *  instead of leaving it stuck behind a newer one. Any failure (network or server) leaves the
      *  outbox row in place and hands off to [SyncScheduler.scheduleLibraryPrefsSync] for retry;
      *  from the caller's perspective that's still a success, since the edit is safely saved. */
-    private suspend fun patchPrefs(patch: JsonObject): ApiResult<Unit> {
+    private suspend fun patchPrefs(patch: JsonObject): ApiResult<Unit> = outboxMutex.withLock {
         cachedLibraryPrefsDao.set(CachedLibraryPrefsEntity(prefsJson = JsonObject(readCachedPrefsBlob() + patch).toString()))
         val pending = JsonObject(readPendingPatch() + patch)
         pendingPatchDao.set(PendingLibraryPrefsPatchEntity(patchJson = pending.toString()))
 
-        return try {
+        try {
             val response = network.api.patchLibraryPrefs(pending)
             if (response.isSuccessful) {
                 pendingPatchDao.clear()
@@ -186,5 +197,10 @@ class LibraryPrefsRepository(
             syncScheduler.scheduleLibraryPrefsSync()
             ApiResult.Success(Unit)
         }
+    }
+
+    companion object {
+        /** Shared with [com.ishireader.app.data.sync.LibraryPrefsSyncWorker] -- see class doc. */
+        val outboxMutex = Mutex()
     }
 }
