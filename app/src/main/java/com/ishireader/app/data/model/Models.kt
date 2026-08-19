@@ -303,6 +303,14 @@ data class OrphanedUserData(
 @Serializable
 data class OrphanedDataReport(val users: List<OrphanedUserData> = emptyList(), val totalFiles: Int = 0)
 
+/** Recover-instead-of-delete counterpart to the orphaned-data cleanup above -- carries one
+ *  orphaned book's UserData (identified by [sourceHash], scoped to [userId]) onto a live library
+ *  entry via [destManifestUrl]. See api/admin/orphaned-data/migrate/route.ts. Admin-only, unlike
+ *  [MigrateBookDataRequest]'s self-service version, since sourceHash belongs to another user's
+ *  UserData dir. */
+@Serializable
+data class MigrateOrphanedDataRequest(val userId: String, val sourceHash: String, val destManifestUrl: String)
+
 /** /api/admin/reading-speed-samples' DELETE response -- how many users' rolling WPM buffers got
  *  cleared. */
 @Serializable

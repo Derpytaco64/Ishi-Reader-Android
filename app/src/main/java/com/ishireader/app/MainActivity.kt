@@ -148,7 +148,7 @@ class MainActivity : ComponentActivity() {
                         }
                         composable(ROUTE_ADMIN) {
                             val adminViewModel: AdminViewModel = viewModel(
-                                factory = AdminViewModel.Factory(app.adminRepository)
+                                factory = AdminViewModel.Factory(app.adminRepository, app.libraryRepository)
                             )
                             val adminTopBarViewModel: TopBarViewModel = viewModel(
                                 factory = TopBarViewModel.Factory(app.authRepository)

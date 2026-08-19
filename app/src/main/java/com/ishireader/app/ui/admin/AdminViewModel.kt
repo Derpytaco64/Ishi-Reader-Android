@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.AdminUser
+import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.OrphanedDataReport
+import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.dataOrNull
 import com.ishireader.app.data.repository.AdminRepository
+import com.ishireader.app.data.repository.LibraryRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
@@ -68,6 +71,18 @@ data class AdminUiState(
     val deletedOrphanedReport: OrphanedDataReport? = null,
     val pendingDeleteOrphaned: Boolean = false,
 
+    /** Non-null while a given orphaned row's destination-book picker is expanded -- only one row
+     *  can be open at a time. */
+    val migrateOrphanTarget: OrphanMigrateTarget? = null,
+    /** Null until the picker is first opened (lazy-loaded, then shared across every row for the
+     *  rest of this screen's lifetime) -- distinct from an empty list, which means "loaded, no
+     *  books in the library." */
+    val migrateLibraryBooks: List<Book>? = null,
+    /** Book picked from [migrateLibraryBooks], awaiting the overwrite confirmation dialog. */
+    val pendingMigrateOrphanDest: Book? = null,
+    val isMigratingOrphan: Boolean = false,
+    val migrateOrphanError: String? = null,
+
     val isClearingSpeedSamples: Boolean = false,
     val speedSamplesError: String? = null,
     val clearedSpeedSamplesCount: Int? = null,
@@ -76,11 +91,19 @@ data class AdminUiState(
 
 private const val MIN_PASSWORD_LENGTH = 8
 
+/** Identifies which orphaned book row's "Migrate to a live book" picker is currently open --
+ *  [userId]/[hash] are what the eventual migrate call needs, [title] is only for the confirm
+ *  dialog's copy. */
+data class OrphanMigrateTarget(val userId: String, val hash: String, val title: String?)
+
 /** Reimplements AdminPageClient.tsx: user management (list/create/rename/toggle admin/reset
  *  password/unlock/disable/delete) plus the admin-only server-config and login-appearance
  *  settings. Skips the site's 30s active-status polling -- this screen is opened occasionally,
  *  not left running in a background tab. */
-class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
+class AdminViewModel(
+    private val repository: AdminRepository,
+    private val libraryRepository: LibraryRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AdminUiState())
     val uiState: StateFlow<AdminUiState> = _uiState.asStateFlow()
@@ -415,6 +438,66 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
         }
     }
 
+    // --- Orphaned data migration (recover-instead-of-delete) -----------------------------------
+
+    /** Opens the destination-book picker for one orphaned row -- lazy-loads the library on first
+     *  use, then reuses it for every subsequent row this screen instance opens. */
+    fun openMigrateOrphan(userId: String, hash: String, title: String?) {
+        _uiState.value = _uiState.value.copy(
+            migrateOrphanTarget = OrphanMigrateTarget(userId, hash, title),
+            pendingMigrateOrphanDest = null,
+            migrateOrphanError = null
+        )
+        if (_uiState.value.migrateLibraryBooks == null) {
+            viewModelScope.launch {
+                when (val result = libraryRepository.fetchBooks()) {
+                    is ApiResult.Success -> _uiState.value = _uiState.value.copy(migrateLibraryBooks = result.data)
+                    is ApiResult.Failure -> _uiState.value = _uiState.value.copy(migrateLibraryBooks = emptyList())
+                }
+            }
+        }
+    }
+
+    fun closeMigrateOrphan() {
+        _uiState.value = _uiState.value.copy(
+            migrateOrphanTarget = null,
+            pendingMigrateOrphanDest = null,
+            migrateOrphanError = null
+        )
+    }
+
+    fun pickMigrateOrphanDest(book: Book) {
+        _uiState.value = _uiState.value.copy(pendingMigrateOrphanDest = book)
+    }
+
+    fun cancelMigrateOrphanDest() {
+        _uiState.value = _uiState.value.copy(pendingMigrateOrphanDest = null)
+    }
+
+    fun confirmMigrateOrphan() {
+        val target = _uiState.value.migrateOrphanTarget ?: return
+        val dest = _uiState.value.pendingMigrateOrphanDest ?: return
+
+        _uiState.value = _uiState.value.copy(isMigratingOrphan = true, migrateOrphanError = null)
+        viewModelScope.launch {
+            when (val result = repository.migrateOrphanedData(target.userId, target.hash, dest.manifestUrl())) {
+                is ApiResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        isMigratingOrphan = false,
+                        migrateOrphanTarget = null,
+                        pendingMigrateOrphanDest = null
+                    )
+                    scanOrphanedData()
+                }
+                is ApiResult.Failure -> _uiState.value = _uiState.value.copy(
+                    isMigratingOrphan = false,
+                    pendingMigrateOrphanDest = null,
+                    migrateOrphanError = result.message
+                )
+            }
+        }
+    }
+
     // --- Reading speed samples -----------------------------------------------------------------
 
     fun requestClearSpeedSamples() {
@@ -440,9 +523,12 @@ class AdminViewModel(private val repository: AdminRepository) : ViewModel() {
         }
     }
 
-    class Factory(private val repository: AdminRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: AdminRepository,
+        private val libraryRepository: LibraryRepository
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            AdminViewModel(repository) as T
+            AdminViewModel(repository, libraryRepository) as T
     }
 }

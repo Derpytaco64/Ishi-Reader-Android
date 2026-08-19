@@ -32,6 +32,7 @@ import com.ishireader.app.data.model.LoginResponse
 import com.ishireader.app.data.model.LoginThemeModeField
 import com.ishireader.app.data.model.MeResponse
 import com.ishireader.app.data.model.MigrateBookDataRequest
+import com.ishireader.app.data.model.MigrateOrphanedDataRequest
 import com.ishireader.app.data.model.NoteUpsertRequest
 import com.ishireader.app.data.model.NotesResponse
 import com.ishireader.app.data.model.OrphanedDataReport
@@ -242,6 +243,9 @@ interface ApiService {
 
     @DELETE("api/admin/orphaned-data")
     suspend fun adminDeleteOrphanedData(): Response<OrphanedDataReport>
+
+    @POST("api/admin/orphaned-data/migrate")
+    suspend fun adminMigrateOrphanedData(@Body request: MigrateOrphanedDataRequest): Response<Unit>
 
     @DELETE("api/admin/reading-speed-samples")
     suspend fun adminClearReadingSpeedSamples(): Response<ClearedSpeedSamplesResponse>

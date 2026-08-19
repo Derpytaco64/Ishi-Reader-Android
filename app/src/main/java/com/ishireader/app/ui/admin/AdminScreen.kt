@@ -55,6 +55,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.AdminUser
+import com.ishireader.app.ui.main.BookPickerList
 import com.ishireader.app.ui.settings.ColorWheelPicker
 import com.ishireader.app.ui.settings.parseAccentColor
 import com.ishireader.app.ui.settings.toHex
@@ -206,6 +207,29 @@ fun AdminScreen(
             text = { Text("Delete $totalFiles orphaned data file(s) across $userCount user(s)? This can't be undone.") },
             confirmButton = { TextButton(onClick = viewModel::confirmDeleteOrphanedData) { Text("Delete") } },
             dismissButton = { TextButton(onClick = viewModel::cancelDeleteOrphanedData) { Text("Cancel") } }
+        )
+    }
+
+    state.pendingMigrateOrphanDest?.let { destBook ->
+        val sourceTitle = state.migrateOrphanTarget?.title ?: "this orphaned data"
+        AlertDialog(
+            onDismissRequest = viewModel::cancelMigrateOrphanDest,
+            title = { Text("Migrate orphaned data?") },
+            text = {
+                Text(
+                    "Migrate \"$sourceTitle\" onto \"${destBook.title}\"? This overwrites " +
+                        "\"${destBook.title}\"'s existing progress, reading time, and annotations. " +
+                        "This can't be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmMigrateOrphan, enabled = !state.isMigratingOrphan) {
+                    Text(if (state.isMigratingOrphan) "Migrating…" else "Migrate")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelMigrateOrphanDest, enabled = !state.isMigratingOrphan) { Text("Cancel") }
+            }
         )
     }
 
@@ -396,6 +420,15 @@ private fun OrphanedDataSection(state: AdminUiState, viewModel: AdminViewModel) 
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            TextButton(
+                                onClick = { viewModel.openMigrateOrphan(user.userId, book.hash, book.title) },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("Migrate to a live book", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (state.migrateOrphanTarget?.userId == user.userId && state.migrateOrphanTarget?.hash == book.hash) {
+                                OrphanMigratePicker(state = state, viewModel = viewModel)
+                            }
                         }
                     }
                 }
@@ -418,6 +451,35 @@ private fun OrphanedDataSection(state: AdminUiState, viewModel: AdminViewModel) 
                 style = MaterialTheme.typography.bodySmall
             )
         }
+    }
+}
+
+/** The destination-book picker opened by one orphaned row's "Migrate to a live book" button --
+ *  reuses [BookPickerList] from the Migrate Book Data sheet (same search-and-pick UX), just wired
+ *  to [AdminViewModel.pickMigrateOrphanDest] instead of that dialog's own step machinery. Picking a
+ *  book opens the overwrite-confirmation AlertDialog in [AdminScreen] rather than migrating
+ *  immediately. */
+@Composable
+private fun OrphanMigratePicker(state: AdminUiState, viewModel: AdminViewModel) {
+    val books = state.migrateLibraryBooks
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 8.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+            .padding(8.dp)
+    ) {
+        state.migrateOrphanError?.let { error ->
+            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+        if (books == null) {
+            Text("Loading library…", style = MaterialTheme.typography.bodySmall)
+        } else {
+            BookPickerList(books = books, excludeUrl = null, onPick = viewModel::pickMigrateOrphanDest)
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        TextButton(onClick = viewModel::closeMigrateOrphan) { Text("Cancel") }
     }
 }
 

@@ -5,6 +5,7 @@ import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.CreateUserRequest
 import com.ishireader.app.data.model.LoginAccentColorField
 import com.ishireader.app.data.model.LoginThemeModeField
+import com.ishireader.app.data.model.MigrateOrphanedDataRequest
 import com.ishireader.app.data.model.OrphanedDataReport
 import com.ishireader.app.data.model.ReadiumPortRequest
 import com.ishireader.app.data.model.ReadiumUrlField
@@ -68,6 +69,15 @@ class AdminRepository(private val network: NetworkModule) {
     suspend fun deleteOrphanedData(): ApiResult<OrphanedDataReport> = withContext(Dispatchers.IO) {
         runCatching { network.api.adminDeleteOrphanedData() }.toApiResult("delete orphaned data") { it }
     }
+
+    /** Recover-instead-of-delete counterpart to [deleteOrphanedData] -- carries one orphaned book's
+     *  UserData onto a live library entry. See api/admin/orphaned-data/migrate/route.ts. */
+    suspend fun migrateOrphanedData(userId: String, sourceHash: String, destManifestUrl: String): ApiResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                network.api.adminMigrateOrphanedData(MigrateOrphanedDataRequest(userId, sourceHash, destManifestUrl))
+            }.toApiResult("migrate orphaned data") {}
+        }
 
     suspend fun clearReadingSpeedSamples(): ApiResult<Int> = withContext(Dispatchers.IO) {
         runCatching { network.api.adminClearReadingSpeedSamples() }.toApiResult("clear WPM samples") { it.clearedCount }

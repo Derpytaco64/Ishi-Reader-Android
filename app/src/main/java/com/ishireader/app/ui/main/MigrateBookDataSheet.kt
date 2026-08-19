@@ -161,8 +161,10 @@ fun MigrateBookDataSheet(
     }
 }
 
+/** Shared with the admin "Migrate to a live book" orphaned-data picker (see AdminScreen.kt) --
+ *  same search-and-pick UX either way, just a different destination action once picked. */
 @Composable
-private fun BookPickerList(books: List<Book>, excludeUrl: String?, onPick: (Book) -> Unit) {
+fun BookPickerList(books: List<Book>, excludeUrl: String?, onPick: (Book) -> Unit) {
     var query by remember { mutableStateOf("") }
     val filtered = remember(books, excludeUrl, query) {
         books.filter { book ->
