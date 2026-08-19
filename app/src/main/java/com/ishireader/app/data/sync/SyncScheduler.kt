@@ -3,9 +3,11 @@ package com.ishireader.app.data.sync
 import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.flow.Flow
@@ -74,6 +76,32 @@ class SyncScheduler(private val context: Context) {
             .enqueueUniqueWork(LISTENING_TIMER_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
     }
 
+    /** One-shot: enqueued right after a book finishes downloading and once at app startup -- see
+     *  [LibraryMetadataSyncWorker]'s doc comment. [ExistingWorkPolicy.KEEP] so downloading several
+     *  books in a row coalesces into whichever run picks up last, same reasoning as every other
+     *  schedule* method here. */
+    fun scheduleLibraryMetadataSync() {
+        val request = OneTimeWorkRequestBuilder<LibraryMetadataSyncWorker>()
+            .setConstraints(connectedConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(LIBRARY_METADATA_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
+    /** Standing background refresh so a downloaded-but-never-reopened book still picks up
+     *  progress made elsewhere. [ExistingPeriodicWorkPolicy.KEEP] -- call every app startup, it's
+     *  a no-op once already registered. */
+    fun ensureLibraryMetadataPeriodicSync() {
+        val request = PeriodicWorkRequestBuilder<LibraryMetadataSyncWorker>(12, TimeUnit.HOURS)
+            .setConstraints(connectedConstraints())
+            .build()
+
+        WorkManager.getInstance(context)
+            .enqueueUniquePeriodicWork(LIBRARY_METADATA_PERIODIC_SYNC_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+    }
+
     private fun connectedConstraints() = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
@@ -101,5 +129,7 @@ class SyncScheduler(private val context: Context) {
         private const val READING_TIMER_SYNC_WORK_NAME = "reading-timer-sync"
         private const val ANNOTATIONS_SYNC_WORK_NAME = "annotations-sync"
         private const val LISTENING_TIMER_SYNC_WORK_NAME = "listening-timer-sync"
+        private const val LIBRARY_METADATA_SYNC_WORK_NAME = "library-metadata-sync"
+        private const val LIBRARY_METADATA_PERIODIC_SYNC_WORK_NAME = "library-metadata-periodic-sync"
     }
 }

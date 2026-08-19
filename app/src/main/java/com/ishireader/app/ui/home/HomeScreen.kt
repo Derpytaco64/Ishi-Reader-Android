@@ -39,6 +39,7 @@ import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.CoverSize
 import com.ishireader.app.data.model.HomeShelfId
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.common.filterDownloadedOnly
 import com.ishireader.app.ui.settings.LocalAppSettings
 
 private val ProgressBarHeight = 4.dp
@@ -62,8 +63,15 @@ fun HomeScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val settings = LocalAppSettings.current
+    // CLAUDE-ADDED: Only-show-downloaded is a display filter, not a data filter -- isEmpty (which
+    // gates the loading/error states above) still reflects the real, unfiltered library so those
+    // states aren't confused with "everything got filtered out".
     val isEmpty = state.continueReading.isEmpty() && state.lastSeriesRead.isEmpty() &&
         state.recentlyAdded.isEmpty() && state.myLibrary.isEmpty()
+    val continueReading = state.continueReading.filterDownloadedOnly { it.book }
+    val lastSeriesRead = state.lastSeriesRead.filterDownloadedOnly()
+    val recentlyAdded = state.recentlyAdded.filterDownloadedOnly()
+    val myLibrary = state.myLibrary.filterDownloadedOnly()
 
     // CLAUDE-ADDED: No topBar at all -- an empty TopAppBar still reserves its default height,
     // leaving a blank bar in the same spot the redundant "Home" title used to sit. With no
@@ -99,30 +107,30 @@ fun HomeScreen(
                         settings.shelfOrder.forEach { shelfId ->
                             if (!settings.isShelfVisible(shelfId)) return@forEach
                             when (shelfId) {
-                                HomeShelfId.CONTINUE_READING -> if (state.continueReading.isNotEmpty()) {
+                                HomeShelfId.CONTINUE_READING -> if (continueReading.isNotEmpty()) {
                                     ContinueReadingCarousel(
-                                        items = state.continueReading,
+                                        items = continueReading,
                                         itemWidth = settings.coverSize.minWidthDp.dp,
                                         onBookClick = onBookClick,
                                         onBookLongClick = onBookLongClick,
                                         onDismiss = viewModel::dismissFromContinueReading
                                     )
                                 }
-                                HomeShelfId.LAST_SERIES_READ -> if (state.lastSeriesRead.isNotEmpty()) {
+                                HomeShelfId.LAST_SERIES_READ -> if (lastSeriesRead.isNotEmpty()) {
                                     ShelfCarousel(
                                         title = "Last Series Read",
-                                        books = state.lastSeriesRead,
+                                        books = lastSeriesRead,
                                         itemWidth = settings.coverSize.minWidthDp.dp,
                                         onBookClick = onBookClick,
                                         onBookLongClick = onBookLongClick,
                                         focusBookUrl = state.lastSeriesReadFocusUrl
                                     )
                                 }
-                                HomeShelfId.RECENTLY_ADDED -> if (state.recentlyAdded.isNotEmpty()) {
-                                    ShelfCarousel(title = "Recently Added", books = state.recentlyAdded, itemWidth = settings.coverSize.minWidthDp.dp, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
+                                HomeShelfId.RECENTLY_ADDED -> if (recentlyAdded.isNotEmpty()) {
+                                    ShelfCarousel(title = "Recently Added", books = recentlyAdded, itemWidth = settings.coverSize.minWidthDp.dp, onBookClick = onBookClick, onBookLongClick = onBookLongClick)
                                 }
-                                HomeShelfId.MY_LIBRARY -> if (state.myLibrary.isNotEmpty()) {
-                                    ShelfGrid(title = "My Library", items = state.myLibrary, columns = settings.coverSize.homeGridColumns) { book ->
+                                HomeShelfId.MY_LIBRARY -> if (myLibrary.isNotEmpty()) {
+                                    ShelfGrid(title = "My Library", items = myLibrary, columns = settings.coverSize.homeGridColumns) { book ->
                                         BookCoverCard(
                                             book = book,
                                             onClick = { onBookClick(book) },

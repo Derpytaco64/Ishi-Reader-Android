@@ -58,6 +58,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -99,6 +100,8 @@ import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.NotesRepository
 import com.ishireader.app.data.repository.StatsRepository
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.common.LocalDownloadedOnlyFilter
+import com.ishireader.app.ui.common.filterDownloadedOnly
 import com.ishireader.app.ui.home.HomeScreen
 import com.ishireader.app.ui.home.HomeViewModel
 import com.ishireader.app.ui.library.LibraryScreen
@@ -176,6 +179,7 @@ fun MainTabsScreen(
     val activeDownloads by app.bookDownloadRepository.activeDownloads.collectAsState()
     val isSyncingFlow = remember { app.syncScheduler.isSyncingFlow() }
     val isSyncing by isSyncingFlow.collectAsState(initial = false)
+    val showDownloadedOnly by app.preferences.showDownloadedOnly.collectAsState(initial = false)
 
     // CLAUDE-ADDED: Mirrors the website's StatefulLibrarySearch -- a plain client-side filter over
     // the whole already-fetched library (both ebooks and audiobooks, from Home's own My Library
@@ -193,7 +197,7 @@ fun MainTabsScreen(
                 book.series?.name?.contains(trimmedSearchQuery, ignoreCase = true) == true ||
                 book.tags.any { it.contains(trimmedSearchQuery, ignoreCase = true) }
         }
-    }
+    }.filterDownloadedOnly()
 
     // MainTabsScreen's composition is torn down and rebuilt fresh every time bookDetail is popped
     // back to this destination, so this fires on the very first visit and again on every return --
@@ -260,9 +264,22 @@ fun MainTabsScreen(
     fun downloadBook(book: Book) {
         scope.launch {
             when (val result = app.bookDownloadRepository.download(book.manifestUrl())) {
-                is ApiResult.Success -> Toast.makeText(context, "Downloaded \"${book.title}\"", Toast.LENGTH_SHORT).show()
+                is ApiResult.Success -> {
+                    Toast.makeText(context, "Downloaded \"${book.title}\"", Toast.LENGTH_SHORT).show()
+                    // CLAUDE-ADDED: So this book's time/pace/sessions/annotations are already
+                    // cached the moment it's downloaded, not just after it's opened once online --
+                    // see LibraryMetadataPrefetcher's doc comment.
+                    launch { app.libraryMetadataPrefetcher.prefetchOne(book) }
+                }
                 is ApiResult.Failure -> Toast.makeText(context, "Couldn't download: ${result.message}", Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    fun deleteAllDownloads() {
+        scope.launch {
+            withContext(Dispatchers.IO) { app.bookDownloadRepository.deleteAll() }
+            Toast.makeText(context, "Deleted all downloaded files", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -316,10 +333,18 @@ fun MainTabsScreen(
                 onAccentColorChange = settingsViewModel::setAccentColor,
                 onCoverSizeChange = settingsViewModel::setCoverSize,
                 onShelfVisibleChange = settingsViewModel::setShelfVisible,
-                onMoveShelf = settingsViewModel::moveShelf
+                onMoveShelf = settingsViewModel::moveShelf,
+                showDownloadedOnly = showDownloadedOnly,
+                onShowDownloadedOnlyChange = { value ->
+                    scope.launch { app.preferences.setShowDownloadedOnly(value) }
+                },
+                bookDownloadRepository = app.bookDownloadRepository,
+                downloadsVersion = downloadsVersion,
+                onDeleteAllDownloads = ::deleteAllDownloads
             )
         }
     ) {
+      CompositionLocalProvider(LocalDownloadedOnlyFilter provides showDownloadedOnly) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Filled with the app's own surface color and drawn behind the status bar/camera cutout
             // (background painted before statusBarsPadding shrinks the content inset), so the logo and
@@ -587,6 +612,7 @@ fun MainTabsScreen(
                 onDismiss = { isMigrateOpen = false }
             )
         }
+      }
     }
 }
 

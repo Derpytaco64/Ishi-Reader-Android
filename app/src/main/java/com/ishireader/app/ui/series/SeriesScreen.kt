@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.common.filterDownloadedOnly
 import com.ishireader.app.ui.settings.LocalAppSettings
 
 // CLAUDE-ADDED: Mirrors StatefulSeriesView.tsx's fan sizing ratios (fan height / offset / grid
@@ -69,6 +70,7 @@ fun SeriesScreen(
     val state by viewModel.uiState.collectAsState()
     val coverSize = LocalAppSettings.current.coverSize
     val selectedSlot = state.selectedSlot
+    val selectedBooks = state.selectedBooks.filterDownloadedOnly()
 
     if (state.selectedSeriesKey != null) {
         BackHandler(onBack = viewModel::clearSelection)
@@ -144,7 +146,7 @@ fun SeriesScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(state.selectedBooks) { book ->
+                            items(selectedBooks) { book ->
                                 BookCoverCard(
                                     book = book,
                                     onClick = { onBookClick(book) },

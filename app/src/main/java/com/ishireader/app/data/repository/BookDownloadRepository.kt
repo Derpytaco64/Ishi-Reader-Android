@@ -36,6 +36,10 @@ class BookDownloadRepository(
     private val booksDir: File
         get() = File(context.filesDir, "books").apply { mkdirs() }
 
+    /** Where downloaded book files actually live on disk -- surfaced read-only for the settings
+     *  drawer's "Downloaded files" section (see SettingsDrawerContent). */
+    val booksDirectory: File get() = booksDir
+
     /** Bumped on every successful download/delete -- isDownloaded() hits the filesystem, so
      *  BookCoverCard caches its result per book via remember() and needs something to key off of
      *  to know when to re-check (see LocalBookAvailability). The count itself is never read. */
@@ -61,6 +65,17 @@ class BookDownloadRepository(
     }
 
     fun isDownloaded(manifestUrl: String): Boolean = localFileFor(manifestUrl) != null
+
+    /** Same check as [isDownloaded], but for a whole list of books at once via a single directory
+     *  listing instead of one filesystem lookup per book -- used to back the "Only show downloaded
+     *  books" filter, where checking a full grid one book at a time would turn into an O(n^2) scan.
+     *  Caller is expected to run this off the main thread, same as [isDownloaded]. */
+    fun downloadedManifestUrls(manifestUrls: Collection<String>): Set<String> {
+        val presentKeys = booksDir.listFiles { file -> !file.name.endsWith(".part") }
+            ?.mapTo(mutableSetOf()) { it.name.substringBefore('.') }
+            ?: emptySet()
+        return manifestUrls.filterTo(mutableSetOf()) { keyFor(it) in presentKeys }
+    }
 
     /** Downloads to a ".part" temp file first, only exposing it under its real name once the
      *  transfer completes -- an interrupted download must never look like a usable local copy. */
@@ -98,6 +113,14 @@ class BookDownloadRepository(
     /** Frees local storage; the book is re-downloaded on next read. */
     fun delete(manifestUrl: String) {
         localFileFor(manifestUrl)?.delete()
+        _downloadsVersion.update { it + 1 }
+    }
+
+    /** Frees all local storage in one shot -- every downloaded book is re-downloaded on next read.
+     *  Leaves any in-flight ".part" file alone if a download is somehow still running concurrently;
+     *  [download] cleans up its own temp file on failure/cancellation. */
+    fun deleteAll() {
+        booksDir.listFiles { file -> !file.name.endsWith(".part") }?.forEach { it.delete() }
         _downloadsVersion.update { it + 1 }
     }
 

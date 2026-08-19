@@ -56,6 +56,7 @@ import androidx.compose.ui.zIndex
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.CustomShelf
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.common.filterDownloadedOnly
 import com.ishireader.app.ui.settings.LocalAppSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -127,7 +128,7 @@ fun ShelvesScreen(
                 selectedShelf == null -> ShelfOverviewList(shelves = state.shelves, allBooks = state.allBooks, viewModel = viewModel)
                 state.isManagingBooks -> ManageShelfBooksGrid(shelf = selectedShelf, allBooks = state.allBooks, viewModel = viewModel)
                 else -> ShelfDetailGrid(
-                    books = state.selectedShelfBooks,
+                    books = state.selectedShelfBooks.filterDownloadedOnly(),
                     onBookClick = onBookClick,
                     onBookLongClick = onBookLongClick
                 )

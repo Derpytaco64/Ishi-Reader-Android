@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -28,10 +30,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,11 +57,14 @@ import com.ishireader.app.data.model.AppSettings
 import com.ishireader.app.data.model.CoverSize
 import com.ishireader.app.data.model.HomeShelfId
 import com.ishireader.app.data.model.ThemeMode
+import com.ishireader.app.data.repository.BookDownloadRepository
 import com.ishireader.app.ui.theme.LocalDefaultAccentColor
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // CLAUDE-ADDED: The 12-stop hue ring the wheel's Canvas paints as a sweepGradient -- 13 stops so
 // the gradient closes exactly back to red (0/360deg) with no seam.
@@ -77,7 +86,12 @@ fun SettingsDrawerContent(
     onAccentColorChange: (String?) -> Unit,
     onCoverSizeChange: (CoverSize) -> Unit,
     onShelfVisibleChange: (HomeShelfId, Boolean) -> Unit,
-    onMoveShelf: (HomeShelfId, Int) -> Unit
+    onMoveShelf: (HomeShelfId, Int) -> Unit,
+    showDownloadedOnly: Boolean,
+    onShowDownloadedOnlyChange: (Boolean) -> Unit,
+    bookDownloadRepository: BookDownloadRepository,
+    downloadsVersion: Int,
+    onDeleteAllDownloads: () -> Unit
 ) {
     val context = LocalContext.current
     // CLAUDE-ADDED: Read off PackageManager instead of hardcoding the string here (or enabling the
@@ -110,6 +124,24 @@ fun SettingsDrawerContent(
                 }
             )
         }
+
+        // CLAUDE-ADDED: Local-only (per-device) filter, deliberately first in the drawer -- unlike
+        // every other setting here, it isn't synced to the server (the website has no concept of
+        // "downloaded" since it's always live). See AppPreferences.showDownloadedOnly.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Only show downloaded books",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f).padding(end = 8.dp)
+            )
+            Switch(checked = showDownloadedOnly, onCheckedChange = onShowDownloadedOnlyChange)
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
         SectionLabel("Theme")
         Row(
@@ -183,7 +215,82 @@ fun SettingsDrawerContent(
                 }
             }
         }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+        DownloadedFilesSection(bookDownloadRepository, downloadsVersion, onDeleteAllDownloads)
     }
+}
+
+/** Local-storage info + a destructive bulk-delete, both device-specific like the toggle above --
+ *  the website has no equivalent since it never stores book files locally. File count/size are
+ *  recomputed with a single directory listing on every [downloadsVersion] bump (same invalidation
+ *  signal BookCoverCard's dimming uses) rather than polled, since that's the only thing that can
+ *  change them. */
+@Composable
+private fun DownloadedFilesSection(
+    bookDownloadRepository: BookDownloadRepository,
+    downloadsVersion: Int,
+    onDeleteAllDownloads: () -> Unit
+) {
+    var fileCount by remember { mutableStateOf(0) }
+    var totalBytes by remember { mutableStateOf(0L) }
+    LaunchedEffect(downloadsVersion) {
+        val files = withContext(Dispatchers.IO) {
+            bookDownloadRepository.booksDirectory
+                .listFiles { file -> !file.name.endsWith(".part") }
+                .orEmpty()
+        }
+        fileCount = files.size
+        totalBytes = files.sumOf { it.length() }
+    }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    SectionLabel("Downloaded files")
+    Text(
+        text = bookDownloadRepository.booksDirectory.absolutePath,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp)
+    )
+    Text(
+        text = "$fileCount file${if (fileCount == 1) "" else "s"} (${formatFileSize(totalBytes)})",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)
+    )
+    TextButton(
+        onClick = { showDeleteConfirm = true },
+        enabled = fileCount > 0,
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+        modifier = Modifier.padding(horizontal = 12.dp)
+    ) {
+        Text("Delete All Downloaded Files")
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete all downloaded files?") },
+            text = { Text("Every locally downloaded book file on this device will be removed. Your library is unaffected -- books can be re-downloaded any time.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDeleteAllDownloads()
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1_073_741_824L -> "%.1f GB".format(bytes / 1_073_741_824.0)
+    bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0)
+    bytes >= 1_024L -> "%.1f KB".format(bytes / 1_024.0)
+    else -> "$bytes B"
 }
 
 @Composable

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.SortMode
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.common.filterDownloadedOnly
 import com.ishireader.app.ui.settings.LocalAppSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +48,7 @@ fun LibraryScreen(
     val state by viewModel.uiState.collectAsState()
     val coverSize = LocalAppSettings.current.coverSize
     var sortMenuExpanded by remember { mutableStateOf(false) }
+    val books = state.books.filterDownloadedOnly()
 
     Scaffold(
         topBar = {
@@ -111,7 +113,7 @@ fun LibraryScreen(
                             modifier = Modifier.align(Alignment.Center).padding(24.dp)
                         )
                     }
-                    state.books.isEmpty() -> {
+                    books.isEmpty() -> {
                         Text(
                             text = if (state.tab == LibraryTab.AUDIOBOOKS) "No audiobooks yet" else "No books yet",
                             modifier = Modifier.align(Alignment.Center).padding(24.dp)
@@ -125,7 +127,7 @@ fun LibraryScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(state.books) { book ->
+                            items(books) { book ->
                                 BookCoverCard(
                                     book = book,
                                     onClick = { onBookClick(book) },

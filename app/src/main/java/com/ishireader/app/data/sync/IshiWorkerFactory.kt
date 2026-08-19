@@ -16,6 +16,7 @@ import com.ishireader.app.data.local.ReadingSpeedSampleDao
 import com.ishireader.app.data.local.ReadingTimeCacheDao
 import com.ishireader.app.data.local.WordCountCacheDao
 import com.ishireader.app.data.network.NetworkModule
+import com.ishireader.app.data.repository.LibraryMetadataPrefetcher
 
 /**
  * Workers that need real dependencies (a DAO, the network client) can't rely on WorkManager's
@@ -36,6 +37,7 @@ class IshiWorkerFactory(
     private val annotationOutboxDao: AnnotationOutboxDao,
     private val listeningTimeDao: ListeningTimeCacheDao,
     private val dailyListeningBucketDao: DailyListeningBucketDao,
+    private val libraryMetadataPrefetcher: LibraryMetadataPrefetcher,
     private val network: NetworkModule
 ) : WorkerFactory() {
 
@@ -58,6 +60,8 @@ class IshiWorkerFactory(
             AnnotationsSyncWorker(appContext, workerParameters, annotationOutboxDao, network)
         ListeningTimerSyncWorker::class.java.name ->
             ListeningTimerSyncWorker(appContext, workerParameters, listeningTimeDao, dailyListeningBucketDao, network)
+        LibraryMetadataSyncWorker::class.java.name ->
+            LibraryMetadataSyncWorker(appContext, workerParameters, libraryMetadataPrefetcher, network)
         else -> null
     }
 }

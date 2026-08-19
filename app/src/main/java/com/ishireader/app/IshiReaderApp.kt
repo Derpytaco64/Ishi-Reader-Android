@@ -16,6 +16,7 @@ import com.ishireader.app.data.repository.BookDownloadRepository
 import com.ishireader.app.data.repository.BookMigrationRepository
 import com.ishireader.app.data.repository.CompletedReadsRepository
 import com.ishireader.app.data.repository.ExactPageCountRepository
+import com.ishireader.app.data.repository.LibraryMetadataPrefetcher
 import com.ishireader.app.data.repository.LibraryPrefsRepository
 import com.ishireader.app.data.repository.LibraryRepository
 import com.ishireader.app.data.repository.ListeningTimeRepository
@@ -65,6 +66,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
     lateinit var readingTimerRepository: ReadingTimerRepository
         private set
     lateinit var listeningTimeRepository: ListeningTimeRepository
+        private set
+    lateinit var libraryMetadataPrefetcher: LibraryMetadataPrefetcher
         private set
     lateinit var statsRepository: StatsRepository
         private set
@@ -126,10 +129,27 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
             database.annotationOutboxDao(),
             syncScheduler
         )
+        libraryMetadataPrefetcher = LibraryMetadataPrefetcher(
+            libraryRepository,
+            bookDownloadRepository,
+            positionRepository,
+            readingTimerRepository,
+            completedReadsRepository,
+            annotationsRepository,
+            notesRepository,
+            listeningTimeRepository
+        )
         statsRepository = StatsRepository(network, database.cachedUserStatsDao())
         adminRepository = AdminRepository(network)
         bookMigrationRepository = BookMigrationRepository(network)
         exactPageCountRepository = ExactPageCountRepository(database.exactPageCountDao())
+
+        // CLAUDE-ADDED: So a downloaded-for-offline book shows real time/pace/sessions/annotations
+        // without ever having been opened -- see LibraryMetadataPrefetcher's doc comment. The
+        // one-shot catches "just launched the app while online"; the periodic job catches progress
+        // made elsewhere (web, another device) on a book that stays downloaded but unopened here.
+        syncScheduler.scheduleLibraryMetadataSync()
+        syncScheduler.ensureLibraryMetadataPeriodicSync()
     }
 
     /**
@@ -159,6 +179,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
                     database.annotationOutboxDao(),
                     database.listeningTimeCacheDao(),
                     database.dailyListeningBucketDao(),
+                    libraryMetadataPrefetcher,
                     network
                 )
             )
