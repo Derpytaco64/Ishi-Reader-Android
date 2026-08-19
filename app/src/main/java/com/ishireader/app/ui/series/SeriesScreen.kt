@@ -151,7 +151,13 @@ fun SeriesScreen(
                                     book = book,
                                     onClick = { onBookClick(book) },
                                     modifier = Modifier.fillMaxWidth(),
-                                    onLongClick = { onBookLongClick(book) }
+                                    onLongClick = { onBookLongClick(book) },
+                                    // CLAUDE-ADDED: Every book in a selected series shares the same
+                                    // isAudiobook (seriesKey embeds it, see SeriesViewModel), so this
+                                    // grid is never mixed -- same square-cell treatment as Library's
+                                    // dedicated Audiobooks tab instead of the default letterboxed
+                                    // portrait slot.
+                                    uniformCoverSlot = selectedSlot?.isAudiobook != true
                                 )
                             }
                         }

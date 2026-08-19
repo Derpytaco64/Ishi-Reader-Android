@@ -64,6 +64,14 @@ data class AdminUiState(
 
     val pendingDeleteUserId: String? = null,
 
+    /** Non-null while that user's avatar upload is in flight -- drives the "Uploading…" state on
+     *  their row's avatar button. */
+    val avatarUploadingUserId: String? = null,
+    /** Bumped per-user on a successful avatar upload and appended to that user's avatar URL as a
+     *  cache-busting query param (see AdminUserAvatar) -- the URL itself never changes when a user
+     *  re-uploads, so without this Coil would keep showing the old cached image. */
+    val avatarUpdatedAt: Map<String, Long> = emptyMap(),
+
     val orphanedReport: OrphanedDataReport? = null,
     val isScanningOrphaned: Boolean = false,
     val isDeletingOrphaned: Boolean = false,
@@ -381,6 +389,22 @@ class AdminViewModel(
             when (val result = repository.unlockUser(userId)) {
                 is ApiResult.Success -> refreshUsers()
                 is ApiResult.Failure -> _uiState.value = _uiState.value.copy(actionError = result.message)
+            }
+        }
+    }
+
+    fun uploadAvatar(userId: String, imageDataUrl: String) {
+        _uiState.value = _uiState.value.copy(avatarUploadingUserId = userId, actionError = null)
+        viewModelScope.launch {
+            when (val result = repository.uploadUserAvatar(userId, imageDataUrl)) {
+                is ApiResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        avatarUploadingUserId = null,
+                        avatarUpdatedAt = _uiState.value.avatarUpdatedAt + (userId to System.currentTimeMillis())
+                    )
+                    refreshUsers()
+                }
+                is ApiResult.Failure -> _uiState.value = _uiState.value.copy(avatarUploadingUserId = null, actionError = result.message)
             }
         }
     }

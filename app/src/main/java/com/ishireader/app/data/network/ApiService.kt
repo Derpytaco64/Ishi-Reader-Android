@@ -238,6 +238,11 @@ interface ApiService {
     @POST("api/admin/users/{id}/unlock")
     suspend fun adminUnlockUser(@Path("id") id: String): Response<Unit>
 
+    /** Admin-scoped counterpart to [uploadAvatar] -- same request/response shape, targets `id`
+     *  instead of the caller's own session. See api/admin/users/[id]/avatar/route.ts. */
+    @POST("api/admin/users/{id}/avatar")
+    suspend fun adminUploadAvatar(@Path("id") id: String, @Body request: AvatarUploadRequest): Response<AvatarUploadResponse>
+
     @GET("api/admin/orphaned-data")
     suspend fun adminScanOrphanedData(): Response<OrphanedDataReport>
 

@@ -1,6 +1,7 @@
 package com.ishireader.app.data.repository
 
 import com.ishireader.app.data.model.AdminUser
+import com.ishireader.app.data.model.AvatarUploadRequest
 import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.CreateUserRequest
 import com.ishireader.app.data.model.LoginAccentColorField
@@ -60,6 +61,10 @@ class AdminRepository(private val network: NetworkModule) {
 
     suspend fun unlockUser(id: String): ApiResult<Unit> = withContext(Dispatchers.IO) {
         runCatching { network.api.adminUnlockUser(id) }.toApiResult("unlock user") {}
+    }
+
+    suspend fun uploadUserAvatar(id: String, imageDataUrl: String): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        runCatching { network.api.adminUploadAvatar(id, AvatarUploadRequest(imageDataUrl)) }.toApiResult("upload avatar") {}
     }
 
     suspend fun scanOrphanedData(): ApiResult<OrphanedDataReport> = withContext(Dispatchers.IO) {

@@ -1,5 +1,9 @@
 package com.ishireader.app.ui.admin
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -50,11 +54,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.AdminUser
+import com.ishireader.app.ui.common.readImageAsDataUrl
 import com.ishireader.app.ui.main.BookPickerList
 import com.ishireader.app.ui.settings.ColorWheelPicker
 import com.ishireader.app.ui.settings.parseAccentColor
@@ -528,11 +534,23 @@ private fun UserRow(
     val isLocked = user.lockedUntil != null && user.lockedUntil > System.currentTimeMillis()
     val isEditing = state.editingUserId == user.id
     val isResettingPassword = state.resetPasswordUserId == user.id
+    val isUploadingAvatar = state.avatarUploadingUserId == user.id
+
+    val context = LocalContext.current
+    val pickAvatar = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val dataUrl = readImageAsDataUrl(context, uri)
+        if (dataUrl != null) {
+            viewModel.uploadAvatar(user.id, dataUrl)
+        } else {
+            Toast.makeText(context, "Failed to read image", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AdminUserAvatar(user = user, baseUrl = avatarBaseUrl)
+                AdminUserAvatar(user = user, baseUrl = avatarBaseUrl, cacheBust = state.avatarUpdatedAt[user.id])
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     if (isEditing) {
@@ -580,6 +598,9 @@ private fun UserRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TextButton(onClick = { viewModel.startEditingUser(user) }) { Text("Edit") }
+                    TextButton(onClick = { pickAvatar.launch("image/*") }, enabled = !isUploadingAvatar) {
+                        Text(if (isUploadingAvatar) "Uploading…" else "Avatar")
+                    }
                     TextButton(onClick = { viewModel.toggleAdmin(user) }, enabled = !(isCurrentUser && user.isAdmin)) {
                         Text(if (user.isAdmin) "Remove Admin" else "Make Admin")
                     }
@@ -635,12 +656,14 @@ private fun StatusBadge(text: String, danger: Boolean = false) {
     }
 }
 
-/** Mirrors AdminPageClient.tsx's avatarUrlFor -- the id+avatarExt path, no cache-busting version
- *  query param (the site's own admin list endpoint doesn't compute one either, unlike PublicUser's
- *  avatarUrl). A small colored dot mirrors the site's isActive status dot. */
+/** Mirrors AdminPageClient.tsx's avatarUrlFor -- the id+avatarExt path. [cacheBust], set once this
+ *  session's [AdminViewModel.uploadAvatar] succeeds for this user, is appended as a query param so
+ *  Coil re-fetches instead of keeping the pre-upload image cached at the same URL -- outside of
+ *  that it behaves the same as the site's own admin list, which computes no version param either.
+ *  A small colored dot mirrors the site's isActive status dot. */
 @Composable
-private fun AdminUserAvatar(user: AdminUser, baseUrl: String?, modifier: Modifier = Modifier) {
-    val avatarUrl = user.avatarExt?.let { baseUrl?.let { base -> "$base/api/users/${user.id}/avatar" } }
+private fun AdminUserAvatar(user: AdminUser, baseUrl: String?, cacheBust: Long? = null, modifier: Modifier = Modifier) {
+    val avatarUrl = user.avatarExt?.let { baseUrl?.let { base -> "$base/api/users/${user.id}/avatar" + (cacheBust?.let { v -> "?v=$v" } ?: "") } }
     Box(modifier = modifier.size(40.dp)) {
         Box(
             modifier = Modifier

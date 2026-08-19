@@ -1,7 +1,6 @@
 package com.ishireader.app.ui.main
 
 import android.net.Uri
-import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ishireader.app.ui.common.readImageAsDataUrl
 
 /**
  * "Edit User" user-menu entry: avatar upload, display-name rename, change-password form. Mirrors
@@ -62,11 +62,7 @@ fun EditUserSheet(
     val focusManager = LocalFocusManager.current
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val dataUrl = runCatching {
-            val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?.let { bytes -> "data:$mimeType;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}" }
-        }.getOrNull()
+        val dataUrl = readImageAsDataUrl(context, uri)
         if (dataUrl != null) onPickAvatar(dataUrl) else Toast.makeText(context, "Failed to read image", Toast.LENGTH_SHORT).show()
     }
 
