@@ -108,7 +108,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         )
         notesRepository = NotesRepository(network, database.annotationCacheDao(), database.annotationOutboxDao(), syncScheduler)
         annotationsRepository = AnnotationsRepository(network, database.annotationCacheDao(), database.annotationOutboxDao(), syncScheduler)
-        completedReadsRepository = CompletedReadsRepository(network)
+        completedReadsRepository = CompletedReadsRepository(network, database.annotationCacheDao(), database.annotationOutboxDao(), syncScheduler)
         readingTimerRepository = ReadingTimerRepository(
             network,
             database.readingTimeCacheDao(),

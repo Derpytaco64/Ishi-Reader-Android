@@ -8,10 +8,12 @@ import com.ishireader.app.data.local.AnnotationOutboxDao
 import com.ishireader.app.data.local.AnnotationOutboxEntity
 import com.ishireader.app.data.model.BookmarkUpsertRequest
 import com.ishireader.app.data.model.CompletedListenUpsertRequest
+import com.ishireader.app.data.model.CompletedReadTimeUpsertRequest
 import com.ishireader.app.data.model.HighlightUpsertRequest
 import com.ishireader.app.data.model.NoteUpsertRequest
 import com.ishireader.app.data.model.StoredBookmark
 import com.ishireader.app.data.model.StoredCompletedListen
+import com.ishireader.app.data.model.StoredCompletedReadTime
 import com.ishireader.app.data.model.StoredHighlight
 import com.ishireader.app.data.model.StoredNote
 import com.ishireader.app.data.network.NetworkModule
@@ -46,6 +48,7 @@ class AnnotationsSyncWorker(
                     AnnotationKind.BOOKMARK -> syncBookmark(row)
                     AnnotationKind.NOTE -> syncNote(row)
                     AnnotationKind.COMPLETED_LISTEN -> syncCompletedListen(row)
+                    AnnotationKind.COMPLETED_READ -> syncCompletedRead(row)
                     else -> true
                 }
             } catch (e: Exception) {
@@ -86,5 +89,13 @@ class AnnotationsSyncWorker(
             network.api.upsertCompletedListen(CompletedListenUpsertRequest(row.manifestUrl, item)).isSuccessful
         } else {
             network.api.deleteCompletedListen(row.manifestUrl, row.itemId).isSuccessful
+        }
+
+    private suspend fun syncCompletedRead(row: AnnotationOutboxEntity): Boolean =
+        if (row.opType == "UPSERT") {
+            val item = row.itemJson?.let { Json.decodeFromString(StoredCompletedReadTime.serializer(), it) } ?: return true
+            network.api.upsertCompletedReadTime(CompletedReadTimeUpsertRequest(row.manifestUrl, item)).isSuccessful
+        } else {
+            network.api.deleteCompletedReadTime(row.manifestUrl, row.itemId).isSuccessful
         }
 }
