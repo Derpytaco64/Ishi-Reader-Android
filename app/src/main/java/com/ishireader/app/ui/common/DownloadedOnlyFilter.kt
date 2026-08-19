@@ -42,3 +42,23 @@ fun <T> List<T>.filterDownloadedOnly(bookOf: (T) -> Book): List<T> {
 /** Convenience overload for the common case of filtering a plain [Book] list directly. */
 @Composable
 fun List<Book>.filterDownloadedOnly(): List<Book> = filterDownloadedOnly { it }
+
+/** Same idea as [filterDownloadedOnly], but for elements that bundle multiple books -- a series
+ *  slot on the Series tab overview, say. Keeps the element if *any* of [booksOf] has a local file,
+ *  so a series with only some volumes downloaded still shows (its own within-series grid then
+ *  filters down to just those volumes); only series with nothing downloaded at all disappear. */
+@Composable
+fun <T> List<T>.filterAnyDownloaded(booksOf: (T) -> List<Book>): List<T> {
+    val onlyDownloaded = LocalDownloadedOnlyFilter.current
+    val items = this
+    if (!onlyDownloaded) return items
+
+    val context = LocalContext.current
+    val app = context.applicationContext as IshiReaderApp
+    var downloadedUrls by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(items) {
+        val urls = items.flatMap { booksOf(it) }.map { it.manifestUrl() }
+        downloadedUrls = withContext(Dispatchers.IO) { app.bookDownloadRepository.downloadedManifestUrls(urls) }
+    }
+    return items.filter { item -> booksOf(item).any { it.manifestUrl() in downloadedUrls } }
+}

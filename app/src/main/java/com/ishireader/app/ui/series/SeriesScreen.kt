@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.ui.common.BookCoverCard
+import com.ishireader.app.ui.common.filterAnyDownloaded
 import com.ishireader.app.ui.common.filterDownloadedOnly
 import com.ishireader.app.ui.settings.LocalAppSettings
 
@@ -71,6 +72,7 @@ fun SeriesScreen(
     val coverSize = LocalAppSettings.current.coverSize
     val selectedSlot = state.selectedSlot
     val selectedBooks = state.selectedBooks.filterDownloadedOnly()
+    val slots = state.slots.filterAnyDownloaded { it.books }
 
     if (state.selectedSeriesKey != null) {
         BackHandler(onBack = viewModel::clearSelection)
@@ -132,7 +134,7 @@ fun SeriesScreen(
                             modifier = Modifier.align(Alignment.Center).padding(24.dp)
                         )
                     }
-                    state.slots.isEmpty() -> {
+                    slots.isEmpty() -> {
                         Text(
                             text = "None of your books have series information yet.",
                             modifier = Modifier.align(Alignment.Center).padding(24.dp)
@@ -170,7 +172,7 @@ fun SeriesScreen(
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(state.slots) { slot ->
+                            items(slots) { slot ->
                                 SeriesFanCard(slot = slot, onClick = { viewModel.selectSeries(slot.key) })
                             }
                         }
@@ -208,6 +210,10 @@ private fun SortDirectionDropdown(current: SeriesSortDirection, onSelect: (Serie
 
 @Composable
 private fun SeriesFanCard(slot: SeriesSlot, onClick: () -> Unit) {
+    // CLAUDE-ADDED: Same square-vs-portrait call as BookCoverCard's uniformCoverSlot -- every
+    // cover in this fan (center + up to two side covers) belongs to the same series, so they all
+    // share slot.isAudiobook and switch together.
+    val coverAspectRatio = if (slot.isAudiobook) 1f else 2f / 3f
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -224,7 +230,7 @@ private fun SeriesFanCard(slot: SeriesSlot, onClick: () -> Unit) {
                     .align(Alignment.Center)
                     .offset(x = -FanOffset, y = (-4).dp)
                     .width(FanCoverWidth)
-                    .aspectRatio(2f / 3f)
+                    .aspectRatio(coverAspectRatio)
                     .rotate(-20f)
             )
         }
@@ -237,11 +243,11 @@ private fun SeriesFanCard(slot: SeriesSlot, onClick: () -> Unit) {
                     .align(Alignment.Center)
                     .offset(x = FanOffset, y = (-4).dp)
                     .width(FanCoverWidth)
-                    .aspectRatio(2f / 3f)
+                    .aspectRatio(coverAspectRatio)
                     .rotate(20f)
             )
         }
-        Box(modifier = Modifier.align(Alignment.Center).width(FanCoverWidth).aspectRatio(2f / 3f)) {
+        Box(modifier = Modifier.align(Alignment.Center).width(FanCoverWidth).aspectRatio(coverAspectRatio)) {
             AsyncImage(
                 model = slot.center.cover,
                 contentDescription = slot.name,

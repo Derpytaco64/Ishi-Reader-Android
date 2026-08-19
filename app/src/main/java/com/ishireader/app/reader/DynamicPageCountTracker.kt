@@ -98,6 +98,12 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
     private val readingOrderHrefs: List<String> =
         publication.readingOrder.map { it.url().toString().substringBefore("#") }
     private var resourcePageCounts: Map<String, Int> = emptyMap()
+    /** Each resource's 1-based first page, plus [totalPages] -- both derived from
+     *  [resourcePageCounts] alone, so (unlike [currentHref]/[currentPageIndex]) they only need
+     *  rebuilding when [resourcePageCounts] itself changes (see [applyExactCounts]), not on every
+     *  [onPageChanged] page turn. */
+    private var resourceStartPages: Map<String, Int> = emptyMap()
+    private var totalPages: Int = 0
     private var currentHref: String? = null
     private var currentPageIndex: Int = 0
     private var loadingProgress: Float? = null
@@ -108,6 +114,8 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
      *  new sweep/cache-lookup is in flight. */
     fun markLoading() {
         resourcePageCounts = emptyMap()
+        resourceStartPages = emptyMap()
+        totalPages = 0
         loadingProgress = null
         recompute()
     }
@@ -126,9 +134,20 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
 
     /** Applies real, swept per-resource page counts (href string -> page count), ending the
      *  loading state. Missing reading-order resources (shouldn't normally happen -- every resource
-     *  is swept) fall back to 1 page rather than crashing on a lookup miss. */
+     *  is swept) fall back to 1 page rather than crashing on a lookup miss. This is the one place
+     *  [resourceStartPages]/[totalPages] actually need rebuilding -- see their own doc comment. */
     fun applyExactCounts(countsByHref: Map<String, Int>) {
         resourcePageCounts = readingOrderHrefs.associateWith { href -> countsByHref[href] ?: 1 }
+
+        var pagesBefore = 0
+        val startPages = mutableMapOf<String, Int>()
+        for (resourceHref in readingOrderHrefs) {
+            startPages[resourceHref] = pagesBefore + 1
+            pagesBefore += resourcePageCounts.getValue(resourceHref)
+        }
+        resourceStartPages = startPages
+        totalPages = pagesBefore
+
         recompute()
     }
 
@@ -138,31 +157,22 @@ class DynamicPageCountTracker(private val publication: Publication) : EpubNaviga
         recompute()
     }
 
+    /** Cheap on every call (in particular, every [onPageChanged] page turn) since the per-resource
+     *  layout itself ([resourceStartPages]/[resourcePageCounts]/[totalPages]) is already cached --
+     *  this only derives which page [currentHref]/[currentPageIndex] currently land on. */
     private fun recompute() {
         if (resourcePageCounts.isEmpty()) {
             _state.value = DynamicPageCountState(isLoading = true, loadingProgress = loadingProgress)
             return
         }
 
-        val href = currentHref
-        var pagesBefore = 0
-        var currentResourceStart: Int? = null
-        val startPages = mutableMapOf<String, Int>()
-        val pageCounts = mutableMapOf<String, Int>()
-        for (resourceHref in readingOrderHrefs) {
-            startPages[resourceHref] = pagesBefore + 1
-            if (resourceHref == href) currentResourceStart = pagesBefore
-            val pages = resourcePageCounts[resourceHref] ?: 1
-            pageCounts[resourceHref] = pages
-            pagesBefore += pages
-        }
-
+        val currentResourceStart = currentHref?.let { resourceStartPages[it] }?.minus(1)
         _state.value = DynamicPageCountState(
             isLoading = false,
             currentPage = currentResourceStart?.let { it + currentPageIndex + 1 },
-            totalPages = pagesBefore,
-            resourceStartPages = startPages,
-            resourcePageCounts = pageCounts
+            totalPages = totalPages,
+            resourceStartPages = resourceStartPages,
+            resourcePageCounts = resourcePageCounts
         )
     }
 }

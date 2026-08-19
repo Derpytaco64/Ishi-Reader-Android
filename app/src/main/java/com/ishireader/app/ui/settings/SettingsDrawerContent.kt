@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -102,6 +104,11 @@ fun SettingsDrawerContent(
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }
     ModalDrawerSheet {
+        // CLAUDE-ADDED: ModalDrawerSheet's own content Column has no scroll modifier of its own --
+        // fine while everything fit on screen, but the downloaded-only toggle + Downloaded files
+        // section pushed total content past the drawer's height, so without this it either clips
+        // or gets visually squeezed to fit ("scrunched") instead of scrolling.
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -219,6 +226,7 @@ fun SettingsDrawerContent(
         HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
         DownloadedFilesSection(bookDownloadRepository, downloadsVersion, onDeleteAllDownloads)
+        }
     }
 }
 
