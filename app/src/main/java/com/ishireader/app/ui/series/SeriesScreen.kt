@@ -108,11 +108,16 @@ fun SeriesScreen(
             // that slot used to hold this plus the now-removed refresh button, both squeezed to
             // the trailing edge. The title slot itself is taken by the series name here, so this
             // can't just become the (centered) title the way Library's sort menu did.
-            if (selectedSlot != null) {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (selectedSlot != null) {
                     SortDirectionDropdown(
                         current = state.sortDirection,
                         onSelect = viewModel::onSortDirectionChange
+                    )
+                } else {
+                    FormatFilterDropdown(
+                        current = state.formatFilter,
+                        onSelect = viewModel::onFormatFilterChange
                     )
                 }
             }
@@ -136,7 +141,11 @@ fun SeriesScreen(
                     }
                     slots.isEmpty() -> {
                         Text(
-                            text = "None of your books have series information yet.",
+                            text = if (state.formatFilter == SeriesFormatFilter.ALL) {
+                                "None of your books have series information yet."
+                            } else {
+                                "None of your ${state.formatFilter.label.lowercase()} have series information yet."
+                            },
                             modifier = Modifier.align(Alignment.Center).padding(24.dp)
                         )
                     }
@@ -200,6 +209,28 @@ private fun SortDirectionDropdown(current: SeriesSortDirection, onSelect: (Serie
                     text = { Text(direction.label) },
                     onClick = {
                         onSelect(direction)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FormatFilterDropdown(current: SeriesFormatFilter, onSelect: (SeriesFormatFilter) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(current.label)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            SeriesFormatFilter.entries.forEach { filter ->
+                DropdownMenuItem(
+                    text = { Text(filter.label) },
+                    onClick = {
+                        onSelect(filter)
                         expanded = false
                     }
                 )

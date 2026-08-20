@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.isComic
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.LibraryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,12 +32,23 @@ enum class SeriesSortDirection(val label: String) {
     LAST_TO_FIRST("Series Order (Last → First)")
 }
 
+/** Which formats' series show up in the overview grid -- mirrors Library's BOOKS/AUDIOBOOKS/MANGA
+ *  split, plus an ALL option since a series view mixing formats side by side is meaningful in a
+ *  way a mixed Library grid isn't. Defaults to ALL. */
+enum class SeriesFormatFilter(val label: String) {
+    ALL("All"),
+    BOOKS("Books"),
+    AUDIOBOOKS("Audiobooks"),
+    MANGA("Manga")
+}
+
 data class SeriesUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val slots: List<SeriesSlot> = emptyList(),
     val selectedSeriesKey: String? = null,
-    val sortDirection: SeriesSortDirection = SeriesSortDirection.FIRST_TO_LAST
+    val sortDirection: SeriesSortDirection = SeriesSortDirection.FIRST_TO_LAST,
+    val formatFilter: SeriesFormatFilter = SeriesFormatFilter.ALL
 ) {
     val selectedSlot: SeriesSlot? get() = slots.find { it.key == selectedSeriesKey }
 
@@ -54,6 +66,8 @@ class SeriesViewModel(private val libraryRepository: LibraryRepository) : ViewMo
     private val _uiState = MutableStateFlow(SeriesUiState())
     val uiState: StateFlow<SeriesUiState> = _uiState.asStateFlow()
 
+    private var allBooks: List<Book> = emptyList()
+
     init {
         refresh()
     }
@@ -62,10 +76,10 @@ class SeriesViewModel(private val libraryRepository: LibraryRepository) : ViewMo
         _uiState.value = _uiState.value.copy(isLoading = true, error = null)
         viewModelScope.launch {
             when (val result = libraryRepository.fetchBooks()) {
-                is ApiResult.Success -> _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    slots = buildSlots(result.data)
-                )
+                is ApiResult.Success -> {
+                    allBooks = result.data
+                    _uiState.value = _uiState.value.copy(isLoading = false, slots = visibleSlots())
+                }
                 is ApiResult.Failure -> _uiState.value = _uiState.value.copy(isLoading = false, error = result.message)
             }
         }
@@ -84,8 +98,29 @@ class SeriesViewModel(private val libraryRepository: LibraryRepository) : ViewMo
         _uiState.value = _uiState.value.copy(sortDirection = direction)
     }
 
-    private fun buildSlots(allBooks: List<Book>): List<SeriesSlot> {
-        val groups = allBooks.filter { it.series?.name != null }
+    fun onFormatFilterChange(filter: SeriesFormatFilter) {
+        val slots = visibleSlots(filter = filter)
+        // Falls back out of a selection whose series disappeared under the new filter, same as a
+        // series vanishing on refresh -- there's nothing valid left to drill into.
+        val selectedSeriesKey = _uiState.value.selectedSeriesKey
+            ?.takeIf { key -> slots.any { it.key == key } }
+        _uiState.value = _uiState.value.copy(formatFilter = filter, slots = slots, selectedSeriesKey = selectedSeriesKey)
+    }
+
+    private fun visibleSlots(
+        books: List<Book> = allBooks,
+        filter: SeriesFormatFilter = _uiState.value.formatFilter
+    ): List<SeriesSlot> = buildSlots(filterByFormat(books, filter))
+
+    private fun filterByFormat(books: List<Book>, filter: SeriesFormatFilter): List<Book> = when (filter) {
+        SeriesFormatFilter.ALL -> books
+        SeriesFormatFilter.BOOKS -> books.filter { !it.isAudiobook && !it.isComic }
+        SeriesFormatFilter.AUDIOBOOKS -> books.filter { it.isAudiobook }
+        SeriesFormatFilter.MANGA -> books.filter { it.isComic }
+    }
+
+    private fun buildSlots(books: List<Book>): List<SeriesSlot> {
+        val groups = books.filter { it.series?.name != null }
             .groupBy { seriesKey(it.series!!.name, it.isAudiobook) }
 
         return groups.entries.map { (key, seriesBooks) ->

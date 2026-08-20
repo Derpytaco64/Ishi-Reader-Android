@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.SortMode
+import com.ishireader.app.data.model.isComic
 import com.ishireader.app.data.model.sortedByMode
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.repository.LibraryRepository
@@ -13,7 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class LibraryTab { BOOKS, AUDIOBOOKS }
+enum class LibraryTab { BOOKS, AUDIOBOOKS, MANGA }
 
 data class LibraryUiState(
     val books: List<Book> = emptyList(),
@@ -24,11 +25,12 @@ data class LibraryUiState(
 )
 
 /**
- * Ishi-Read's web library has no "Books"/"Audiobooks" toggle inside this view -- they're
+ * Ishi-Read's web library has no "Books"/"Audiobooks"/"Manga" toggle inside this view -- they're
  * separate nav destinations that both mount the same flat-grid component. This ViewModel
  * folds them into one screen with a tab switch until the nav-drawer phase lands; the
  * underlying filter/sort behavior matches StatefulMyLibraryView exactly (default sort is
- * titleAsc here, deliberately different from shelf views' addedNewest default).
+ * titleAsc here, deliberately different from shelf views' addedNewest default). Manga (any
+ * book with [isComic] true) is carved out of the Books tab into its own, same as Audiobooks.
  */
 class LibraryViewModel(private val libraryRepository: LibraryRepository) : ViewModel() {
 
@@ -66,7 +68,13 @@ class LibraryViewModel(private val libraryRepository: LibraryRepository) : ViewM
         tab: LibraryTab = _uiState.value.tab,
         sortMode: SortMode = _uiState.value.sortMode
     ): List<Book> {
-        val filtered = allBooks.filter { it.isAudiobook == (tab == LibraryTab.AUDIOBOOKS) }
+        val filtered = allBooks.filter { book ->
+            when (tab) {
+                LibraryTab.BOOKS -> !book.isAudiobook && !book.isComic
+                LibraryTab.AUDIOBOOKS -> book.isAudiobook
+                LibraryTab.MANGA -> book.isComic
+            }
+        }
         return filtered.sortedByMode(sortMode)
     }
 

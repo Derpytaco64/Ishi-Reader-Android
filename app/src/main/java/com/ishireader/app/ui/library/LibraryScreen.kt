@@ -93,6 +93,11 @@ fun LibraryScreen(
                     onClick = { viewModel.onTabSelected(LibraryTab.AUDIOBOOKS) },
                     text = { Text("Audiobooks") }
                 )
+                Tab(
+                    selected = state.tab == LibraryTab.MANGA,
+                    onClick = { viewModel.onTabSelected(LibraryTab.MANGA) },
+                    text = { Text("Manga") }
+                )
             }
 
             // CLAUDE-ADDED: Replaces the old explicit refresh button -- dragging down now does the
@@ -115,7 +120,11 @@ fun LibraryScreen(
                     }
                     books.isEmpty() -> {
                         Text(
-                            text = if (state.tab == LibraryTab.AUDIOBOOKS) "No audiobooks yet" else "No books yet",
+                            text = when (state.tab) {
+                                LibraryTab.AUDIOBOOKS -> "No audiobooks yet"
+                                LibraryTab.MANGA -> "No manga yet"
+                                LibraryTab.BOOKS -> "No books yet"
+                            },
                             modifier = Modifier.align(Alignment.Center).padding(24.dp)
                         )
                     }
