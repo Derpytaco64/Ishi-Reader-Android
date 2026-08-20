@@ -79,13 +79,13 @@ class TrackingViewModel(
         }
     }
 
-    /** Cheap, sheet-independent link lookup -- BookDetailScreen calls this as soon as a comic's
-     *  detail page loads (not gated behind the tracking sheet being opened) purely so its "Track on
+    /** Sheet-independent link + entry lookup -- BookDetailScreen calls this as soon as a comic's
+     *  detail page loads (not gated behind the tracking sheet being opened), both so its "Track on
      *  AniList" entry point can already show a synced/checkmark state for a series linked from a
-     *  *different* volume, without having to open the sheet first to find out. Only reads the local
-     *  library-prefs link map -- no AniList network fetch, unlike [start]. A no-op once [start] has
-     *  already populated [TrackingUiState.link] for this same series (e.g. the sheet is open), so it
-     *  never clobbers fresher state with this lighter check. */
+     *  *different* volume, and so its status/chapter/score/date summary row has real data to show
+     *  without the user having to open the sheet first. A no-op once [start] has already populated
+     *  [TrackingUiState.link] for this same series (e.g. the sheet is open), so it never clobbers
+     *  fresher state with this lighter check. */
     fun checkLinked(book: Book) {
         val seriesKey = book.aniListSeriesKey()
         if (_uiState.value.seriesKey == seriesKey) return
@@ -96,6 +96,7 @@ class TrackingViewModel(
             // has since moved on to a different series -- avoids this slower, sheet-independent read
             // clobbering start()'s own fresher in-flight state for the same series.
             _uiState.update { if (it.seriesKey == seriesKey) it.copy(link = link) else it }
+            if (link != null) loadMedia(link)
         }
     }
 

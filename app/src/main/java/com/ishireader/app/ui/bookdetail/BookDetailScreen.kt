@@ -310,6 +310,32 @@ fun BookDetailScreen(
                         label = { Text("Tracking on AniList") },
                         leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null) }
                     )
+                    // CLAUDE-ADDED: Status/chapter/score/date summary -- populated by checkLinked's
+                    // eager entry fetch (TrackingViewModel.kt), not just the sheet's own start(), so
+                    // this shows without the user opening the sheet. Null entry (linked but AniList
+                    // has no list entry for it yet, e.g. a fresh link the user hasn't set a status on)
+                    // shows nothing here rather than a row of "Not set" placeholders.
+                    trackingState.media?.mediaListEntry?.let { entry ->
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(statusLabel(entry.status), style = MaterialTheme.typography.labelMedium)
+                            val totalChapters = trackingState.media?.chapters
+                            Text(
+                                "Ch. ${entry.progress}" + (totalChapters?.let { "/$it" } ?: ""),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            if (entry.score > 0) {
+                                Text("★ ${entry.score.formatScore()}", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                        if (entry.startedAt?.year != null || entry.completedAt?.year != null) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Started: ${entry.startedAt.label()}", style = MaterialTheme.typography.labelSmall)
+                                Text("Finished: ${entry.completedAt.label()}", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
                 } else {
                     TextButton(onClick = { showTrackingSheet = true }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
@@ -708,6 +734,11 @@ private fun formatEstimatedTime(totalSeconds: Double): String {
     val minutes = totalMinutes % 60
     return if (hours == 0L) "${minutes}m" else "${hours}h ${minutes}m"
 }
+
+/** Drops a trailing ".0" for a whole-number score (AniList's POINT_100/POINT_10/POINT_5/POINT_3
+ *  formats are always whole numbers already) but keeps one decimal place for POINT_10_DECIMAL. */
+private fun Double.formatScore(): String =
+    if (this == Math.floor(this)) toInt().toString() else "%.1f".format(this)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

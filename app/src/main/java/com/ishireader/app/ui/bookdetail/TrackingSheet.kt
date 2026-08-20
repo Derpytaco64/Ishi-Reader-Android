@@ -47,7 +47,10 @@ import java.util.TimeZone
 
 private val STATUS_OPTIONS = listOf("CURRENT", "PLANNING", "COMPLETED", "DROPPED", "PAUSED", "REPEATING")
 
-private fun statusLabel(status: String) = when (status) {
+// Not file-private -- BookDetailScreen's own tracking summary row reuses these two for the same
+// status wording and fuzzy-date formatting as this sheet, so the collapsed row and the sheet never
+// disagree on how a status/date is worded.
+fun statusLabel(status: String) = when (status) {
     "CURRENT" -> "Reading"
     "PLANNING" -> "Planning"
     "COMPLETED" -> "Completed"
@@ -68,7 +71,7 @@ private fun scoreLabel(scoreFormat: String?) = when (scoreFormat) {
     else -> "Score"
 }
 
-private fun AniListFuzzyDate?.label(): String {
+fun AniListFuzzyDate?.label(): String {
     if (this?.year == null) return "Not set"
     val month = month?.toString()?.padStart(2, '0') ?: "??"
     val day = day?.toString()?.padStart(2, '0') ?: "??"
