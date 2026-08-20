@@ -78,6 +78,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
+import com.ishireader.app.data.model.ComicReadingDirection
 import com.ishireader.app.data.model.PositionDisplayAlignment
 import com.ishireader.app.data.model.PositionDisplayMode
 import com.ishireader.app.data.model.ReaderLayout
@@ -126,6 +127,7 @@ import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.Selection
 import org.readium.r2.navigator.html.HtmlDecorationTemplates
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.publication.services.positions
@@ -271,6 +273,15 @@ class ReaderActivity : FragmentActivity() {
     /** Manga-only AniList chapter-progress auto-sync -- null for a non-comic book, or a comic
      *  whose series isn't AniList-linked (see MangaAniListProgressTracker's own doc comment). */
     private var mangaAniListProgressTracker: MangaAniListProgressTracker? = null
+
+    /** Comic-only, from ApiService.getReadingProgression (fetched once per book-open in
+     *  [showNavigator], see its own comment): the server's raw `"rtl"`/null reading-progression
+     *  detection (consulted by [ComicReadingDirection.AUTO], see ReaderSettings.toEpubPreferences)
+     *  and a synthesized table of contents (see [buildComicToc]) -- the local CBZ parser never
+     *  reads ComicInfo.xml, so [Publication.tableOfContents] itself is always empty for a comic.
+     *  Both reset to their default on every [showNavigator] call, same as isComicState. */
+    private val comicReadingProgressionState = mutableStateOf<String?>(null)
+    private val comicTocState = mutableStateOf<List<Link>>(emptyList())
 
     /** The settings/device fingerprint (see ReaderSettings.layoutFingerprint) [dynamicPageCountTracker]
      *  currently has exact counts for (or is resolving), so [resolveExactPageCounts] can skip
@@ -573,21 +584,49 @@ class ReaderActivity : FragmentActivity() {
         this.publication = publication
         isComicState.value = publication.metadata.conformsTo.contains(Publication.Profile.DIVINA)
         applyContainerAppearance(readerSettingsState.value.forComicRendering(isComicState.value))
+        comicReadingProgressionState.value = null
+        comicTocState.value = emptyList()
 
         val pageCountTracker = DynamicPageCountTracker(publication)
         dynamicPageCountTracker = pageCountTracker
         pageCountTracker.state.onEach { dynamicPageCountState.value = it }.launchIn(lifecycleScope)
         lifecycleScope.launch { resolveExactPageCounts() }
 
-        // CLAUDE-ADDED: AniList chapter-progress auto-sync, manga only -- see
-        // MangaAniListProgressTracker's own doc comment for why currentPage alone (no locator
-        // translation) is enough here. Feeds off the same pageCountTracker state flow above rather
-        // than a second collector, so it only ever reacts to a real page change.
+        // CLAUDE-ADDED: One reading-progression fetch per comic open, shared by three things that
+        // the local CBZ parser can't provide on its own (it never reads ComicInfo.xml): the
+        // Reading Direction "Auto" default (comicReadingProgressionState, re-submitted to the
+        // navigator once resolved -- see below), the synthesized TOC/chapter-title source
+        // (comicTocState, see buildComicToc), and MangaAniListProgressTracker's chapter-advance
+        // bookmarks. Previously the AniList tracker fetched this same endpoint itself; consolidated
+        // here so an AniList-linked comic doesn't make the request twice.
         if (isComicState.value) {
-            val progressTracker = MangaAniListProgressTracker(app.network, app.libraryPrefsRepository, app.aniListRepository, lifecycleScope)
+            val progressTracker = MangaAniListProgressTracker(app.libraryPrefsRepository, app.aniListRepository, lifecycleScope)
             mangaAniListProgressTracker = progressTracker
-            progressTracker.start(manifestUrl, app.libraryRepository.findCached(manifestUrl))
-            pageCountTracker.state.onEach { it.currentPage?.let { page -> progressTracker.onPageChanged(page) } }.launchIn(lifecycleScope)
+            pageCountTracker.state.onEach { state -> state.currentPage?.let { page -> progressTracker.onPageChanged(page, state.totalPages) } }.launchIn(lifecycleScope)
+
+            lifecycleScope.launch {
+                val response = try {
+                    app.network.api.getReadingProgression(manifestUrl)
+                } catch (e: Exception) {
+                    null
+                }
+                val body = response?.takeIf { it.isSuccessful }?.body()
+                comicReadingProgressionState.value = body?.readingProgression
+                comicTocState.value = buildComicToc(publication.readingOrder, body?.bookmarks.orEmpty())
+                progressTracker.start(app.libraryRepository.findCached(manifestUrl), body?.bookmarks.orEmpty())
+
+                // Reading Direction "Auto" resolves off this same fetch, which only lands after the
+                // navigator's already been created below with a null server value (see
+                // ReaderSettings.toEpubPreferences) -- re-submit now that the real value is known,
+                // same submitPreferences path applyReaderSettings uses for a live settings change.
+                if (readerSettingsState.value.comicReadingDirection == ComicReadingDirection.AUTO) {
+                    preservePositionAcross {
+                        navigatorFragment?.submitPreferences(
+                            readerSettingsState.value.forComicRendering(true).toEpubPreferences(comicReadingProgressionState.value)
+                        )
+                    }
+                }
+            }
         }
 
         lifecycleScope.launch {
@@ -617,7 +656,10 @@ class ReaderActivity : FragmentActivity() {
         val navigatorFactory = EpubNavigatorFactory(publication = publication)
         val fragmentFactory = navigatorFactory.createFragmentFactory(
             initialLocator = initialLocator,
-            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(),
+            // comicReadingProgressionState is still null here -- the fetch that resolves it is
+            // launched just above and lands asynchronously, then re-submits via submitPreferences
+            // once known (see showNavigator). An explicit LTR/RTL override doesn't wait on it.
+            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(comicReadingProgressionState.value),
             paginationListener = pageCountTracker,
             configuration = EpubNavigatorFragment.Configuration(
                 selectionActionModeCallback = selectionCallback,
@@ -772,7 +814,10 @@ class ReaderActivity : FragmentActivity() {
                 // there -- see DynamicPageCountTracker's own doc comment), same gate the website's
                 // useExactPageCount uses.
                 val dynamicPageCount = dynamicPageCountState.value.takeIf { settings.layout != ReaderLayout.SCROLLED }
-                val chapterTitle = currentLocator?.let { locator -> publication?.chapterTitleFor(locator) }
+                val comicToc by comicTocState
+                val chapterTitle = currentLocator?.let { locator ->
+                    publication?.let { pub -> pub.chapterTitleFor(locator, toc = if (isComic) comicToc else pub.tableOfContents) }
+                }
                 // While PageCountSweeper is (re-)measuring the book for the current settings, show
                 // a spinner in place of a page number rather than the old ratio-estimated guess
                 // (see DynamicPageCountTracker's doc comment for why that was removed) or silently
@@ -1168,7 +1213,8 @@ class ReaderActivity : FragmentActivity() {
                                 navigateTo(locator, animated = true)
                                 tocSheetOpen = false
                             },
-                            onDismiss = { tocSheetOpen = false }
+                            onDismiss = { tocSheetOpen = false },
+                            toc = if (isComic) comicToc else null
                         )
                     }
                 }
@@ -1283,7 +1329,7 @@ class ReaderActivity : FragmentActivity() {
         lifecycleScope.launch {
             preservePositionAcross {
                 applyContainerAppearance(rendered)
-                navigatorFragment?.submitPreferences(rendered.toEpubPreferences())
+                navigatorFragment?.submitPreferences(rendered.toEpubPreferences(comicReadingProgressionState.value))
             }
             resolveExactPageCounts()
         }

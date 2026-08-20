@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.ishireader.app.data.model.ComicReadingDirection
 import com.ishireader.app.data.model.PositionDisplayAlignment
 import com.ishireader.app.data.model.PositionDisplayMode
 import com.ishireader.app.data.model.ReaderFontFamily
@@ -145,6 +146,15 @@ fun ReaderSettingsSheet(
                 optionLabel = { it.label() },
                 onSelect = { onSettingsChange(settings.copy(layout = it)) }
             )
+            if (isComic) {
+                SegmentedOptionRow(
+                    label = "Reading Direction",
+                    options = ComicReadingDirection.entries,
+                    selected = settings.comicReadingDirection,
+                    optionLabel = { it.label() },
+                    onSelect = { onSettingsChange(settings.copy(comicReadingDirection = it)) }
+                )
+            }
             SegmentedOptionRow(
                 label = "Text Align",
                 options = listOf(null) + ReaderTextAlign.entries,
@@ -522,6 +532,12 @@ private fun ReaderLineHeight?.label(): String = when (this) {
 private fun ReaderLayout.label(): String = when (this) {
     ReaderLayout.PAGINATED -> "Paginated"
     ReaderLayout.SCROLLED -> "Scrolled"
+}
+
+private fun ComicReadingDirection.label(): String = when (this) {
+    ComicReadingDirection.AUTO -> "Auto"
+    ComicReadingDirection.LTR -> "Left to Right"
+    ComicReadingDirection.RTL -> "Right to Left"
 }
 
 private fun PositionDisplayMode.label(): String = when (this) {

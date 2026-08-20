@@ -314,26 +314,22 @@ fun BookDetailScreen(
                     // eager entry fetch (TrackingViewModel.kt), not just the sheet's own start(), so
                     // this shows without the user opening the sheet. Null entry (linked but AniList
                     // has no list entry for it yet, e.g. a fresh link the user hasn't set a status on)
-                    // shows nothing here rather than a row of "Not set" placeholders.
+                    // shows nothing here rather than a row of "Not set" placeholders. Reuses the same
+                    // pill-shaped Chip() as MetadataChips/ChipSection below for a consistent look
+                    // rather than plain text.
                     trackingState.media?.mediaListEntry?.let { entry ->
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(statusLabel(entry.status), style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Chip(statusLabel(entry.status))
                             val totalChapters = trackingState.media?.chapters
-                            Text(
-                                "Ch. ${entry.progress}" + (totalChapters?.let { "/$it" } ?: ""),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            if (entry.score > 0) {
-                                Text("★ ${entry.score.formatScore()}", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                        if (entry.startedAt?.year != null || entry.completedAt?.year != null) {
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Started: ${entry.startedAt.label()}", style = MaterialTheme.typography.labelSmall)
-                                Text("Finished: ${entry.completedAt.label()}", style = MaterialTheme.typography.labelSmall)
-                            }
+                            Chip("Ch. ${entry.progress}" + (totalChapters?.let { "/$it" } ?: ""))
+                            if (entry.score > 0) Chip("★ ${entry.score.formatScore()}")
+                            if (entry.startedAt?.year != null) Chip("Started ${entry.startedAt.label()}")
+                            if (entry.completedAt?.year != null) Chip("Finished ${entry.completedAt.label()}")
                         }
                     }
                 } else {

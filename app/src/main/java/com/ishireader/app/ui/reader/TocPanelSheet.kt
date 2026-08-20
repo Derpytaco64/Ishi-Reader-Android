@@ -48,11 +48,17 @@ fun TocPanelSheet(
     // falls back to its raw tree when useExactPageCount has no data yet.
     dynamicStartPages: Map<String, Int>?,
     onJump: (Locator) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    // CLAUDE-ADDED: A comic's real publication.tableOfContents is always empty -- the local CBZ
+    // parser never reads ComicInfo.xml -- so ReaderActivity passes in a synthesized list (see
+    // com.ishireader.app.reader.buildComicToc) here instead. Null (the EPUB/default case) falls
+    // back to the publication's own TOC as before.
+    toc: List<Link>? = null
 ) {
     var filter by remember { mutableStateOf("") }
-    val rows = remember(publication, positions, dynamicStartPages) {
-        flattenToc(publication.tableOfContents, positions = positions, dynamicStartPages = dynamicStartPages)
+    val effectiveToc = toc ?: publication.tableOfContents
+    val rows = remember(publication, effectiveToc, positions, dynamicStartPages) {
+        flattenToc(effectiveToc, positions = positions, dynamicStartPages = dynamicStartPages)
     }
     val filtered = if (filter.isBlank()) {
         rows

@@ -31,11 +31,15 @@ import retrofit2.Response
  *  Progress/tracking-field writes ([patchEntry]) are local-first and offline-capable, same shape as
  *  [LibraryPrefsRepository]: merged into a Room outbox row immediately, with a best-effort inline
  *  push attempted right away and [com.ishireader.app.data.sync.AniListSyncWorker] as the fallback.
- *  Unlike library-prefs, AniList's own state isn't exclusively owned by this app (the user can also
- *  edit it from AniList's own site/app), so a `progress` patch is clamped to never regress below the
- *  highest value already known locally (cached remote + anything still pending) -- see
- *  [clampProgressPatch]. Every other field (status/score/dates/repeat) is a deliberate user edit
- *  from the tracking sheet and stays last-write-wins, same as library-prefs' own patch semantics. */
+ *  A manual edit from the tracking sheet (status/score/progress/dates/repeat) is a deliberate user
+ *  choice and always stays last-write-wins, including a `progress` field the user typed in lower
+ *  than what's already there -- see [TrackingSheet][com.ishireader.app.ui.bookdetail.TrackingSheet].
+ *  [MangaAniListProgressTracker][com.ishireader.app.reader.MangaAniListProgressTracker]'s own
+ *  chapter-advance pushes are the one caller that opts into [clampProgressPatch] (`clampProgress =
+ *  true`), since those are inferred from page position rather than a deliberate user choice, and
+ *  AniList's own state isn't exclusively owned by this app (the user can also edit it from AniList's
+ *  own site/app) -- an inferred push should never regress below the highest value already known
+ *  locally (cached remote + anything still pending). */
 class AniListRepository(
     private val network: NetworkModule,
     private val cachedUserDao: CachedUserDao,
@@ -150,9 +154,10 @@ class AniListRepository(
      *  (offline, or the server/AniList itself failing) leaves the merged patch queued for
      *  [com.ishireader.app.data.sync.AniListSyncWorker] and is still reported as a success to the
      *  caller, same "the edit is safely saved either way" contract as LibraryPrefsRepository.patchPrefs. */
-    suspend fun patchEntry(mediaId: Int, patch: JsonObject): ApiResult<Unit> = withContext(Dispatchers.IO) {
+    suspend fun patchEntry(mediaId: Int, patch: JsonObject, clampProgress: Boolean = false): ApiResult<Unit> = withContext(Dispatchers.IO) {
         outboxMutex.withLock {
-            val pending = JsonObject(readPendingPatch(mediaId) + clampProgressPatch(mediaId, patch))
+            val effectivePatch = if (clampProgress) clampProgressPatch(mediaId, patch) else patch
+            val pending = JsonObject(readPendingPatch(mediaId) + effectivePatch)
             if (pending.isEmpty()) return@withLock ApiResult.Success(Unit)
             pendingPatchDao.upsert(PendingAniListPatchEntity(mediaId, pending.toString(), System.currentTimeMillis()))
 

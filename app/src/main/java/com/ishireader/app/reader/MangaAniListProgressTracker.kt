@@ -1,8 +1,8 @@
 package com.ishireader.app.reader
 
 import com.ishireader.app.data.model.Book
+import com.ishireader.app.data.model.CBZPageBookmark
 import com.ishireader.app.data.model.aniListSeriesKey
-import com.ishireader.app.data.network.NetworkModule
 import com.ishireader.app.data.repository.AniListRepository
 import com.ishireader.app.data.repository.LibraryPrefsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -21,10 +21,12 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * A no-op, by design, for any book with no series or whose series isn't linked+sync-enabled in
  * library-prefs' anilistLinks map -- ReaderActivity constructs and starts one of these
- * unconditionally per book-open rather than checking first.
+ * unconditionally per book-open rather than checking first. [bookmarks] is passed in rather than
+ * fetched here -- ReaderActivity already fetches ApiService.getReadingProgression once per comic
+ * open (for the TOC and reading-direction auto-detect, see buildComicToc/ComicReadingDirection),
+ * so this class would otherwise be making the exact same network call a second time.
  */
 class MangaAniListProgressTracker(
-    private val network: NetworkModule,
     private val libraryPrefsRepository: LibraryPrefsRepository,
     private val aniListRepository: AniListRepository,
     private val scope: CoroutineScope
@@ -36,21 +38,13 @@ class MangaAniListProgressTracker(
     private var lastPushedChapter: Int = 0
     private var started = false
 
-    fun start(manifestUrl: String, book: Book?) {
+    fun start(book: Book?, bookmarks: List<CBZPageBookmark>) {
         if (started || book == null) return
         started = true
 
         scope.launch {
             val link = libraryPrefsRepository.getAniListLinks()[book.aniListSeriesKey()]
                 ?.takeIf { it.syncEnabled } ?: return@launch
-
-            val response = try {
-                network.api.getReadingProgression(manifestUrl)
-            } catch (e: Exception) {
-                return@launch
-            }
-            val bookmarks = response.body()?.bookmarks
-            if (!response.isSuccessful || bookmarks == null) return@launch
 
             mediaId = link.mediaId
             sortedBookmarks = bookmarks
@@ -60,18 +54,35 @@ class MangaAniListProgressTracker(
     }
 
     /** [currentPageOneBased] is [DynamicPageCountState.currentPage] -- see class doc for why no
-     *  further translation into a bookmark page index is needed for manga. */
-    fun onPageChanged(currentPageOneBased: Int) {
+     *  further translation into a bookmark page index is needed for manga. [totalPages] is
+     *  [DynamicPageCountState.totalPages].
+     *
+     *  Pushes the last *completed* chapter, not the one currently on screen: landing on a new
+     *  chapter's first page only proves the previous chapter's last page was read, so that's what
+     *  gets pushed. The chapter the reader is sitting in only counts once the very last page of the
+     *  book is reached, since there's no further bookmark transition to catch its own completion. */
+    fun onPageChanged(currentPageOneBased: Int, totalPages: Int?) {
         val id = mediaId ?: return
         if (sortedBookmarks.isEmpty()) return
 
         val pageIndex = currentPageOneBased - 1
-        val chapter = sortedBookmarks.lastOrNull { it.first <= pageIndex }?.second ?: return
-        if (chapter <= lastPushedChapter) return
-        lastPushedChapter = chapter
+        val currentChapterIdx = sortedBookmarks.indexOfLast { it.first <= pageIndex }
+        if (currentChapterIdx < 0) return
+
+        val bookFinished = totalPages != null && currentPageOneBased >= totalPages
+        val completedChapter = when {
+            bookFinished -> sortedBookmarks[currentChapterIdx].second
+            currentChapterIdx > 0 -> sortedBookmarks[currentChapterIdx - 1].second
+            else -> null
+        } ?: return
+        if (completedChapter <= lastPushedChapter) return
+        lastPushedChapter = completedChapter
 
         scope.launch {
-            aniListRepository.patchEntry(id, JsonObject(mapOf("progress" to JsonPrimitive(chapter))))
+            // clampProgress = true -- this push is inferred from page position, not a deliberate
+            // user edit, so it must never regress AniList's progress below what's already known
+            // (see AniListRepository's class doc). A manual edit from the tracking sheet skips this.
+            aniListRepository.patchEntry(id, JsonObject(mapOf("progress" to JsonPrimitive(completedChapter))), clampProgress = true)
         }
     }
 }

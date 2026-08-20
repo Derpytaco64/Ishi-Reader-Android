@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily
+import org.readium.r2.navigator.preferences.ReadingProgression as ReadiumReadingProgression
 import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.shared.ExperimentalReadiumApi
 
@@ -43,6 +44,16 @@ enum class ReaderTextAlign { START, JUSTIFY }
 enum class ReaderLineHeight(val value: Double) { COMPACT(1.35), NORMAL(1.5), RELAXED(1.75) }
 
 enum class ReaderLayout { PAGINATED, SCROLLED }
+
+/** Comic-only page-turn direction (see [ReaderSettings.comicReadingDirection]/[ReaderSettingsSheet]'s
+ *  Reading Direction row, gated on isComic same as the Theme row). [AUTO] follows whatever the
+ *  server detected from the CBZ's own ComicInfo.xml `<Manga>` tag (`YesAndRightToLeft` -> rtl, see
+ *  Ishi-Read's comicInfo.ts) -- Android's own local CBZ parser never reads ComicInfo.xml, so that
+ *  detection only exists server-side, fetched via ApiService.getReadingProgression and threaded
+ *  through [ReaderSettings.toEpubPreferences]'s comicServerReadingProgression parameter. [LTR]/[RTL]
+ *  are an explicit user override, e.g. for a CBZ with no ComicInfo.xml (or one incorrectly tagged)
+ *  that the reader still wants to read manga-style. */
+enum class ComicReadingDirection { AUTO, LTR, RTL }
 
 /** What the bottom position indicator shows, if anything. [PAGE] mirrors Readium's own
  *  Locator.Locations.position (1-based index into Publication.positions()); [PERCENT] mirrors
@@ -114,6 +125,7 @@ data class ReaderSettings(
     val hyphens: Boolean? = null,
     val publisherStyles: Boolean = false,
     val layout: ReaderLayout = ReaderLayout.PAGINATED,
+    val comicReadingDirection: ComicReadingDirection = ComicReadingDirection.AUTO,
     val pageMargins: Double? = null,
     val verticalMargin: Double = 0.0,
     val showChapterTitle: Boolean = false,
@@ -160,9 +172,19 @@ fun ReaderSettings.forComicRendering(isComic: Boolean): ReaderSettings {
     return copy(theme = ReaderTheme.DARK)
 }
 
-fun ReaderSettings.toEpubPreferences(): EpubPreferences {
+/** [comicServerReadingProgression] is the raw `readingProgression` string from
+ *  ApiService.getReadingProgression (only ever `"rtl"` or null -- see comicInfo.ts), consulted only
+ *  when [ComicReadingDirection.AUTO] is in effect; ignored (and safe to omit) for non-comic books,
+ *  which never fetch that endpoint. */
+fun ReaderSettings.toEpubPreferences(comicServerReadingProgression: String? = null): EpubPreferences {
     val backgroundColor = effectiveBackgroundHex()?.toReadiumColor()
     val textColor = effectiveTextHex()?.toReadiumColor()
+    val readingProgression = when (comicReadingDirection) {
+        ComicReadingDirection.LTR -> ReadiumReadingProgression.LTR
+        ComicReadingDirection.RTL -> ReadiumReadingProgression.RTL
+        ComicReadingDirection.AUTO ->
+            if (comicServerReadingProgression == "rtl") ReadiumReadingProgression.RTL else null
+    }
     return EpubPreferences(
         backgroundColor = backgroundColor,
         textColor = textColor,
@@ -177,7 +199,8 @@ fun ReaderSettings.toEpubPreferences(): EpubPreferences {
         hyphens = hyphens,
         publisherStyles = publisherStyles,
         scroll = layout == ReaderLayout.SCROLLED,
-        pageMargins = pageMargins
+        pageMargins = pageMargins,
+        readingProgression = readingProgression
     )
 }
 
