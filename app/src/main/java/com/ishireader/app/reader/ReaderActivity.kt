@@ -199,6 +199,14 @@ class ReaderActivity : FragmentActivity() {
          *  darkest setting instead of the screen going fully black, matching Moon+ Reader's own
          *  "extra dim" ceiling. */
         private const val MAX_DIM_SCRIM_ALPHA = 0.85f
+
+        /** [lastPageCountFingerprint] sentinel for comics -- see [resolveExactPageCounts]'s comic
+         *  fast path. Any fixed, non-null value works: comic page counts don't depend on layout
+         *  settings or content-area size, so unlike EPUB's real fingerprints this never needs to
+         *  change or be recomputed once set, just distinguished from "no fingerprint resolved yet"
+         *  (null) and from an EPUB fingerprint (in case the same Activity instance were ever reused
+         *  across books of different kinds, though it normally isn't). */
+        private const val COMIC_FINGERPRINT = "comic"
     }
 
     private val app: IshiReaderApp by lazy { application as IshiReaderApp }
@@ -1301,6 +1309,23 @@ class ReaderActivity : FragmentActivity() {
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL) ?: return
         val settings = readerSettingsState.value
         if (settings.layout == ReaderLayout.SCROLLED) return
+
+        // CLAUDE-ADDED: A comic (Divina) resource is a single raster image with no reflowable
+        // text, so under paginated layout it always renders as exactly one page -- unlike EPUB,
+        // there's no publisher CSS/font/margin combination that could ever split or merge it with
+        // another resource. That makes PageCountSweeper's whole reason for existing (measuring
+        // Readium's real, settings-dependent reflow via a hidden WebView sweep, one resource at a
+        // time with an 8s timeout and a 400ms image-settle delay each) pure overhead here: the
+        // count is already known for free from publication.readingOrder.size, with no sweep, no
+        // cache lookup, and no dependency on font/margin/content-area fingerprinting at all.
+        if (isComicState.value) {
+            if (lastPageCountFingerprint == COMIC_FINGERPRINT) return
+            lastPageCountFingerprint = COMIC_FINGERPRINT
+            tracker.applyExactCounts(
+                publication.readingOrder.associate { it.url().toString().substringBefore("#") to 1 }
+            )
+            return
+        }
 
         if (waitForNextLayout) {
             readerContainer.awaitNextLayout()
