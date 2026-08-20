@@ -80,7 +80,10 @@ dependencies {
     // gradle/libs.versions.toml before syncing for the first time.
     implementation(libs.readium.shared)
     implementation(libs.readium.streamer)
-    implementation(libs.readium.navigator)
+    // Local fork of readium-navigator (see readium-navigator-patched/build.gradle.kts) -- needed to
+    // patch R2FXLLayout's comic pinch-zoom/double-tap bugs, since that class is `internal` and
+    // can't be overridden from here otherwise.
+    implementation(project(":readium-navigator-patched"))
 
     // Local-first offline sync layer: Room is the on-device source of truth, WorkManager drains
     // the pending-sync outbox once connectivity returns. See the "room"/"ksp"/"workManager"

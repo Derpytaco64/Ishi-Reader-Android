@@ -19,3 +19,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Ishi Reader"
 include(":app")
+include(":readium-navigator-patched")

@@ -1,0 +1,14 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/src/main/AndroidManifest.xml:8:1-13
+INJECTED from /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/src/main/AndroidManifest.xml:8:1-13
+	package
+		INJECTED from /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/src/main/AndroidManifest.xml
+uses-sdk
+INJECTED from /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/src/main/AndroidManifest.xml
+INJECTED from /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/src/main/AndroidManifest.xml

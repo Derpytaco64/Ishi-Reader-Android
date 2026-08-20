@@ -1,0 +1,21 @@
+org.readium.r2.navigator
+dimen readium_navigator_epub_vertical_padding
+drawable readium_media_notification_fastforward
+drawable readium_media_notification_rewind
+id constraint
+id coordinatorLayout
+id firstWebView
+id imageView
+id r2FXLLayout
+id readium_pdf_container
+id resourcePager
+id secondWebView
+id webView
+id webViewSingle
+layout readium_navigator_fragment_fxllayout_double
+layout readium_navigator_fragment_fxllayout_single
+layout readium_navigator_viewpager
+layout readium_navigator_viewpager_fragment_cbz
+layout readium_navigator_viewpager_fragment_epub
+string readium_media_notification_channel_description
+string readium_media_notification_channel_name
