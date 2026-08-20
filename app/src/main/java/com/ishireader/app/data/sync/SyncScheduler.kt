@@ -76,6 +76,16 @@ class SyncScheduler(private val context: Context) {
             .enqueueUniqueWork(LISTENING_TIMER_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
     }
 
+    fun scheduleAniListSync() {
+        val request = OneTimeWorkRequestBuilder<AniListSyncWorker>()
+            .setConstraints(connectedConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(ANILIST_SYNC_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
     /** One-shot: enqueued right after a book finishes downloading and once at app startup -- see
      *  [LibraryMetadataSyncWorker]'s doc comment. [ExistingWorkPolicy.KEEP] so downloading several
      *  books in a row coalesces into whichever run picks up last, same reasoning as every other
@@ -112,15 +122,17 @@ class SyncScheduler(private val context: Context) {
      *  the ring forever instead of just while a sync is genuinely happening. */
     fun isSyncingFlow(): Flow<Boolean> {
         val workManager = WorkManager.getInstance(context)
+        // CLAUDE-ADDED: Switched from the 5-flow combine() overload to the vararg/array form to fit
+        // AniList as a 6th tracked worker -- kotlinx.coroutines only has direct combine() overloads
+        // up to 5 flows, past that it's this Array<List<WorkInfo>> form instead.
         return combine(
             workManager.getWorkInfosForUniqueWorkFlow(POSITION_SYNC_WORK_NAME),
             workManager.getWorkInfosForUniqueWorkFlow(LIBRARY_PREFS_SYNC_WORK_NAME),
             workManager.getWorkInfosForUniqueWorkFlow(READING_TIMER_SYNC_WORK_NAME),
             workManager.getWorkInfosForUniqueWorkFlow(ANNOTATIONS_SYNC_WORK_NAME),
-            workManager.getWorkInfosForUniqueWorkFlow(LISTENING_TIMER_SYNC_WORK_NAME)
-        ) { position, prefs, readingTimer, annotations, listeningTimer ->
-            (position + prefs + readingTimer + annotations + listeningTimer).any { it.state == WorkInfo.State.RUNNING }
-        }
+            workManager.getWorkInfosForUniqueWorkFlow(LISTENING_TIMER_SYNC_WORK_NAME),
+            workManager.getWorkInfosForUniqueWorkFlow(ANILIST_SYNC_WORK_NAME)
+        ) { workInfoLists -> workInfoLists.any { list -> list.any { it.state == WorkInfo.State.RUNNING } } }
     }
 
     companion object {
@@ -131,5 +143,6 @@ class SyncScheduler(private val context: Context) {
         private const val LISTENING_TIMER_SYNC_WORK_NAME = "listening-timer-sync"
         private const val LIBRARY_METADATA_SYNC_WORK_NAME = "library-metadata-sync"
         private const val LIBRARY_METADATA_PERIODIC_SYNC_WORK_NAME = "library-metadata-periodic-sync"
+        private const val ANILIST_SYNC_WORK_NAME = "anilist-sync"
     }
 }

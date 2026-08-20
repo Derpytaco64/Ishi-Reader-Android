@@ -15,3 +15,10 @@ fun Book.manifestUrl(): String =
  *  the only other value api/books/route.ts ever sets [Book.rendition] to besides "Audiobook", but a
  *  named check reads clearer at call sites than a bare string comparison. */
 val Book.isComic: Boolean get() = rendition == "Comic"
+
+/** Key used for library-prefs' anilistLinks map (see AniListLink) -- a normalized series name where
+ *  one exists (every volume of a series shares this key, matching how AniList tracks the whole
+ *  series as one media entry), or this book's own manifestUrl as a fallback for a standalone book
+ *  with no series metadata. Manga-only in practice (see [isComic]/manga_cbz_support), since
+ *  extractCBZMetadata is what actually populates [BookSeries] for comics today. */
+fun Book.aniListSeriesKey(): String = series?.name?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: manifestUrl()

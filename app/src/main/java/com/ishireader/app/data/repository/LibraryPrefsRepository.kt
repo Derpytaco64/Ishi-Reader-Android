@@ -4,6 +4,7 @@ import com.ishireader.app.data.local.CachedLibraryPrefsDao
 import com.ishireader.app.data.local.CachedLibraryPrefsEntity
 import com.ishireader.app.data.local.PendingLibraryPrefsPatchDao
 import com.ishireader.app.data.local.PendingLibraryPrefsPatchEntity
+import com.ishireader.app.data.model.AniListLink
 import com.ishireader.app.data.model.AppSettings
 import com.ishireader.app.data.model.CoverSize
 import com.ishireader.app.data.model.CustomShelf
@@ -18,6 +19,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -35,6 +37,7 @@ private const val KEY_ACCENT_COLOR = "accentColor"
 private const val KEY_COVER_SIZE = "coverSize"
 private const val KEY_SHELF_ORDER = "shelfOrder"
 private const val KEY_SHELF_VISIBILITY = "shelfVisibility"
+private const val KEY_ANILIST_LINKS = "anilistLinks"
 
 @Serializable
 private data class SettingsFields(
@@ -126,6 +129,23 @@ class LibraryPrefsRepository(
                 ?.toMap()
                 ?: emptyMap()
         )
+    }
+
+    /** Keyed by a normalized series name (or a standalone book's own identity key when it has no
+     *  series) -- see AniListLink's own doc comment. */
+    suspend fun getAniListLinks(): Map<String, AniListLink> = withContext(Dispatchers.IO) {
+        val links = fetchPrefsBlob()[KEY_ANILIST_LINKS] ?: return@withContext emptyMap()
+        runCatching { json.decodeFromJsonElement(MapSerializer(String.serializer(), AniListLink.serializer()), links) }
+            .getOrDefault(emptyMap())
+    }
+
+    /** Always writes the whole map back, same "mutate a local copy, PATCH in full" convention as
+     *  [setCustomShelves] -- pass a null [link] to unlink [seriesKey] entirely. */
+    suspend fun setAniListLink(seriesKey: String, link: AniListLink?): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        val current = getAniListLinks().toMutableMap()
+        if (link == null) current.remove(seriesKey) else current[seriesKey] = link
+        val element = json.encodeToJsonElement(MapSerializer(String.serializer(), AniListLink.serializer()), current)
+        patchPrefs(JsonObject(mapOf(KEY_ANILIST_LINKS to element)))
     }
 
     suspend fun patchSettings(settings: AppSettings): ApiResult<Unit> = withContext(Dispatchers.IO) {

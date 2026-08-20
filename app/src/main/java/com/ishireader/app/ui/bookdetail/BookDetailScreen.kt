@@ -47,6 +47,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,9 +64,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
+import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.DailyListeningBucket
 import com.ishireader.app.data.model.DailyReadingBucket
@@ -128,6 +131,15 @@ fun BookDetailScreen(
     var coverImage by remember { mutableStateOf<TappedImage?>(null) }
     var loadingCover by remember { mutableStateOf(false) }
     var showTimerSheet by remember { mutableStateOf(false) }
+    var showTrackingSheet by remember { mutableStateOf(false) }
+    val app = context.applicationContext as IshiReaderApp
+    val trackingViewModel: TrackingViewModel = viewModel(
+        factory = TrackingViewModel.Factory(app.aniListRepository, app.libraryPrefsRepository)
+    )
+    val trackingState by trackingViewModel.uiState.collectAsState()
+    LaunchedEffect(showTrackingSheet) {
+        if (showTrackingSheet) trackingViewModel.start(book)
+    }
     var pendingDeleteCompletedReadId by remember { mutableStateOf<String?>(null) }
     var pendingDeleteCompletedListenId by remember { mutableStateOf<String?>(null) }
 
@@ -276,6 +288,15 @@ fun BookDetailScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             MetadataChips(book = book, pageCount = state.pageCount)
+
+            // CLAUDE-ADDED: Manga-only AniList tracking entry point -- see TrackingSheet's own doc
+            // comment. Light novels/prose EPUBs aren't in scope for AniList sync.
+            if (isComic) {
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(onClick = { showTrackingSheet = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Track on AniList")
+                }
+            }
 
             if (book.tags.isNotEmpty()) {
                 ChipSection(title = "Genres") { book.tags.forEach { tag -> Chip(tag) } }
@@ -522,6 +543,24 @@ fun BookDetailScreen(
                 onDeleteCompleted = { id -> viewModel.deleteCompletedRead(id) },
                 onDismiss = { showTimerSheet = false },
                 comicSecondsLeft = comicSecondsLeft
+            )
+        }
+
+        if (showTrackingSheet) {
+            TrackingSheet(
+                state = trackingState,
+                onSearchQueryChange = trackingViewModel::onSearchQueryChange,
+                onSearch = trackingViewModel::search,
+                onLink = trackingViewModel::link,
+                onUnlink = trackingViewModel::unlink,
+                onToggleSync = trackingViewModel::toggleSync,
+                onStatusChange = trackingViewModel::setStatus,
+                onScoreChange = trackingViewModel::setScore,
+                onProgressChange = trackingViewModel::setProgress,
+                onRepeatChange = trackingViewModel::setRepeat,
+                onStartedAtChange = trackingViewModel::setStartedAt,
+                onCompletedAtChange = trackingViewModel::setCompletedAt,
+                onDismiss = { showTrackingSheet = false }
             )
         }
 

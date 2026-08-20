@@ -23,7 +23,12 @@ data class PublicUser(
     val name: String? = null,
     val isAdmin: Boolean = false,
     val avatarUrl: String? = null,
-    val needsPasswordSetup: Boolean = false
+    val needsPasswordSetup: Boolean = false,
+    val anilistConnected: Boolean = false,
+    /** AniList's own score format for this user (POINT_100/POINT_10_DECIMAL/POINT_10/POINT_5/
+     *  POINT_3), fetched once at connect time -- null while disconnected. Drives how the tracking
+     *  sheet's score input is bounded/labeled. */
+    val anilistScoreFormat: String? = null
 )
 
 @Serializable

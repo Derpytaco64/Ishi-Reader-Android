@@ -156,11 +156,14 @@ fun MainTabsScreen(
     var isMigrateOpen by remember { mutableStateOf(false) }
     var isClearingCache by remember { mutableStateOf(false) }
     var isEditUserOpen by remember { mutableStateOf(false) }
+    var isAniListOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val app = context.applicationContext as IshiReaderApp
     val isOffline by app.libraryRepository.isOffline.collectAsState()
     val editUserViewModel: EditUserViewModel = viewModel(factory = EditUserViewModel.Factory(app.authRepository))
     val editUserState by editUserViewModel.uiState.collectAsState()
+    val aniListAccountViewModel: AniListAccountViewModel = viewModel(factory = AniListAccountViewModel.Factory(app.aniListRepository))
+    val aniListAccountState by aniListAccountViewModel.uiState.collectAsState()
     val migrateBookDataViewModel: MigrateBookDataViewModel = viewModel(
         factory = MigrateBookDataViewModel.Factory(
             app.libraryRepository,
@@ -221,6 +224,10 @@ fun MainTabsScreen(
 
     LaunchedEffect(isEditUserOpen) {
         if (isEditUserOpen) editUserViewModel.start(user)
+    }
+
+    LaunchedEffect(isAniListOpen) {
+        if (isAniListOpen) aniListAccountViewModel.start(user)
     }
 
     // CLAUDE-ADDED: Guards against the logo's drawer-open tap and a book cover's detail-navigation
@@ -418,6 +425,13 @@ fun MainTabsScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("AniList") },
+                            onClick = {
+                                userMenuExpanded = false
+                                isAniListOpen = true
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Stats") },
                             onClick = {
                                 userMenuExpanded = false
@@ -593,6 +607,21 @@ fun MainTabsScreen(
                     // CLAUDE-ADDED: Picks up a display-name/avatar change made in the sheet -- not
                     // observed live while the sheet is open since that's EditUserViewModel's own
                     // separate copy of the user (avoids a ViewModel-depends-on-ViewModel wiring).
+                    topBarViewModel.refresh()
+                }
+            )
+        }
+
+        if (isAniListOpen) {
+            AniListAccountSheet(
+                state = aniListAccountState,
+                onPinCodeChange = aniListAccountViewModel::onPinCodeChange,
+                onConnect = aniListAccountViewModel::connect,
+                onDisconnect = aniListAccountViewModel::disconnect,
+                onDismiss = {
+                    isAniListOpen = false
+                    // Same reasoning as EditUserSheet's onDismiss -- picks up the connected/
+                    // disconnected flag this sheet's own ViewModel tracked separately.
                     topBarViewModel.refresh()
                 }
             )

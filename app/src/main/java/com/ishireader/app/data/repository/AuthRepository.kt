@@ -209,7 +209,9 @@ private fun PublicUser.toEntity() = CachedUserEntity(
     name = name,
     isAdmin = isAdmin,
     avatarUrl = avatarUrl,
-    needsPasswordSetup = needsPasswordSetup
+    needsPasswordSetup = needsPasswordSetup,
+    anilistConnected = anilistConnected,
+    anilistScoreFormat = anilistScoreFormat
 )
 
 private fun CachedUserEntity.toPublicUser() = PublicUser(
@@ -218,5 +220,7 @@ private fun CachedUserEntity.toPublicUser() = PublicUser(
     name = name,
     isAdmin = isAdmin,
     avatarUrl = avatarUrl,
-    needsPasswordSetup = needsPasswordSetup
+    needsPasswordSetup = needsPasswordSetup,
+    anilistConnected = anilistConnected,
+    anilistScoreFormat = anilistScoreFormat
 )

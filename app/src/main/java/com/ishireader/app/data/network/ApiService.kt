@@ -2,6 +2,13 @@ package com.ishireader.app.data.network
 
 import com.ishireader.app.data.model.AdminUserResponse
 import com.ishireader.app.data.model.AdminUsersResponse
+import com.ishireader.app.data.model.AniListAuthorizeUrlResponse
+import com.ishireader.app.data.model.AniListDisconnectResponse
+import com.ishireader.app.data.model.AniListExchangeRequest
+import com.ishireader.app.data.model.AniListExchangeResponse
+import com.ishireader.app.data.model.AniListMediaEntryResponse
+import com.ishireader.app.data.model.AniListSaveEntryResponse
+import com.ishireader.app.data.model.AniListSearchResponse
 import com.ishireader.app.data.model.AvatarUploadRequest
 import com.ishireader.app.data.model.AvatarUploadResponse
 import com.ishireader.app.data.model.BookFolderField
@@ -40,6 +47,7 @@ import com.ishireader.app.data.model.PageCountResponse
 import com.ishireader.app.data.model.PositionRequest
 import com.ishireader.app.data.model.PositionResponse
 import com.ishireader.app.data.model.PublicUsersResponse
+import com.ishireader.app.data.model.ReadingProgressionResponse
 import com.ishireader.app.data.model.ReadingSpeedSamplesRequest
 import com.ishireader.app.data.model.ReadingSpeedSamplesResponse
 import com.ishireader.app.data.model.ReadingTimeRequest
@@ -110,6 +118,11 @@ interface ApiService {
     @Streaming
     @GET("api/books/download")
     suspend fun downloadBook(@Query("manifestUrl") manifestUrl: String): Response<ResponseBody>
+
+    /** CBZ-only chapter/RTL metadata the bundled Go manifest server can't provide (it never parses
+     *  ComicInfo.xml) -- see comicInfo.ts. Empty/null fields for a non-comic book. */
+    @GET("api/books/reading-progression")
+    suspend fun getReadingProgression(@Query("manifestUrl") manifestUrl: String): Response<ReadingProgressionResponse>
 
     @GET("api/userdata/position")
     suspend fun getPosition(@Query("manifestUrl") manifestUrl: String): Response<PositionResponse>
@@ -217,6 +230,33 @@ interface ApiService {
 
     @POST("api/userdata/migrateBookData")
     suspend fun migrateBookData(@Body request: MigrateBookDataRequest): Response<Unit>
+
+    /** null url means the instance hasn't configured an AniList client_id/secret yet (Admin
+     *  Settings). Not admin-gated -- any signed-in user needs this to connect their own account. */
+    @GET("api/auth/anilist/authorize-url")
+    suspend fun getAniListAuthorizeUrl(): Response<AniListAuthorizeUrlResponse>
+
+    /** PIN-flow completion: exchanges the code the user copy-pasted from AniList's own /oauth/pin
+     *  page for an access token, stored server-side against this session's user. */
+    @POST("api/auth/anilist/exchange")
+    suspend fun exchangeAniListCode(@Body request: AniListExchangeRequest): Response<AniListExchangeResponse>
+
+    @POST("api/auth/anilist/disconnect")
+    suspend fun disconnectAniList(): Response<AniListDisconnectResponse>
+
+    /** Manga/one-shot only -- see the server route's format_in filter. */
+    @GET("api/anilist/search")
+    suspend fun searchAniList(@Query("query") query: String): Response<AniListSearchResponse>
+
+    @GET("api/anilist/list-entry")
+    suspend fun getAniListEntry(@Query("mediaId") mediaId: Int): Response<AniListMediaEntryResponse>
+
+    /** Server does a presence-based patch -- only the keys actually present in the JSON body are
+     *  touched (an omitted key means "don't change this field", an explicit null clears it), same
+     *  convention as [patchLibraryPrefs]/[adminUpdateUser]. Build the JsonObject with only the
+     *  fields that actually changed. */
+    @POST("api/anilist/list-entry")
+    suspend fun saveAniListEntry(@Body patch: JsonObject): Response<AniListSaveEntryResponse>
 
     @GET("api/admin/users")
     suspend fun adminListUsers(): Response<AdminUsersResponse>

@@ -260,6 +260,10 @@ class ReaderActivity : FragmentActivity() {
     private var dynamicPageCountTracker: DynamicPageCountTracker? = null
     private val dynamicPageCountState = mutableStateOf(DynamicPageCountState())
 
+    /** Manga-only AniList chapter-progress auto-sync -- null for a non-comic book, or a comic
+     *  whose series isn't AniList-linked (see MangaAniListProgressTracker's own doc comment). */
+    private var mangaAniListProgressTracker: MangaAniListProgressTracker? = null
+
     /** The settings/device fingerprint (see ReaderSettings.layoutFingerprint) [dynamicPageCountTracker]
      *  currently has exact counts for (or is resolving), so [resolveExactPageCounts] can skip
      *  redundant work when nothing layout-affecting actually changed -- e.g. a non-layout settings
@@ -566,6 +570,17 @@ class ReaderActivity : FragmentActivity() {
         dynamicPageCountTracker = pageCountTracker
         pageCountTracker.state.onEach { dynamicPageCountState.value = it }.launchIn(lifecycleScope)
         lifecycleScope.launch { resolveExactPageCounts() }
+
+        // CLAUDE-ADDED: AniList chapter-progress auto-sync, manga only -- see
+        // MangaAniListProgressTracker's own doc comment for why currentPage alone (no locator
+        // translation) is enough here. Feeds off the same pageCountTracker state flow above rather
+        // than a second collector, so it only ever reacts to a real page change.
+        if (isComicState.value) {
+            val progressTracker = MangaAniListProgressTracker(app.network, app.libraryPrefsRepository, app.aniListRepository, lifecycleScope)
+            mangaAniListProgressTracker = progressTracker
+            progressTracker.start(manifestUrl, app.libraryRepository.findCached(manifestUrl))
+            pageCountTracker.state.onEach { it.currentPage?.let { page -> progressTracker.onPageChanged(page) } }.launchIn(lifecycleScope)
+        }
 
         lifecycleScope.launch {
             val positions = publication.positions()

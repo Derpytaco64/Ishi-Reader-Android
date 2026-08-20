@@ -18,5 +18,7 @@ data class CachedUserEntity(
     val name: String?,
     val isAdmin: Boolean,
     val avatarUrl: String?,
-    val needsPasswordSetup: Boolean
+    val needsPasswordSetup: Boolean,
+    val anilistConnected: Boolean = false,
+    val anilistScoreFormat: String? = null
 )
