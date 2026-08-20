@@ -291,15 +291,21 @@ internal class R2FXLLayout : FrameLayout {
         }
 
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            android.util.Log.d("IshiFXLZoom", "onSingleTapConfirmed x=${e.x} y=${e.y}")
             dispatchOnTab(e)
             return false
         }
 
         override fun onDoubleTap(e: MotionEvent): Boolean {
+            android.util.Log.d("IshiFXLZoom", "onDoubleTap (framework-detected) x=${e.x} y=${e.y}")
             return false
         }
 
         override fun onDoubleTapEvent(e: MotionEvent): Boolean {
+            android.util.Log.d(
+                "IshiFXLZoom",
+                "onDoubleTapEvent action=${e.action and MotionEvent.ACTION_MASK} x=${e.x} y=${e.y}"
+            )
             when (e.action and MotionEvent.ACTION_MASK) {
                 MotionEvent.ACTION_UP ->
                     dispatchOnDoubleTap(e)
@@ -370,8 +376,18 @@ internal class R2FXLLayout : FrameLayout {
         }
 
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+            android.util.Log.d(
+                "IshiFXLZoom",
+                "onScaleBegin detectorFocus=(${detector.focusX},${detector.focusY}) " +
+                    "scale=$scale posX=$posX posY=$posY size=${width}x$height " +
+                    "drawRect=$drawRect viewPortRect=$viewPortRect"
+            )
             zoomDispatcher.onZoomBegin(scale)
             fixFocusPoint(detector.focusX, detector.focusY)
+            android.util.Log.d(
+                "IshiFXLZoom",
+                "onScaleBegin AFTER fixFocusPoint focusX=$focusX focusY=$focusY posX=$posX posY=$posY drawRect=$drawRect"
+            )
             return true
         }
 
@@ -383,6 +399,11 @@ internal class R2FXLLayout : FrameLayout {
             }
 
             internalScale(scale, focusX, focusY)
+            android.util.Log.d(
+                "IshiFXLZoom",
+                "onScale detectorFocus=(${detector.focusX},${detector.focusY}) scaleFactor=$scaleFactor " +
+                    "newScale=$scale focusX=$focusX focusY=$focusY posX=$posX posY=$posY drawRect=$drawRect"
+            )
             zoomDispatcher.onZoom(scale)
             return true
         }
@@ -412,6 +433,12 @@ internal class R2FXLLayout : FrameLayout {
         internalScale(scale, array[0], array[1])
         val dX = getMatrixValue(scaleMatrix, Matrix.MTRANS_X) - x1
         val dY = getMatrixValue(scaleMatrix, Matrix.MTRANS_Y) - y1
+        android.util.Log.d(
+            "IshiFXLZoom",
+            "fixFocusPoint in=($focusX,$focusY) contentSpace=(${array[0]},${array[1]}) " +
+                "x1=$x1 y1=$y1 dX=$dX dY=$dY preMovePosX=$posX preMovePosY=$posY " +
+                "moveTarget=(${dX + posX},${dY + posY})"
+        )
         internalMove(dX + posX, dY + posY, false)
     }
 
@@ -989,9 +1016,15 @@ internal class R2FXLLayout : FrameLayout {
             // (onScaleEnd/onUp), so skipping here while a gesture owns the matrices loses nothing.
             val gestureInProgress = scaleDetector?.isInProgress == true ||
                 animatedZoomRunnable?.let { !it.mFinished } == true
+            android.util.Log.d(
+                "IshiFXLZoom",
+                "onGlobalLayout changed=$changed gestureInProgress=$gestureInProgress " +
+                    "old=($oldL,$oldT,$oldR,$oldB) new=($mLeft,$mTop,$mRight,$mBottom)"
+            )
             if (changed && !gestureInProgress) {
                 matrixUpdated()
                 val p = closestValidTranslationPoint
+                android.util.Log.d("IshiFXLZoom", "onGlobalLayout RECENTERING to (${p.x},${p.y})")
                 internalMove(p.x, p.y, false)
             }
         }
