@@ -724,14 +724,25 @@ class ReaderActivity : FragmentActivity() {
         decorableNavigator.addDecorationListener(ANNOTATIONS_GROUP_NOTES, decorationListener)
 
         val visualNavigator = navigatorFragment as VisualNavigator
+        val chromeTapListener = ChromeTapInputListener(visualNavigator) { setChromeVisible(!chromeVisible.value) }
         visualNavigator.addInputListener(
-            ImageTapInputListener(
-                fragment = navigatorFragment!!,
-                publication = publication,
-                scope = lifecycleScope,
-                fallback = ChromeTapInputListener(visualNavigator) { setChromeVisible(!chromeVisible.value) },
-                onImageTapped = { pendingImageOverlay.value = it }
-            )
+            // A comic page is itself one full-frame <img> in the reused EpubNavigatorFragment
+            // WebView, so ImageTapInputListener's element-under-tap query would match on almost
+            // every tap -- including the middle third ChromeTapInputListener needs for its own
+            // tap-to-reveal zone -- and swallow it as an "image tap" before chrome toggling ever
+            // runs. ImageTapInputListener only makes sense for a picture embedded in EPUB text, so
+            // comics skip straight to the chrome/page-turn listener instead.
+            if (isComicState.value) {
+                chromeTapListener
+            } else {
+                ImageTapInputListener(
+                    fragment = navigatorFragment!!,
+                    publication = publication,
+                    scope = lifecycleScope,
+                    fallback = chromeTapListener,
+                    onImageTapped = { pendingImageOverlay.value = it }
+                )
+            }
         )
         setChromeVisible(false)
 
@@ -860,6 +871,13 @@ class ReaderActivity : FragmentActivity() {
                 // (real UI controls that must stay legible/tappable at any brightness setting).
                 val dimmedReaderBackgroundColor = lerp(readerBackgroundColor, Color.Black, scrimAlpha)
                 val dimmedReaderTextColor = lerp(readerTextColor, Color.Black, scrimAlpha)
+                // Comic pages are art, not prose -- a translucent chapter-title/page-number bar lets
+                // busy artwork show through and hurts legibility far more than it would over plain
+                // text, so those two bars go fully opaque for comics only (text readers keep the
+                // original 0.85 translucency). Full-brightness text against that now-solid bar reads
+                // as too harsh, so it's dimmed a notch to match.
+                val overlayBarBackgroundAlpha = if (isComic) 1f else 0.85f
+                val overlayBarTextColor = if (isComic) dimmedReaderTextColor.copy(alpha = 0.75f) else dimmedReaderTextColor
 
                 Box(Modifier.fillMaxSize()) {
                     // "Extra dim" scrim for sessionBrightnessState's negative range -- see
@@ -945,7 +963,7 @@ class ReaderActivity : FragmentActivity() {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(dimmedReaderBackgroundColor.copy(alpha = 0.85f))
+                                    .background(dimmedReaderBackgroundColor.copy(alpha = overlayBarBackgroundAlpha))
                                     .then(
                                         if (!chromeShown) {
                                             Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
@@ -962,7 +980,7 @@ class ReaderActivity : FragmentActivity() {
                                 Text(
                                     text = chapterTitle.orEmpty(),
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = dimmedReaderTextColor,
+                                    color = overlayBarTextColor,
                                     fontSize = chapterTitleFontSize,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -1024,7 +1042,7 @@ class ReaderActivity : FragmentActivity() {
                                     // before the background so the gap stays empty rather than
                                     // getting filled in by it.
                                     .padding(bottom = 8.dp)
-                                    .background(dimmedReaderBackgroundColor.copy(alpha = 0.85f))
+                                    .background(dimmedReaderBackgroundColor.copy(alpha = overlayBarBackgroundAlpha))
                                     .then(
                                         if (!chromeShown) {
                                             Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
@@ -1071,7 +1089,7 @@ class ReaderActivity : FragmentActivity() {
                                     Text(
                                         text = positionText.orEmpty(),
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = dimmedReaderTextColor,
+                                        color = overlayBarTextColor,
                                         modifier = alignmentModifier
                                     )
                                 }
@@ -1244,7 +1262,8 @@ class ReaderActivity : FragmentActivity() {
                         onDeleteBookmark = annotationsController::deleteBookmark,
                         onEditNote = annotationsController::updateNoteText,
                         onDeleteNote = annotationsController::deleteNote,
-                        onDismiss = { annotationsSheetOpen = false }
+                        onDismiss = { annotationsSheetOpen = false },
+                        isComic = isComic
                     )
                 }
 

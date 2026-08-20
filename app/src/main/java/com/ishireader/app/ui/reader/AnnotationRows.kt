@@ -62,9 +62,12 @@ internal data class AnnotationRow(
     val quote: String? = null
 )
 
-internal fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending: Boolean): List<AnnotationRow> {
+internal fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending: Boolean, isComic: Boolean = false): List<AnnotationRow> {
     val rows = mutableListOf<AnnotationRow>()
-    if (tab == AnnotationTab.ALL || tab == AnnotationTab.HIGHLIGHTS) {
+    // Highlighting requires selectable text, which a comic page doesn't have (see
+    // AnnotationsPanelSheet's isComic doc) -- excluded here too, not just from the tab chips,
+    // so any leftover/synced highlight record on a comic never surfaces in the ALL view either.
+    if (!isComic && (tab == AnnotationTab.ALL || tab == AnnotationTab.HIGHLIGHTS)) {
         state.highlights.forEach { h ->
             val locator = h.locator?.let(::parseLocator)
             rows += AnnotationRow(

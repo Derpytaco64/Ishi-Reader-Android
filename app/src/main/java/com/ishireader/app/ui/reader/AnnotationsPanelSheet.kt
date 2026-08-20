@@ -54,10 +54,19 @@ fun AnnotationsPanelSheet(
     onDeleteBookmark: (String) -> Unit,
     onEditNote: (id: String, text: String) -> Unit,
     onDeleteNote: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    // Highlighting needs selectable text, which a comic page (rendered as a single image) doesn't
+    // have -- so comics only ever get bookmarks and page-attached notes, and the Highlights filter
+    // chip is meaningless clutter there.
+    isComic: Boolean = false
 ) {
     var tab by remember { mutableStateOf(AnnotationTab.ALL) }
     var descending by remember { mutableStateOf(false) }
+    val availableTabs = if (isComic) {
+        AnnotationTab.entries.filter { it != AnnotationTab.HIGHLIGHTS }
+    } else {
+        AnnotationTab.entries
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column {
@@ -84,7 +93,7 @@ fun AnnotationsPanelSheet(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                AnnotationTab.entries.forEach { t ->
+                availableTabs.forEach { t ->
                     FilterChip(selected = tab == t, onClick = { tab = t }, label = { Text(t.name.lowercase().replaceFirstChar { it.uppercase() }) })
                 }
             }
@@ -96,7 +105,7 @@ fun AnnotationsPanelSheet(
                 return@Column
             }
 
-            val rows = buildRows(state, tab, descending)
+            val rows = buildRows(state, tab, descending, isComic)
             if (rows.isEmpty()) {
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text("No annotations yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
