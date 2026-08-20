@@ -48,6 +48,10 @@ import kotlin.math.roundToInt
 
 private val STATUS_OPTIONS = listOf("CURRENT", "PLANNING", "COMPLETED", "DROPPED", "PAUSED", "REPEATING")
 
+/** Which of the three scroll-wheel stats (see [WheelNumberPicker]) is currently selected for
+ *  editing in [TrackingFieldsSection] -- null means none, all three show their plain value. */
+private enum class TrackingStat { CHAPTER, SCORE, REREADS }
+
 // Not file-private -- BookDetailScreen's own tracking summary row reuses these two for the same
 // status wording and fuzzy-date formatting as this sheet, so the collapsed row and the sheet never
 // disagree on how a status/date is worded.
@@ -237,6 +241,10 @@ private fun TrackingFieldsSection(
     var progressDraft by remember(entry?.progress) { mutableStateOf(entry?.progress ?: 0) }
     var scoreDraft by remember(entry?.score) { mutableStateOf(entry?.score ?: 0.0) }
     var repeatDraft by remember(entry?.repeat) { mutableStateOf(entry?.repeat ?: 0) }
+    // CLAUDE-ADDED: Only one stat shows its scroll wheel at a time -- the other two collapse back to
+    // a plain tap-to-edit value display, per user request. Tapping a collapsed stat selects it;
+    // Save (below) commits all three drafts at once and collapses back to the plain display.
+    var editingStat by remember { mutableStateOf<TrackingStat?>(null) }
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -247,19 +255,25 @@ private fun TrackingFieldsSection(
             value = progressDraft,
             onValueChange = { progressDraft = it },
             min = 0,
-            max = maxOf(state.media?.chapters ?: 9999, progressDraft, 1)
+            max = maxOf(state.media?.chapters ?: 9999, progressDraft, 1),
+            editing = editingStat == TrackingStat.CHAPTER,
+            onTap = { editingStat = TrackingStat.CHAPTER }
         )
         ScoreWheelPicker(
             scoreFormat = state.scoreFormat,
             value = scoreDraft,
-            onValueChange = { scoreDraft = it }
+            onValueChange = { scoreDraft = it },
+            editing = editingStat == TrackingStat.SCORE,
+            onTap = { editingStat = TrackingStat.SCORE }
         )
         WheelNumberPicker(
             label = "Rereads",
             value = repeatDraft,
             onValueChange = { repeatDraft = it },
             min = 0,
-            max = maxOf(repeatDraft, 999)
+            max = maxOf(repeatDraft, 999),
+            editing = editingStat == TrackingStat.REREADS,
+            onTap = { editingStat = TrackingStat.REREADS }
         )
     }
     Button(
@@ -267,6 +281,7 @@ private fun TrackingFieldsSection(
             onProgressChange(progressDraft)
             onScoreChange(scoreDraft)
             onRepeatChange(repeatDraft)
+            editingStat = null
         },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
     ) { Text("Save") }
@@ -326,29 +341,37 @@ private fun DateRow(label: String, value: AniListFuzzyDate?, onChange: (AniListF
  *  know about) falls back to the same 0-10 range POINT_10 uses -- a reasonable middle ground rather
  *  than guessing 0-100. */
 @Composable
-private fun ScoreWheelPicker(scoreFormat: String?, value: Double, onValueChange: (Double) -> Unit) {
+private fun ScoreWheelPicker(
+    scoreFormat: String?,
+    value: Double,
+    onValueChange: (Double) -> Unit,
+    editing: Boolean,
+    onTap: () -> Unit
+) {
     when (scoreFormat) {
         "POINT_100" -> WheelNumberPicker(
             label = "Score", value = value.roundToInt(), onValueChange = { onValueChange(it.toDouble()) },
-            min = 0, max = 100
+            min = 0, max = 100, editing = editing, onTap = onTap
         )
         "POINT_10_DECIMAL" -> WheelNumberPicker(
             label = "Score", value = (value * 10).roundToInt().coerceIn(0, 100),
             onValueChange = { onValueChange(it / 10.0) },
             min = 0, max = 100,
-            displayedValues = remember { Array(101) { "%.1f".format(it / 10.0) } }
+            displayedValues = remember { Array(101) { "%.1f".format(it / 10.0) } },
+            valueText = "%.1f".format(value),
+            editing = editing, onTap = onTap
         )
         "POINT_5" -> WheelNumberPicker(
             label = "Score", value = value.roundToInt(), onValueChange = { onValueChange(it.toDouble()) },
-            min = 0, max = 5
+            min = 0, max = 5, editing = editing, onTap = onTap
         )
         "POINT_3" -> WheelNumberPicker(
             label = "Score", value = value.roundToInt(), onValueChange = { onValueChange(it.toDouble()) },
-            min = 0, max = 3
+            min = 0, max = 3, editing = editing, onTap = onTap
         )
         else -> WheelNumberPicker(
             label = "Score", value = value.roundToInt(), onValueChange = { onValueChange(it.toDouble()) },
-            min = 0, max = 10
+            min = 0, max = 10, editing = editing, onTap = onTap
         )
     }
 }
@@ -360,7 +383,11 @@ private fun ScoreWheelPicker(scoreFormat: String?, value: Double, onValueChange:
  *  factory lambda runs once per call site, not per recomposition) -- fine here since every caller's
  *  bounds are effectively fixed for the lifetime of one sheet open; only [value] is kept in sync on
  *  every recomposition, via [NumberPicker.update]'s own value-changed callback flowing back out
- *  through [onValueChange]. */
+ *  through [onValueChange].
+ *
+ *  The wheel itself only renders while [editing] is true (this stat is the one currently selected
+ *  for editing, see [TrackingStat]) -- otherwise this shows [valueText] as a plain tap target
+ *  ([onTap] selects this stat), so the sheet doesn't show three scroll wheels at once. */
 @Composable
 private fun WheelNumberPicker(
     label: String,
@@ -368,24 +395,36 @@ private fun WheelNumberPicker(
     onValueChange: (Int) -> Unit,
     min: Int,
     max: Int,
-    displayedValues: Array<String>? = null
+    editing: Boolean,
+    onTap: () -> Unit,
+    displayedValues: Array<String>? = null,
+    valueText: String = value.toString()
 ) {
     val coercedValue = value.coerceIn(min, max)
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 4.dp)) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(horizontal = 4.dp).width(96.dp)
+    ) {
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-        AndroidView(
-            modifier = Modifier.width(96.dp),
-            factory = { ctx ->
-                NumberPicker(ctx).apply {
-                    minValue = min
-                    maxValue = max
-                    displayedValues?.let { this.displayedValues = it }
-                    wrapSelectorWheel = false
-                    this.value = coercedValue
-                    setOnValueChangedListener { _, _, newVal -> onValueChange(newVal) }
-                }
-            },
-            update = { picker -> if (picker.value != coercedValue) picker.value = coercedValue }
-        )
+        if (editing) {
+            AndroidView(
+                modifier = Modifier.fillMaxWidth(),
+                factory = { ctx ->
+                    NumberPicker(ctx).apply {
+                        minValue = min
+                        maxValue = max
+                        displayedValues?.let { this.displayedValues = it }
+                        wrapSelectorWheel = false
+                        this.value = coercedValue
+                        setOnValueChangedListener { _, _, newVal -> onValueChange(newVal) }
+                    }
+                },
+                update = { picker -> if (picker.value != coercedValue) picker.value = coercedValue }
+            )
+        } else {
+            OutlinedButton(onClick = onTap, modifier = Modifier.padding(top = 4.dp).fillMaxWidth()) {
+                Text(valueText)
+            }
+        }
     }
 }
