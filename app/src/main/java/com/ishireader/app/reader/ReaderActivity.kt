@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,7 +39,10 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -55,6 +59,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -63,6 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.ComposeView
@@ -960,8 +966,13 @@ class ReaderActivity : FragmentActivity() {
                         onPreview = { applyBrightness(it) },
                         onCommit = { sessionBrightnessState.value = it },
                         onTap = { (navigatorFragment as? OverflowableNavigator)?.goBackward(animated = true) },
-                        backgroundColor = readerBackgroundColor,
-                        contentColor = readerTextColor,
+                        // Comic pages are art, not a solid theme-colored background -- readerTextColor
+                        // (tuned to sit on readerBackgroundColor, which for the forced Dark/Light comic
+                        // theme is white/near-white) reliably disappears against a light manga page. The
+                        // app's own accent color is fixed and page-content-independent, so it stays
+                        // visible regardless of what's actually on screen.
+                        backgroundColor = if (isComic) MaterialTheme.colorScheme.surface else readerBackgroundColor,
+                        contentColor = if (isComic) MaterialTheme.colorScheme.primary else readerTextColor,
                         chromeShown = chromeShown,
                         modifier = Modifier.align(Alignment.CenterStart)
                     )
@@ -1006,74 +1017,110 @@ class ReaderActivity : FragmentActivity() {
                         // reappears on the next center tap) instead of sitting over the text
                         // permanently until the user taps Undo or the X.
                         val showReturnLocatorBar = returnLocator != null && chromeShown
+                        // Comics: a pill that hugs its own content instead of a full-width bar, so it
+                        // sits lightly over the artwork instead of cutting a solid stripe across it
+                        // (matches the brightness HUD's own pill treatment). Text readers keep the
+                        // original full-width bar unchanged.
+                        val chapterTitleRowContent: @Composable RowScope.() -> Unit = {
+                            val chapterTitleBaseFontSize = MaterialTheme.typography.titleMedium.fontSize
+                            val chapterTitleMinFontSize = 10.sp
+                            var chapterTitleFontSize by remember(chapterTitle) { mutableStateOf(chapterTitleBaseFontSize) }
+                            Text(
+                                text = chapterTitle.orEmpty(),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = overlayBarTextColor,
+                                fontSize = chapterTitleFontSize,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = if (showChapterTitleHeader) TextAlign.Center else TextAlign.Start,
+                                onTextLayout = { result ->
+                                    // Shrinks the title one sp at a time on overflow until it fits within
+                                    // two lines, so long chapter names stay fully visible instead of being
+                                    // cut off with an ellipsis.
+                                    if (result.hasVisualOverflow && chapterTitleFontSize > chapterTitleMinFontSize) {
+                                        chapterTitleFontSize = (chapterTitleFontSize.value - 1).sp
+                                    }
+                                },
+                                modifier = Modifier
+                                    // A pill should hug the title's own width, not stretch to fill --
+                                    // weight(1f) exists only so the full-width bar's Undo/Close buttons
+                                    // land at its trailing edge.
+                                    .then(if (isComic) Modifier else Modifier.weight(1f))
+                                    .padding(vertical = 4.dp)
+                                    .then(if (!showChapterTitleHeader) Modifier.padding(start = 12.dp) else Modifier)
+                            )
+                            // Mirrors the website's returnLocator affordance (StatefulReaderFooter):
+                            // set right before jumping to an annotation from the panel, cleared once
+                            // tapped -- no auto-timeout, persists until the user actually uses it.
+                            if (showReturnLocatorBar) {
+                                IconButton(onClick = {
+                                    returnLocator?.let { navigateTo(it, animated = true) }
+                                    returnLocatorState.value = null
+                                }) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Undo,
+                                        contentDescription = "Return to previous position",
+                                        tint = dimmedReaderTextColor
+                                    )
+                                }
+                                // Dismisses the bar without navigating -- it otherwise sits over the
+                                // text with no way to clear it short of using (and thus undoing) the jump.
+                                IconButton(onClick = { returnLocatorState.value = null }) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Dismiss return to position",
+                                        tint = dimmedReaderTextColor
+                                    )
+                                }
+                            }
+                        }
                         AnimatedVisibility(
                             visible = showChapterTitleHeader || showReturnLocatorBar,
                             enter = fadeIn(),
                             exit = fadeOut(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(dimmedReaderBackgroundColor.copy(alpha = overlayBarBackgroundAlpha))
-                                    .then(
-                                        if (!chromeShown) {
-                                            Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                                    .padding(start = 12.dp, end = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                val chapterTitleBaseFontSize = MaterialTheme.typography.titleMedium.fontSize
-                                val chapterTitleMinFontSize = 10.sp
-                                var chapterTitleFontSize by remember(chapterTitle) { mutableStateOf(chapterTitleBaseFontSize) }
-                                Text(
-                                    text = chapterTitle.orEmpty(),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = overlayBarTextColor,
-                                    fontSize = chapterTitleFontSize,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = if (showChapterTitleHeader) TextAlign.Center else TextAlign.Start,
-                                    onTextLayout = { result ->
-                                        // Shrinks the title one sp at a time on overflow until it fits within
-                                        // two lines, so long chapter names stay fully visible instead of being
-                                        // cut off with an ellipsis.
-                                        if (result.hasVisualOverflow && chapterTitleFontSize > chapterTitleMinFontSize) {
-                                            chapterTitleFontSize = (chapterTitleFontSize.value - 1).sp
-                                        }
-                                    },
+                            if (isComic) {
+                                Box(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .padding(vertical = 4.dp)
-                                        .then(if (!showChapterTitleHeader) Modifier.padding(start = 12.dp) else Modifier)
-                                )
-                                // Mirrors the website's returnLocator affordance (StatefulReaderFooter):
-                                // set right before jumping to an annotation from the panel, cleared once
-                                // tapped -- no auto-timeout, persists until the user actually uses it.
-                                if (showReturnLocatorBar) {
-                                    IconButton(onClick = {
-                                        returnLocator?.let { navigateTo(it, animated = true) }
-                                        returnLocatorState.value = null
-                                    }) {
-                                        Icon(
-                                            Icons.AutoMirrored.Filled.Undo,
-                                            contentDescription = "Return to previous position",
-                                            tint = dimmedReaderTextColor
+                                        .fillMaxWidth()
+                                        .then(
+                                            if (!chromeShown) {
+                                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                                            } else {
+                                                Modifier
+                                            }
                                         )
-                                    }
-                                    // Dismisses the bar without navigating -- it otherwise sits over the
-                                    // text with no way to clear it short of using (and thus undoing) the jump.
-                                    IconButton(onClick = { returnLocatorState.value = null }) {
-                                        Icon(
-                                            Icons.Filled.Close,
-                                            contentDescription = "Dismiss return to position",
-                                            tint = dimmedReaderTextColor
-                                        )
-                                    }
+                                        .padding(top = 8.dp),
+                                    contentAlignment = Alignment.TopCenter
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .wrapContentWidth()
+                                            .widthIn(max = 340.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .background(dimmedReaderBackgroundColor.copy(alpha = 0.85f))
+                                            .padding(start = 16.dp, end = if (showReturnLocatorBar) 4.dp else 16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        content = chapterTitleRowContent
+                                    )
                                 }
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(dimmedReaderBackgroundColor.copy(alpha = overlayBarBackgroundAlpha))
+                                        .then(
+                                            if (!chromeShown) {
+                                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
+                                        .padding(start = 12.dp, end = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    content = chapterTitleRowContent
+                                )
                             }
                         }
                     }
@@ -1087,63 +1134,120 @@ class ReaderActivity : FragmentActivity() {
                             exit = fadeOut(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    // Lifts the whole bar a bit off the bottom edge -- applied
-                                    // before the background so the gap stays empty rather than
-                                    // getting filled in by it.
-                                    .padding(bottom = 8.dp)
-                                    .background(dimmedReaderBackgroundColor.copy(alpha = overlayBarBackgroundAlpha))
-                                    .then(
-                                        if (!chromeShown) {
-                                            Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                            if (isComic) {
+                                // Pill, same treatment as the chapter title header above -- still
+                                // honors positionDisplayAlignment, but as where the pill itself sits
+                                // rather than where text sits inside a full-width bar.
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 8.dp)
+                                        .then(
+                                            if (!chromeShown) {
+                                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
+                                        .padding(horizontal = 20.dp),
+                                    contentAlignment = when (settings.positionDisplayAlignment) {
+                                        PositionDisplayAlignment.LEFT -> Alignment.BottomStart
+                                        PositionDisplayAlignment.CENTER -> Alignment.BottomCenter
+                                        PositionDisplayAlignment.RIGHT -> Alignment.BottomEnd
+                                    }
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50))
+                                            .background(dimmedReaderBackgroundColor.copy(alpha = 0.85f))
+                                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    ) {
+                                        if (pageCountLoading) {
+                                            val loadingProgress = dynamicPageCount?.loadingProgress
+                                            if (loadingProgress != null) {
+                                                CircularProgressIndicator(
+                                                    progress = { loadingProgress },
+                                                    color = dimmedReaderTextColor,
+                                                    trackColor = Color.Transparent,
+                                                    strokeWidth = 2.dp,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            } else {
+                                                CircularProgressIndicator(
+                                                    color = dimmedReaderTextColor,
+                                                    trackColor = Color.Transparent,
+                                                    strokeWidth = 2.dp,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
                                         } else {
-                                            Modifier
+                                            Text(
+                                                text = positionText.orEmpty(),
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = overlayBarTextColor
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        // Lifts the whole bar a bit off the bottom edge -- applied
+                                        // before the background so the gap stays empty rather than
+                                        // getting filled in by it.
+                                        .padding(bottom = 8.dp)
+                                        .background(dimmedReaderBackgroundColor.copy(alpha = overlayBarBackgroundAlpha))
+                                        .then(
+                                            if (!chromeShown) {
+                                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
+                                        // Extra horizontal inset (beyond the safe-drawing insets
+                                        // above) so left/right-aligned text clears the screen edge
+                                        // instead of being cut off by it.
+                                        .padding(horizontal = 32.dp, vertical = 6.dp)
+                                ) {
+                                    val alignmentModifier = Modifier.align(
+                                        when (settings.positionDisplayAlignment) {
+                                            PositionDisplayAlignment.LEFT -> Alignment.CenterStart
+                                            PositionDisplayAlignment.CENTER -> Alignment.Center
+                                            PositionDisplayAlignment.RIGHT -> Alignment.CenterEnd
                                         }
                                     )
-                                    // Extra horizontal inset (beyond the safe-drawing insets
-                                    // above) so left/right-aligned text clears the screen edge
-                                    // instead of being cut off by it.
-                                    .padding(horizontal = 32.dp, vertical = 6.dp)
-                            ) {
-                                val alignmentModifier = Modifier.align(
-                                    when (settings.positionDisplayAlignment) {
-                                        PositionDisplayAlignment.LEFT -> Alignment.CenterStart
-                                        PositionDisplayAlignment.CENTER -> Alignment.Center
-                                        PositionDisplayAlignment.RIGHT -> Alignment.CenterEnd
-                                    }
-                                )
-                                if (pageCountLoading) {
-                                    val loadingProgress = dynamicPageCount?.loadingProgress
-                                    if (loadingProgress != null) {
-                                        // trackColor transparent so the unfilled remainder of the
-                                        // ring is blank as it fills, rather than a dim track arc
-                                        // sitting opposite the progress arc.
-                                        CircularProgressIndicator(
-                                            progress = { loadingProgress },
-                                            color = dimmedReaderTextColor,
-                                            trackColor = Color.Transparent,
-                                            strokeWidth = 2.dp,
-                                            modifier = alignmentModifier.size(16.dp)
-                                        )
+                                    if (pageCountLoading) {
+                                        val loadingProgress = dynamicPageCount?.loadingProgress
+                                        if (loadingProgress != null) {
+                                            // trackColor transparent so the unfilled remainder of the
+                                            // ring is blank as it fills, rather than a dim track arc
+                                            // sitting opposite the progress arc.
+                                            CircularProgressIndicator(
+                                                progress = { loadingProgress },
+                                                color = dimmedReaderTextColor,
+                                                trackColor = Color.Transparent,
+                                                strokeWidth = 2.dp,
+                                                modifier = alignmentModifier.size(16.dp)
+                                            )
+                                        } else {
+                                            // No progress yet (still checking the cache before a sweep
+                                            // even starts) -- indeterminate until the first report.
+                                            CircularProgressIndicator(
+                                                color = dimmedReaderTextColor,
+                                                trackColor = Color.Transparent,
+                                                strokeWidth = 2.dp,
+                                                modifier = alignmentModifier.size(16.dp)
+                                            )
+                                        }
                                     } else {
-                                        // No progress yet (still checking the cache before a sweep
-                                        // even starts) -- indeterminate until the first report.
-                                        CircularProgressIndicator(
-                                            color = dimmedReaderTextColor,
-                                            trackColor = Color.Transparent,
-                                            strokeWidth = 2.dp,
-                                            modifier = alignmentModifier.size(16.dp)
+                                        Text(
+                                            text = positionText.orEmpty(),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = overlayBarTextColor,
+                                            modifier = alignmentModifier
                                         )
                                     }
-                                } else {
-                                    Text(
-                                        text = positionText.orEmpty(),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = overlayBarTextColor,
-                                        modifier = alignmentModifier
-                                    )
                                 }
                             }
                         }

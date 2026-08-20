@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -174,6 +175,10 @@ fun BrightnessEdgeControl(
                         .width(10.dp)
                         .clip(RoundedCornerShape(5.dp))
                         .background(contentColor.copy(alpha = 0.15f))
+                        // A defined edge independent of the fill -- otherwise a near-white
+                        // contentColor's own 0.15-alpha fill all but disappears against a light
+                        // manga page, same problem the fill/icon themselves have.
+                        .border(1.dp, contentColor.copy(alpha = 0.55f), RoundedCornerShape(5.dp))
                 ) {
                     Column(modifier = Modifier.fillMaxHeight().fillMaxWidth()) {
                         // Upper half: 0f..1f normal brightness -- fills upward, flush against the
@@ -221,6 +226,7 @@ fun BrightnessEdgeControl(
                         .padding(top = 8.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(backgroundColor.copy(alpha = 0.92f))
+                        .border(1.dp, contentColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

@@ -12,11 +12,6 @@ package org.readium.r2.navigator.epub.fxl
 internal class R2FXLOnDoubleTapListener(private var threeStep: Boolean) : R2FXLLayout.OnDoubleTapListener {
 
     override fun onDoubleTap(view: R2FXLLayout, info: R2FXLLayout.TapInfo): Boolean {
-        android.util.Log.d(
-            "IshiFXLZoom",
-            "R2FXLOnDoubleTapListener.onDoubleTap x=${info.x} y=${info.y} threeStep=$threeStep " +
-                "currentScale=${view.scale} minScale=${view.minScale} maxScale=${view.maxScale}"
-        )
         try {
             if (threeStep) {
                 threeStep(view, info.x, info.y)
@@ -24,7 +19,7 @@ internal class R2FXLOnDoubleTapListener(private var threeStep: Boolean) : R2FXLL
                 twoStep(view, info.x, info.y)
             }
         } catch (e: ArrayIndexOutOfBoundsException) {
-            android.util.Log.d("IshiFXLZoom", "R2FXLOnDoubleTapListener caught AIOOBE: $e")
+            // Can sometimes happen when getX() and getY() is called
         }
 
         return true
