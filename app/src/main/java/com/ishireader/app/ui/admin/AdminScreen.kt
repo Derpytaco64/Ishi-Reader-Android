@@ -167,6 +167,8 @@ fun AdminScreen(
                         }
                     }
 
+                    item { AniListSection(state = state, viewModel = viewModel) }
+
                     item { OrphanedDataSection(state = state, viewModel = viewModel) }
 
                     item { ReadingSpeedSamplesSection(state = state, viewModel = viewModel) }
@@ -318,6 +320,61 @@ private fun ConfigTextField(
         isSaving -> Text("Saving…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         error != null -> Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         saved -> Text("Saved", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Admin-only instance-wide AniList app registration -- mirrors the website admin panel's own
+ *  "AniList Integration" disclosure (AdminPageClient.tsx). Client ID/secret commit together on
+ *  blur of either field (see [AdminViewModel.commitAniListSettings]), same combined-commit shape
+ *  as the website's own commitAniListSettings, since AniList's own client credentials are a single
+ *  pair, not two independent settings. */
+@Composable
+private fun AniListSection(state: AdminUiState, viewModel: AdminViewModel) {
+    SectionCard("AniList Integration") {
+        var clientIdDraft by remember(state.anilistClientId) { mutableStateOf(state.anilistClientId) }
+        var clientSecretDraft by remember(state.anilistClientId) { mutableStateOf("") }
+
+        fun commit() {
+            if (clientIdDraft == state.anilistClientId && clientSecretDraft.isBlank()) return
+            viewModel.commitAniListSettings(clientIdDraft, clientSecretDraft)
+            clientSecretDraft = ""
+        }
+
+        Text(
+            "Register an app at anilist.co/settings/developer with the redirect URL set to " +
+                "https://anilist.co/api/v2/oauth/pin, then paste its client ID/secret here.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = clientIdDraft,
+            onValueChange = { clientIdDraft = it },
+            label = { Text("Client ID") },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focusState -> if (!focusState.isFocused) commit() }
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = clientSecretDraft,
+            onValueChange = { clientSecretDraft = it },
+            label = { Text("Client Secret" + if (state.anilistClientSecretSet) " (already set -- leave blank to keep it)" else "") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focusState -> if (!focusState.isFocused) commit() }
+        )
+        when {
+            state.savingField == ConfigField.ANILIST ->
+                Text("Saving…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            state.fieldErrors[ConfigField.ANILIST] != null ->
+                Text(state.fieldErrors[ConfigField.ANILIST]!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            ConfigField.ANILIST in state.fieldSaved ->
+                Text("Saved", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

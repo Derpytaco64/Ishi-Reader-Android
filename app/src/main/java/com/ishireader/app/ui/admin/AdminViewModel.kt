@@ -27,6 +27,7 @@ object ConfigField {
     const val READIUM_URL = "readiumUrl"
     const val READIUM_PORT = "readiumPort"
     const val USER_DATA_FOLDER = "userDataFolder"
+    const val ANILIST = "anilist"
 }
 
 data class AdminUiState(
@@ -40,6 +41,8 @@ data class AdminUiState(
     val readiumUrl: String = "",
     val readiumPort: String = "",
     val userDataFolder: String = "",
+    val anilistClientId: String = "",
+    val anilistClientSecretSet: Boolean = false,
     val loginAccentColor: String = "#2f6fed",
     val loginThemeMode: String = "dark",
     val appearanceError: String? = null,
@@ -129,6 +132,7 @@ class AdminViewModel(
                 val readiumUrlDeferred = async { repository.getReadiumUrl() }
                 val readiumPortDeferred = async { repository.getReadiumPort() }
                 val userDataFolderDeferred = async { repository.getUserDataFolder() }
+                val anilistSettingsDeferred = async { repository.getAniListSettings() }
                 val accentColorDeferred = async { repository.getLoginAccentColor() }
                 val themeModeDeferred = async { repository.getLoginThemeMode() }
 
@@ -138,6 +142,8 @@ class AdminViewModel(
                     return@coroutineScope
                 }
 
+                val anilistSettings = anilistSettingsDeferred.await().dataOrNull()
+
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     users = (usersResult as ApiResult.Success).data,
@@ -145,6 +151,8 @@ class AdminViewModel(
                     readiumUrl = readiumUrlDeferred.await().dataOrNull() ?: _uiState.value.readiumUrl,
                     readiumPort = readiumPortDeferred.await().dataOrNull()?.toString() ?: _uiState.value.readiumPort,
                     userDataFolder = userDataFolderDeferred.await().dataOrNull() ?: _uiState.value.userDataFolder,
+                    anilistClientId = anilistSettings?.clientId ?: _uiState.value.anilistClientId,
+                    anilistClientSecretSet = anilistSettings?.clientSecretSet ?: _uiState.value.anilistClientSecretSet,
                     loginAccentColor = accentColorDeferred.await().dataOrNull() ?: _uiState.value.loginAccentColor,
                     loginThemeMode = themeModeDeferred.await().dataOrNull() ?: _uiState.value.loginThemeMode
                 )
@@ -180,6 +188,32 @@ class AdminViewModel(
 
     fun commitUserDataFolder(value: String) = saveConfigField(ConfigField.USER_DATA_FOLDER, value, repository::setUserDataFolder) {
         it.copy(userDataFolder = value)
+    }
+
+    /** [clientSecret] is only sent if non-blank -- an admin re-saving just the client ID leaves
+     *  whatever secret is already stored untouched, same as the website admin panel. No-ops if
+     *  neither field actually changed (matching the website's own commitAniListSettings guard). */
+    fun commitAniListSettings(clientId: String, clientSecret: String) {
+        if (clientId == _uiState.value.anilistClientId && clientSecret.isBlank()) return
+        _uiState.value = _uiState.value.copy(
+            savingField = ConfigField.ANILIST,
+            fieldErrors = _uiState.value.fieldErrors - ConfigField.ANILIST,
+            fieldSaved = _uiState.value.fieldSaved - ConfigField.ANILIST
+        )
+        viewModelScope.launch {
+            when (val result = repository.setAniListSettings(clientId, clientSecret.ifBlank { null })) {
+                is ApiResult.Success -> _uiState.value = _uiState.value.copy(
+                    savingField = null,
+                    anilistClientId = result.data.clientId ?: "",
+                    anilistClientSecretSet = result.data.clientSecretSet,
+                    fieldSaved = _uiState.value.fieldSaved + ConfigField.ANILIST
+                )
+                is ApiResult.Failure -> _uiState.value = _uiState.value.copy(
+                    savingField = null,
+                    fieldErrors = _uiState.value.fieldErrors + (ConfigField.ANILIST to result.message)
+                )
+            }
+        }
     }
 
     private fun saveConfigField(

@@ -9,6 +9,8 @@ import com.ishireader.app.data.model.AniListExchangeResponse
 import com.ishireader.app.data.model.AniListMediaEntryResponse
 import com.ishireader.app.data.model.AniListSaveEntryResponse
 import com.ishireader.app.data.model.AniListSearchResponse
+import com.ishireader.app.data.model.AniListSettingsRequest
+import com.ishireader.app.data.model.AniListSettingsResponse
 import com.ishireader.app.data.model.AvatarUploadRequest
 import com.ishireader.app.data.model.AvatarUploadResponse
 import com.ishireader.app.data.model.BookFolderField
@@ -318,6 +320,14 @@ interface ApiService {
 
     @POST("api/settings/user-data-folder")
     suspend fun setUserDataFolder(@Body body: UserDataFolderField): Response<UserDataFolderField>
+
+    /** Admin-only instance-wide AniList app registration -- see AniListSettingsResponse's own
+     *  comment. Distinct from the per-user auth/anilist routes above. */
+    @GET("api/settings/anilist")
+    suspend fun getAniListSettings(): Response<AniListSettingsResponse>
+
+    @POST("api/settings/anilist")
+    suspend fun setAniListSettings(@Body body: AniListSettingsRequest): Response<AniListSettingsResponse>
 
     @GET("api/settings/login-accent-color")
     suspend fun getLoginAccentColor(): Response<LoginAccentColorField>

@@ -84,3 +84,14 @@ data class AniListSaveEntryResponse(val entry: AniListMediaListEntry)
  *  tracking without opting into automatic chapter-progress pushes from the reader. */
 @Serializable
 data class AniListLink(val mediaId: Int, val syncEnabled: Boolean = true)
+
+/** Admin-only instance-wide app registration (client_id/client_secret from anilist.co/settings/
+ *  developer) -- see api/settings/anilist's own comment. clientSecretSet is the only signal the
+ *  client ever gets about the secret itself; it's never echoed back, same as a password field. */
+@Serializable
+data class AniListSettingsResponse(val clientId: String? = null, val clientSecretSet: Boolean = false)
+
+/** clientSecret is optional -- omitting it (sending null) leaves whatever's already stored
+ *  untouched, so re-saving just the client ID doesn't force re-entering the secret. */
+@Serializable
+data class AniListSettingsRequest(val clientId: String, val clientSecret: String? = null)

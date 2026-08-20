@@ -1,6 +1,8 @@
 package com.ishireader.app.data.repository
 
 import com.ishireader.app.data.model.AdminUser
+import com.ishireader.app.data.model.AniListSettingsRequest
+import com.ishireader.app.data.model.AniListSettingsResponse
 import com.ishireader.app.data.model.AvatarUploadRequest
 import com.ishireader.app.data.model.BookFolderField
 import com.ishireader.app.data.model.CreateUserRequest
@@ -118,6 +120,15 @@ class AdminRepository(private val network: NetworkModule) {
 
     suspend fun setUserDataFolder(path: String): ApiResult<String> = withContext(Dispatchers.IO) {
         runCatching { network.api.setUserDataFolder(UserDataFolderField(path)) }.toApiResult("save user data folder") { it.userDataFolder }
+    }
+
+    suspend fun getAniListSettings(): ApiResult<AniListSettingsResponse> = withContext(Dispatchers.IO) {
+        runCatching { network.api.getAniListSettings() }.toApiResult("load AniList settings") { it }
+    }
+
+    suspend fun setAniListSettings(clientId: String, clientSecret: String?): ApiResult<AniListSettingsResponse> = withContext(Dispatchers.IO) {
+        runCatching { network.api.setAniListSettings(AniListSettingsRequest(clientId, clientSecret)) }
+            .toApiResult("save AniList settings") { it }
     }
 
     suspend fun getLoginAccentColor(): ApiResult<String> = withContext(Dispatchers.IO) {

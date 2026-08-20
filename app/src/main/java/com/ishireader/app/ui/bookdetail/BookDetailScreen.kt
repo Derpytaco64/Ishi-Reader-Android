@@ -25,11 +25,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -139,6 +141,12 @@ fun BookDetailScreen(
     val trackingState by trackingViewModel.uiState.collectAsState()
     LaunchedEffect(showTrackingSheet) {
         if (showTrackingSheet) trackingViewModel.start(book)
+    }
+    // Lightweight, sheet-independent lookup so the "Track on AniList" entry point below can already
+    // show its linked/checkmark state for a series linked from a *different* volume, without making
+    // the user open the sheet first just to find out -- see TrackingViewModel.checkLinked's own doc.
+    LaunchedEffect(book) {
+        if (isComic) trackingViewModel.checkLinked(book)
     }
     var pendingDeleteCompletedReadId by remember { mutableStateOf<String?>(null) }
     var pendingDeleteCompletedListenId by remember { mutableStateOf<String?>(null) }
@@ -290,11 +298,23 @@ fun BookDetailScreen(
             MetadataChips(book = book, pageCount = state.pageCount)
 
             // CLAUDE-ADDED: Manga-only AniList tracking entry point -- see TrackingSheet's own doc
-            // comment. Light novels/prose EPUBs aren't in scope for AniList sync.
+            // comment. Light novels/prose EPUBs aren't in scope for AniList sync. trackingState.link
+            // is populated eagerly by the checkLinked() effect above (not just when the sheet is
+            // open), so a series linked from a different volume already shows as tracked here.
             if (isComic) {
                 Spacer(modifier = Modifier.height(12.dp))
-                TextButton(onClick = { showTrackingSheet = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Track on AniList")
+                if (trackingState.link != null) {
+                    FilterChip(
+                        selected = true,
+                        onClick = { showTrackingSheet = true },
+                        label = { Text("Tracking on AniList") },
+                        leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null) }
+                    )
+                } else {
+                    TextButton(onClick = { showTrackingSheet = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                        Text("Track on AniList")
+                    }
                 }
             }
 
