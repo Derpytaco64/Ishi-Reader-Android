@@ -154,10 +154,15 @@ fun BookDetailScreen(
     // Returning from ReaderActivity resumes this same Activity/composition rather than
     // navigating back into it, so nothing else would otherwise re-trigger a reload -- without
     // this, the progress ring would keep showing whatever it read on this screen's first visit.
+    // Same reasoning applies to the AniList summary row/sheet: MangaAniListProgressTracker may have
+    // just auto-advanced this series' chapter progress mid-read (see TrackingViewModel.refresh).
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, viewModel) {
+    DisposableEffect(lifecycleOwner, viewModel, trackingViewModel) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.refresh()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refresh()
+                if (isComic) trackingViewModel.refresh(book)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

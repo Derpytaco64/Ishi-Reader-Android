@@ -1,5 +1,6 @@
 package com.ishireader.app.ui.bookdetail
 
+import android.widget.NumberPicker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -37,13 +37,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.ishireader.app.data.model.AniListFuzzyDate
 import com.ishireader.app.data.model.AniListSearchResult
 import java.util.Calendar
 import java.util.TimeZone
+import kotlin.math.roundToInt
 
 private val STATUS_OPTIONS = listOf("CURRENT", "PLANNING", "COMPLETED", "DROPPED", "PAUSED", "REPEATING")
 
@@ -58,17 +59,6 @@ fun statusLabel(status: String) = when (status) {
     "PAUSED" -> "Paused"
     "REPEATING" -> "Rereading"
     else -> status
-}
-
-/** Score bounds/step shown to the user for AniList's own scoreFormat -- the raw number sent over
- *  the wire is whatever this format expects (see AniListRepository/server route), this is purely
- *  the input label. */
-private fun scoreLabel(scoreFormat: String?) = when (scoreFormat) {
-    "POINT_100" -> "Score (0-100)"
-    "POINT_10_DECIMAL", "POINT_10" -> "Score (0-10)"
-    "POINT_5" -> "Score (0-5)"
-    "POINT_3" -> "Score (0-3)"
-    else -> "Score"
 }
 
 fun AniListFuzzyDate?.label(): String {
@@ -240,46 +230,46 @@ private fun TrackingFieldsSection(
         }
     }
 
-    var scoreDraft by remember(entry?.score) { mutableStateOf(entry?.score?.takeIf { it > 0 }?.toString() ?: "") }
-    OutlinedTextField(
-        value = scoreDraft,
-        onValueChange = { scoreDraft = it },
-        label = { Text(scoreLabel(state.scoreFormat)) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        trailingIcon = {
-            TextButton(onClick = { scoreDraft.toDoubleOrNull()?.let(onScoreChange) }) { Text("Save") }
-        }
-    )
+    // CLAUDE-ADDED: Chapter/score/rereads edit together as one Tachiyomi-style group of vertical
+    // scroll wheels (Android's own NumberPicker -- swiping up increases the value, down decreases,
+    // same direction convention as a time/date picker) sharing a single Save button below, instead
+    // of three separate text fields each with their own Save -- see WheelNumberPicker/ScoreWheelPicker.
+    var progressDraft by remember(entry?.progress) { mutableStateOf(entry?.progress ?: 0) }
+    var scoreDraft by remember(entry?.score) { mutableStateOf(entry?.score ?: 0.0) }
+    var repeatDraft by remember(entry?.repeat) { mutableStateOf(entry?.repeat ?: 0) }
 
-    Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-        var progressDraft by remember(entry?.progress) { mutableStateOf((entry?.progress ?: 0).toString()) }
-        OutlinedTextField(
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        WheelNumberPicker(
+            label = "Chapter" + (state.media?.chapters?.let { " / $it" } ?: ""),
             value = progressDraft,
             onValueChange = { progressDraft = it },
-            label = { Text("Chapter" + (state.media?.chapters?.let { " (of $it)" } ?: "")) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.weight(1f),
-            trailingIcon = {
-                TextButton(onClick = { progressDraft.toIntOrNull()?.let(onProgressChange) }) { Text("Save") }
-            }
+            min = 0,
+            max = maxOf(state.media?.chapters ?: 9999, progressDraft, 1)
+        )
+        ScoreWheelPicker(
+            scoreFormat = state.scoreFormat,
+            value = scoreDraft,
+            onValueChange = { scoreDraft = it }
+        )
+        WheelNumberPicker(
+            label = "Rereads",
+            value = repeatDraft,
+            onValueChange = { repeatDraft = it },
+            min = 0,
+            max = maxOf(repeatDraft, 999)
         )
     }
-
-    var repeatDraft by remember(entry?.repeat) { mutableStateOf((entry?.repeat ?: 0).toString()) }
-    OutlinedTextField(
-        value = repeatDraft,
-        onValueChange = { repeatDraft = it },
-        label = { Text("Rereads") },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        trailingIcon = {
-            TextButton(onClick = { repeatDraft.toIntOrNull()?.let(onRepeatChange) }) { Text("Save") }
-        }
-    )
+    Button(
+        onClick = {
+            onProgressChange(progressDraft)
+            onScoreChange(scoreDraft)
+            onRepeatChange(repeatDraft)
+        },
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+    ) { Text("Save") }
 
     DateRow("Start date", entry?.startedAt, onStartedAtChange)
     DateRow("Completed date", entry?.completedAt, onCompletedAtChange)
@@ -325,5 +315,77 @@ private fun DateRow(label: String, value: AniListFuzzyDate?, onChange: (AniListF
         ) {
             DatePicker(state = pickerState)
         }
+    }
+}
+
+/** AniList score formats are either a plain integer range (POINT_100/POINT_10/POINT_5/POINT_3) or
+ *  one decimal place (POINT_10_DECIMAL, e.g. "7.5") -- [WheelNumberPicker] itself only scrolls
+ *  whole numbers, so POINT_10_DECIMAL is driven as tenths internally (0..100) with [displayedValues]
+ *  relabeling each tick as its real "x.x" value, then divided back down to a real score on change. A
+ *  null/unrecognized format (AniList account not yet loaded, or a future format this app doesn't
+ *  know about) falls back to the same 0-10 range POINT_10 uses -- a reasonable middle ground rather
+ *  than guessing 0-100. */
+@Composable
+private fun ScoreWheelPicker(scoreFormat: String?, value: Double, onValueChange: (Double) -> Unit) {
+    when (scoreFormat) {
+        "POINT_100" -> WheelNumberPicker(
+            label = "Score", value = value.roundToInt(), onValueChange = { onValueChange(it.toDouble()) },
+            min = 0, max = 100
+        )
+        "POINT_10_DECIMAL" -> WheelNumberPicker(
+            label = "Score", value = (value * 10).roundToInt().coerceIn(0, 100),
+            onValueChange = { onValueChange(it / 10.0) },
+            min = 0, max = 100,
+            displayedValues = remember { Array(101) { "%.1f".format(it / 10.0) } }
+        )
+        "POINT_5" -> WheelNumberPicker(
+            label = "Score", value = value.roundToInt(), onValueChange = { onValueChange(it.toDouble()) },
+            min = 0, max = 5
+        )
+        "POINT_3" -> WheelNumberPicker(
+            label = "Score", value = value.roundToInt(), onValueChange = { onValueChange(it.toDouble()) },
+            min = 0, max = 3
+        )
+        else -> WheelNumberPicker(
+            label = "Score", value = value.roundToInt(), onValueChange = { onValueChange(it.toDouble()) },
+            min = 0, max = 10
+        )
+    }
+}
+
+/** Tachiyomi-style vertical scroll wheel for a bounded integer -- wraps the platform's own
+ *  [NumberPicker] (swipe up increases the value, down decreases, same convention as a time/date
+ *  spinner) rather than a hand-rolled Compose equivalent, since AndroidView interop gets the
+ *  fling/snap physics for free. [min]/[max]/[displayedValues] are only read at creation (the
+ *  factory lambda runs once per call site, not per recomposition) -- fine here since every caller's
+ *  bounds are effectively fixed for the lifetime of one sheet open; only [value] is kept in sync on
+ *  every recomposition, via [NumberPicker.update]'s own value-changed callback flowing back out
+ *  through [onValueChange]. */
+@Composable
+private fun WheelNumberPicker(
+    label: String,
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    min: Int,
+    max: Int,
+    displayedValues: Array<String>? = null
+) {
+    val coercedValue = value.coerceIn(min, max)
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        AndroidView(
+            modifier = Modifier.width(96.dp),
+            factory = { ctx ->
+                NumberPicker(ctx).apply {
+                    minValue = min
+                    maxValue = max
+                    displayedValues?.let { this.displayedValues = it }
+                    wrapSelectorWheel = false
+                    this.value = coercedValue
+                    setOnValueChangedListener { _, _, newVal -> onValueChange(newVal) }
+                }
+            },
+            update = { picker -> if (picker.value != coercedValue) picker.value = coercedValue }
+        )
     }
 }

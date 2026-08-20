@@ -100,6 +100,24 @@ class TrackingViewModel(
         }
     }
 
+    /** Re-fetches the current entry for whatever series is already loaded for [book], if linked --
+     *  called on ON_RESUME (BookDetailScreen), same trigger as BookDetailViewModel's own refresh()
+     *  for the reading-progress ring, since returning from the reader may have just auto-advanced
+     *  this series' AniList progress via MangaAniListProgressTracker and the summary row/sheet would
+     *  otherwise keep showing whatever was loaded on this screen's first visit. Falls through to
+     *  [checkLinked] instead when [book] is a different series than what's currently loaded (e.g.
+     *  the user navigated to a different volume without leaving BookDetailScreen) -- checkLinked's
+     *  own seriesKey-match no-op only guards against *this* method's redundant work, not that case. */
+    fun refresh(book: Book) {
+        val seriesKey = book.aniListSeriesKey()
+        if (_uiState.value.seriesKey != seriesKey) {
+            checkLinked(book)
+            return
+        }
+        val link = _uiState.value.link ?: return
+        viewModelScope.launch { loadMedia(link) }
+    }
+
     private suspend fun loadMedia(link: AniListLink) {
         _uiState.update { it.copy(link = link, isLoading = true) }
         when (val result = aniListRepository.getEntry(link.mediaId)) {
