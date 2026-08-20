@@ -596,11 +596,13 @@ class ReaderActivity : FragmentActivity() {
 
         val httpClient = DefaultHttpClient()
         val assetRetriever = AssetRetriever(contentResolver, httpClient)
-        val publicationParser = DefaultPublicationParser(
-            context = this,
-            httpClient = httpClient,
-            assetRetriever = assetRetriever,
-            pdfFactory = null
+        val publicationParser = FixedLayoutComicPublicationParser(
+            DefaultPublicationParser(
+                context = this,
+                httpClient = httpClient,
+                assetRetriever = assetRetriever,
+                pdfFactory = null
+            )
         )
         val publicationOpener = PublicationOpener(publicationParser)
 
