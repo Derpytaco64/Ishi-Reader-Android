@@ -177,14 +177,16 @@ fun ReaderSettingsSheet(
                 valueLabel = settings.pageMargins?.let { "%.1fx".format(it) } ?: "Default",
                 onValueChange = { onSettingsChange(settings.copy(pageMargins = it.toDouble())) }
             )
-            LabeledSlider(
-                label = "Vertical Margin",
-                value = settings.verticalMargin.toFloat(),
-                valueRange = 0f..64f,
-                steps = 15,
-                valueLabel = if (settings.verticalMargin > 0) "${settings.verticalMargin.roundToInt()}dp" else "None",
-                onValueChange = { onSettingsChange(settings.copy(verticalMargin = it.toDouble())) }
-            )
+            if (!isComic) {
+                LabeledSlider(
+                    label = "Vertical Margin",
+                    value = settings.verticalMargin.toFloat(),
+                    valueRange = 0f..64f,
+                    steps = 15,
+                    valueLabel = if (settings.verticalMargin > 0) "${settings.verticalMargin.roundToInt()}dp" else "None",
+                    onValueChange = { onSettingsChange(settings.copy(verticalMargin = it.toDouble())) }
+                )
+            }
             Column(modifier = Modifier.padding(vertical = 8.dp)) {
                 OutlinedButton(
                     onClick = onRecalculatePageCount,

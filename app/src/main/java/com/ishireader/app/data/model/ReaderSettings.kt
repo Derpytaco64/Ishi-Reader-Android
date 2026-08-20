@@ -164,12 +164,17 @@ fun ReaderSettings.effectiveTextHex(): String? = when (theme) {
 /** A comic (CBZ/Divina) page is a raw bitmap with no publisher CSS to theme, and Sepia/Paper/
  *  Contrast/Custom don't read well against photographic or inked art -- so rendering is restricted
  *  to plain Light or Dark, defaulting to Dark whenever the persisted theme isn't already one of
- *  those two. Only used to compute what's actually *rendered* (navigator preferences, container
- *  background); the persisted [ReaderSettings] itself is left untouched, so an explicit Light/Dark
- *  pick made while reading a comic still persists as a normal theme change, same as any other book. */
+ *  those two. [ReaderSettings.verticalMargin] is a text-reading-comfort setting with no comic
+ *  equivalent; left on, it pads the navigator's container above/below the page (see
+ *  applyContainerAppearance) and shows as solid black/white bars around fixed-layout comic pages,
+ *  so it's forced to zero here too. Only used to compute what's actually *rendered* (navigator
+ *  preferences, container padding/background); the persisted [ReaderSettings] itself is left
+ *  untouched, so an explicit Light/Dark pick or margin made while reading a comic still persists
+ *  as a normal settings change, same as any other book. */
 fun ReaderSettings.forComicRendering(isComic: Boolean): ReaderSettings {
-    if (!isComic || theme == ReaderTheme.LIGHT || theme == ReaderTheme.DARK) return this
-    return copy(theme = ReaderTheme.DARK)
+    if (!isComic) return this
+    val themed = if (theme == ReaderTheme.LIGHT || theme == ReaderTheme.DARK) this else copy(theme = ReaderTheme.DARK)
+    return if (themed.verticalMargin == 0.0) themed else themed.copy(verticalMargin = 0.0)
 }
 
 /** [comicServerReadingProgression] is the raw `readingProgression` string from

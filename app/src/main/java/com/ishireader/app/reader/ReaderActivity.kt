@@ -441,6 +441,14 @@ class ReaderActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Required for WindowInsetsControllerCompat.show()/hide() (see setChromeVisible) to reliably
+        // animate real system-bar insets on every API level/OEM skin. Without this the window only
+        // draws edge-to-edge where the platform forces it (targetSdk 35 on API 35+ devices); anywhere
+        // else decorFitsSystemWindows defaults to true, content isn't laid out full-screen to begin
+        // with, and show()/hide() only move the bars visually without producing a real WindowInsets
+        // change underneath -- exactly the stuck-at-0/no-animation symptom the cached-inset workaround
+        // below papers over rather than fixes.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_reader)
         title = intent.getStringExtra(EXTRA_TITLE)
 
