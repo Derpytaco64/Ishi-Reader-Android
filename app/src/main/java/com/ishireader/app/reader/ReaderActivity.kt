@@ -9,10 +9,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.PointF
 import android.graphics.RectF
 import android.os.Bundle
 import android.provider.Settings
+import android.view.GestureDetector
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ProgressBar
@@ -68,6 +71,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -93,6 +97,7 @@ import com.ishireader.app.data.model.toEpubPreferences
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.ui.reader.AnnotationsPanelSheet
 import com.ishireader.app.ui.reader.BrightnessEdgeControl
+import com.ishireader.app.ui.reader.ComicPageContextMenu
 import com.ishireader.app.ui.reader.HighlightColorPopover
 import com.ishireader.app.ui.reader.ImageViewerOverlay
 import com.ishireader.app.ui.reader.NoteEditorDialog
@@ -100,6 +105,7 @@ import com.ishireader.app.ui.reader.ReaderSettingsSheet
 import com.ishireader.app.ui.reader.ReadingTimerSheet
 import com.ishireader.app.ui.reader.TocPanelSheet
 import com.ishireader.app.ui.theme.IshiReaderTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -109,6 +115,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlinx.serialization.json.Json
@@ -320,6 +327,13 @@ class ReaderActivity : FragmentActivity() {
     private val activeNoteEditId = mutableStateOf<String?>(null)
     private val pendingImageOverlay = mutableStateOf<TappedImage?>(null)
 
+    /** Anchor point (composeOverlay-local, same coordinate space [overlayRectFor] converts into)
+     *  for [ComicPageContextMenu] -- set by [comicLongPressDetector] on a long-press, null when the
+     *  menu is closed. Comic-only: a comic page has no selectable text for
+     *  [AnnotationSelectionActionModeCallback]'s native WebView selection toolbar to anchor to, so
+     *  this is that menu's long-press-driven equivalent. */
+    private val pendingComicContextMenu = mutableStateOf<PointF?>(null)
+
     /** Mirrors the website's returnLocator (StatefulAnnotationsContainer/StatefulReaderFooter):
      *  the locator we were at right before jumping to an annotation from the panel, so a "return
      *  to position" affordance can undo that jump. Cleared once the return happens -- there's no
@@ -384,6 +398,34 @@ class ReaderActivity : FragmentActivity() {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /** Readium's InputListener (see ChromeTapInputListener/ImageTapInputListener) only ever
+     *  delivers tap/drag/key events -- there is no long-press hook anywhere in the 3.1.1 navigator
+     *  API, and the bundled reflowable-page JS only distinguishes a tap from a drag by movement
+     *  past a 6px threshold, never by hold duration, so a stationary long-press produces neither an
+     *  onTap nor an onDrag callback for the app to observe. Snooping at the Activity level (instead
+     *  of trying to reach into the navigator's own WebView/ViewPager hierarchy) sidesteps needing to
+     *  know anything about that internal view structure: every touch reaches here before Android's
+     *  normal view-tree dispatch, and passing it to super afterwards leaves that dispatch completely
+     *  unmodified, so this can't interfere with existing tap-to-turn/tap-to-reveal-chrome behavior.
+     *  Comic-only, since EPUB text already gets a long-press menu for free via the WebView's native
+     *  text-selection gesture (see AnnotationSelectionActionModeCallback). */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (isComicState.value) {
+            comicLongPressDetector.onTouchEvent(ev)
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private val comicLongPressDetector by lazy {
+        GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(e: MotionEvent) {
+                val overlayLocation = IntArray(2)
+                composeOverlay.getLocationInWindow(overlayLocation)
+                pendingComicContextMenu.value = PointF(e.x - overlayLocation[0], e.y - overlayLocation[1])
+            }
+        })
     }
 
     override fun onPause() {
@@ -1325,6 +1367,21 @@ class ReaderActivity : FragmentActivity() {
                 pendingImageOverlay.value?.let { image ->
                     ImageViewerOverlay(image = image, onClose = { pendingImageOverlay.value = null })
                 }
+
+                val comicContextMenuAnchor by pendingComicContextMenu
+                if (isComic) {
+                    comicContextMenuAnchor?.let { anchor ->
+                        ComicPageContextMenu(
+                            anchor = anchor,
+                            onCopy = ::copyCurrentPageImageToClipboard,
+                            onBookmark = {
+                                navigatorFragment?.currentLocator?.value?.let { annotationsController.addBookmark(it) }
+                            },
+                            onNote = { pendingNewNoteLocator.value = navigatorFragment?.currentLocator?.value },
+                            onDismiss = { pendingComicContextMenu.value = null }
+                        )
+                    }
+                }
             }
         }
     }
@@ -1529,6 +1586,42 @@ class ReaderActivity : FragmentActivity() {
         // the gap without doubling up on newer ones.
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
             Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Writes the current comic page's raw image bytes to a cache file and puts a content:// URI
+     *  for it on the system clipboard -- ClipData.newUri (not newPlainText) so a paste target that
+     *  accepts images (chat apps, a gallery, etc.) gets the actual picture, not a file path string.
+     *  A content:// URI (via FileProvider) is required rather than a plain file:// one so the
+     *  clipboard framework can grant the pasting app temporary read access to this app's cache
+     *  file. Comic reading-order hrefs point directly at the page's own image resource (unlike an
+     *  EPUB, which wraps an <img> in a page of surrounding HTML -- see ImageTapInputListener's DOM
+     *  query, not needed here), so this reads it straight from the publication with no DOM
+     *  round-trip. */
+    private fun copyCurrentPageImageToClipboard() {
+        val locator = navigatorFragment?.currentLocator?.value ?: return
+        val pub = publication ?: return
+        lifecycleScope.launch {
+            val bytes = pub.get(locator.href)?.read()?.getOrNull()
+            if (bytes == null) {
+                Toast.makeText(this@ReaderActivity, "Couldn't copy image", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            // The file's own extension is how FileProvider/MimeTypeMap resolve the content
+            // resolver's getType(uri) below, which is what ClipData.newUri uses to tag the clip's
+            // MIME type -- getting this right is what lets an image-only paste target (e.g. a chat
+            // app's attachment picker) recognize the clipboard content as an image at all.
+            val extension = locator.href.toString().substringBefore('?').substringAfterLast('.', "jpg")
+            val file = withContext(Dispatchers.IO) {
+                val dir = File(cacheDir, "comic_pages").apply { mkdirs() }
+                File(dir, "page.$extension").apply { writeBytes(bytes) }
+            }
+            val uri = FileProvider.getUriForFile(this@ReaderActivity, "$packageName.fileprovider", file)
+            val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboardManager.setPrimaryClip(ClipData.newUri(contentResolver, "Comic page", uri))
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+                Toast.makeText(this@ReaderActivity, "Image copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

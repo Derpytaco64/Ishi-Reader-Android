@@ -39,6 +39,20 @@
              injects PositionDao/NetworkModule into PositionSyncWorker), which requires turning off
              WorkManager's default auto-initializer; otherwise the default Configuration wins the
              race and PositionSyncWorker can't be instantiated. -->
+        <!-- Lets "Copy" on the manga reader's long-press menu put the current page's image on the
+             system clipboard as a content:// URI (ClipData.newUri): the clipboard framework needs
+             a real content provider to grant the receiving app temporary read access, a plain
+             file:// URI from cacheDir isn't accessible outside this app. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
