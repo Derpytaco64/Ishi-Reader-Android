@@ -108,7 +108,8 @@ class AniListRepository(
             if (response.isSuccessful && body != null) {
                 ApiResult.Success(body.results)
             } else {
-                ApiResult.Failure(response.serverErrorMessage("AniList search failed"))
+                onPossibleAuthError(response.code())
+                ApiResult.Failure(response.serverErrorMessage("AniList search failed"), isAuthError = response.code() == 401)
             }
         } catch (e: Exception) {
             ApiResult.Failure(e.message ?: "Network error", isNetworkError = true)
@@ -127,7 +128,8 @@ class AniListRepository(
                 cachedAniListEntryDao.set(CachedAniListEntryEntity(mediaId, json.encodeToString(AniListMedia.serializer(), media), System.currentTimeMillis()))
                 ApiResult.Success(media)
             } else {
-                ApiResult.Failure(response.serverErrorMessage("Couldn't load AniList entry"))
+                onPossibleAuthError(response.code())
+                ApiResult.Failure(response.serverErrorMessage("Couldn't load AniList entry"), isAuthError = response.code() == 401)
             }
         } catch (e: Exception) {
             ApiResult.Failure(e.message ?: "Network error", isNetworkError = true)
@@ -163,6 +165,7 @@ class AniListRepository(
                     pendingPatchDao.remove(mediaId)
                     ApiResult.Success(Unit)
                 } else {
+                    onPossibleAuthError(response.code())
                     syncScheduler.scheduleAniListSync()
                     ApiResult.Success(Unit)
                 }
@@ -208,6 +211,15 @@ class AniListRepository(
     private suspend fun refreshCachedConnection(connected: Boolean, scoreFormat: String?) {
         val cached = cachedUserDao.get() ?: return
         cachedUserDao.set(cached.copy(anilistConnected = connected, anilistScoreFormat = scoreFormat))
+    }
+
+    /** A 401 from any of the AniList-proxy routes above means the stored token is missing, expired,
+     *  or was revoked from AniList's own site -- AniList issues no refresh token, so there's nothing
+     *  to silently recover here. Clearing the cached connected flag makes the account sheet and
+     *  tracking sheet fall back to their "not connected" state on next open, which is what prompts
+     *  the user to reconnect, instead of them seeing a stale "connected" UI paired with errors. */
+    private suspend fun onPossibleAuthError(httpCode: Int) {
+        if (httpCode == 401) refreshCachedConnection(false, null)
     }
 
     companion object {

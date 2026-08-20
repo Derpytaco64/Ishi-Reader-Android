@@ -25,6 +25,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+private const val RECONNECT_MESSAGE = "Your AniList connection expired -- reconnect from the AniList item in the account menu."
+
 data class TrackingUiState(
     val seriesKey: String? = null,
     val link: AniListLink? = null,
@@ -79,9 +81,16 @@ class TrackingViewModel(
             is ApiResult.Failure -> {
                 // Offline (or the server/AniList is unreachable) -- fall back to whatever this
                 // device last knew, same "cache is the offline source of truth" pattern used
-                // everywhere else in this app.
+                // everywhere else in this app. An auth error means the token itself is stale, not
+                // just unreachable, so it always surfaces (even over a cached entry) since silently
+                // showing old data would hide that new edits aren't actually syncing anymore.
                 val cached = aniListRepository.getCachedEntry(link.mediaId)
-                _uiState.update { it.copy(isLoading = false, media = cached, error = if (cached == null) result.message else null) }
+                val message = when {
+                    result.isAuthError -> RECONNECT_MESSAGE
+                    cached == null -> result.message
+                    else -> null
+                }
+                _uiState.update { it.copy(isLoading = false, media = cached, error = message) }
             }
         }
     }
@@ -97,7 +106,9 @@ class TrackingViewModel(
         viewModelScope.launch {
             when (val result = aniListRepository.search(query)) {
                 is ApiResult.Success -> _uiState.update { it.copy(isSearching = false, searchResults = result.data) }
-                is ApiResult.Failure -> _uiState.update { it.copy(isSearching = false, error = result.message) }
+                is ApiResult.Failure -> _uiState.update {
+                    it.copy(isSearching = false, error = if (result.isAuthError) RECONNECT_MESSAGE else result.message)
+                }
             }
         }
     }

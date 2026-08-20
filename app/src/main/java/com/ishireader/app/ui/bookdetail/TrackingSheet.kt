@@ -1,15 +1,21 @@
 package com.ishireader.app.ui.bookdetail
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -21,6 +27,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,11 +35,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.ishireader.app.data.model.AniListFuzzyDate
 import com.ishireader.app.data.model.AniListSearchResult
 import java.util.Calendar
+import java.util.TimeZone
 
 private val STATUS_OPTIONS = listOf("CURRENT", "PLANNING", "COMPLETED", "DROPPED", "PAUSED", "REPEATING")
 
@@ -66,6 +77,22 @@ private fun AniListFuzzyDate?.label(): String {
 
 private fun today(): AniListFuzzyDate {
     val cal = Calendar.getInstance()
+    return AniListFuzzyDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
+}
+
+/** DatePicker's selectedDateMillis is UTC-midnight-anchored -- converting through a UTC calendar
+ *  on both ends keeps the picked y/m/d stable regardless of the device's own timezone offset. */
+private fun AniListFuzzyDate.toUtcMillis(): Long? {
+    val y = year ?: return null
+    val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+    cal.clear()
+    cal.set(y, (month ?: 1) - 1, day ?: 1)
+    return cal.timeInMillis
+}
+
+private fun Long.toFuzzyDate(): AniListFuzzyDate {
+    val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+    cal.timeInMillis = this
     return AniListFuzzyDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
 }
 
@@ -151,7 +178,17 @@ private fun LinkPickerSection(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    AsyncImage(
+                        model = result.coverImage?.medium,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .width(36.dp)
+                            .height(52.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                    Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
                         Text(result.title.english ?: result.title.romaji ?: "Untitled", style = MaterialTheme.typography.bodyMedium)
                         val details = listOfNotNull(result.format, result.chapters?.let { "$it ch" }).joinToString(" · ")
                         if (details.isNotEmpty()) Text(details, style = MaterialTheme.typography.bodySmall)
@@ -248,8 +285,11 @@ private fun TrackingFieldsSection(
     TextButton(onClick = onUnlink) { Text("Unlink from AniList") }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DateRow(label: String, value: AniListFuzzyDate?, onChange: (AniListFuzzyDate?) -> Unit) {
+    var showPicker by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -260,8 +300,27 @@ private fun DateRow(label: String, value: AniListFuzzyDate?, onChange: (AniListF
             Text(value.label(), style = MaterialTheme.typography.bodySmall)
         }
         Row {
+            TextButton(onClick = { showPicker = true }) { Text("Pick") }
             TextButton(onClick = { onChange(today()) }) { Text("Today") }
             TextButton(onClick = { onChange(null) }) { Text("Clear") }
+        }
+    }
+
+    if (showPicker) {
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = value?.toUtcMillis())
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { onChange(it.toFuzzyDate()) }
+                    showPicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DatePicker(state = pickerState)
         }
     }
 }

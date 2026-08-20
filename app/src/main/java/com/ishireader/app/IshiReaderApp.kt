@@ -192,6 +192,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
                     libraryMetadataPrefetcher,
                     database.pendingAniListPatchDao(),
                     database.cachedAniListEntryDao(),
+                    database.cachedUserDao(),
                     network
                 )
             )

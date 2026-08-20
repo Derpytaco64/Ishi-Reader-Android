@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.ishireader.app.data.local.AnnotationOutboxDao
 import com.ishireader.app.data.local.CachedAniListEntryDao
 import com.ishireader.app.data.local.CachedLibraryPrefsDao
+import com.ishireader.app.data.local.CachedUserDao
 import com.ishireader.app.data.local.DailyListeningBucketDao
 import com.ishireader.app.data.local.DailyReadingBucketDao
 import com.ishireader.app.data.local.ListeningTimeCacheDao
@@ -42,6 +43,7 @@ class IshiWorkerFactory(
     private val libraryMetadataPrefetcher: LibraryMetadataPrefetcher,
     private val pendingAniListPatchDao: PendingAniListPatchDao,
     private val cachedAniListEntryDao: CachedAniListEntryDao,
+    private val cachedUserDao: CachedUserDao,
     private val network: NetworkModule
 ) : WorkerFactory() {
 
@@ -67,7 +69,7 @@ class IshiWorkerFactory(
         LibraryMetadataSyncWorker::class.java.name ->
             LibraryMetadataSyncWorker(appContext, workerParameters, libraryMetadataPrefetcher, network)
         AniListSyncWorker::class.java.name ->
-            AniListSyncWorker(appContext, workerParameters, pendingAniListPatchDao, cachedAniListEntryDao, network)
+            AniListSyncWorker(appContext, workerParameters, pendingAniListPatchDao, cachedAniListEntryDao, cachedUserDao, network)
         else -> null
     }
 }

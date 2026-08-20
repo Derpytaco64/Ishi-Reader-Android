@@ -6,6 +6,7 @@ import androidx.work.ListenableWorker.Result
 import androidx.work.WorkerParameters
 import com.ishireader.app.data.local.CachedAniListEntryDao
 import com.ishireader.app.data.local.CachedAniListEntryEntity
+import com.ishireader.app.data.local.CachedUserDao
 import com.ishireader.app.data.local.PendingAniListPatchDao
 import com.ishireader.app.data.model.AniListMedia
 import com.ishireader.app.data.model.AniListMediaListEntry
@@ -31,6 +32,7 @@ class AniListSyncWorker(
     params: WorkerParameters,
     private val pendingPatchDao: PendingAniListPatchDao,
     private val cachedAniListEntryDao: CachedAniListEntryDao,
+    private val cachedUserDao: CachedUserDao,
     private val network: NetworkModule
 ) : CoroutineWorker(context, params) {
 
@@ -48,6 +50,7 @@ class AniListSyncWorker(
             if (pending.isEmpty()) return@withLock Result.success()
 
             var anyFailed = false
+            var authErrorSeen = false
             for (row in pending) {
                 val patch = runCatching { Json.parseToJsonElement(row.patchJson).jsonObject }.getOrNull()
                 if (patch == null) {
@@ -63,6 +66,10 @@ class AniListSyncWorker(
                         cacheSavedEntry(row.mediaId, entry)
                         true
                     } else {
+                        // Kept queued either way (not dropped) -- a 401 here means the token is
+                        // stale until the user reconnects, at which point this same row will push
+                        // successfully on a later retry, same as any other transient failure.
+                        if (response.code() == 401) authErrorSeen = true
                         false
                     }
                 } catch (e: Exception) {
@@ -70,6 +77,13 @@ class AniListSyncWorker(
                 }
 
                 if (ok) pendingPatchDao.remove(row.mediaId) else anyFailed = true
+            }
+
+            // See AniListRepository.onPossibleAuthError -- surfaces "reconnect" in the account/
+            // tracking sheets instead of them silently showing a stale "connected" state while this
+            // worker keeps failing in the background.
+            if (authErrorSeen) {
+                cachedUserDao.get()?.let { cachedUserDao.set(it.copy(anilistConnected = false, anilistScoreFormat = null)) }
             }
 
             if (anyFailed) Result.retry() else Result.success()
