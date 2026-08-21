@@ -1110,55 +1110,73 @@ public class EpubNavigatorFragment internal constructor(
         debounceLocationNotificationJob?.cancel()
         debounceLocationNotificationJob = viewLifecycleOwner.lifecycleScope.launch {
             delay(100L)
+            emitCurrentLocation()
+        }
+    }
 
-            // We don't want to notify the current location if the navigator is still loading a
-            // locator, to avoid notifying intermediate locations.
-            if (currentReflowablePageFragment?.isLoaded?.value == false || state != State.Ready) {
-                return@launch
-            }
+    /** CLAUDE-ADDED: Runs [notifyCurrentLocation]'s debounced body immediately, skipping the 100ms
+     *  delay -- used right before the fragment/activity tears down (see EpubNavigatorFragment's
+     *  caller in ReaderActivity.onPause) so a page change that happened just before the user backs
+     *  out isn't silently lost: [debounceLocationNotificationJob] runs on [viewLifecycleOwner]'s
+     *  scope, which is cancelled the moment the fragment's view is destroyed, so if that 100ms
+     *  never gets to elapse, `_currentLocator` (and everything downstream of it -- position saving,
+     *  Home's Last Series Read bookkeeping) never learns the reader moved at all. */
+    public fun flushPendingLocationNotification() {
+        view ?: return
+        debounceLocationNotificationJob?.cancel()
+        debounceLocationNotificationJob = viewLifecycleOwner.lifecycleScope.launch {
+            emitCurrentLocation()
+        }
+    }
 
-            val reflowableWebView = currentReflowablePageFragment?.webView
-            val progression = reflowableWebView?.run {
-                // The transition has stabilized, so we can ask the web view to refresh its current
-                // item to reflect the current scroll position.
-                updateCurrentItem()
-                progression.coerceIn(0.0, 1.0)
-            } ?: 0.0
+    private suspend fun emitCurrentLocation() {
+        // We don't want to notify the current location if the navigator is still loading a
+        // locator, to avoid notifying intermediate locations.
+        if (currentReflowablePageFragment?.isLoaded?.value == false || state != State.Ready) {
+            return
+        }
 
-            val link = when (val pageResource = adapter.getResource(resourcePager.currentItem)) {
-                is PageResource.EpubFxl -> checkNotNull(
-                    pageResource.leftLink ?: pageResource.rightLink
-                )
-                is PageResource.EpubReflowable -> pageResource.link
-                else -> throw IllegalStateException(
-                    "Expected EpubFxl or EpubReflowable page resources"
-                )
-            }
-            val positionLocator = publication.positionsByResource[link.url()]?.let { positions ->
-                val index = ceil(progression * (positions.size - 1)).toInt()
-                positions.getOrNull(index)
-            }
+        val reflowableWebView = currentReflowablePageFragment?.webView
+        val progression = reflowableWebView?.run {
+            // The transition has stabilized, so we can ask the web view to refresh its current
+            // item to reflect the current scroll position.
+            updateCurrentItem()
+            progression.coerceIn(0.0, 1.0)
+        } ?: 0.0
 
-            val currentLocator = Locator(
-                href = link.url(),
-                mediaType = link.mediaType ?: MediaType.XHTML,
-                title = tableOfContentsTitleByHref[link.href] ?: positionLocator?.title ?: link.title,
-                locations = (positionLocator?.locations ?: Locator.Locations()).copy(
-                    progression = progression
-                ),
-                text = positionLocator?.text ?: Locator.Text()
+        val link = when (val pageResource = adapter.getResource(resourcePager.currentItem)) {
+            is PageResource.EpubFxl -> checkNotNull(
+                pageResource.leftLink ?: pageResource.rightLink
             )
+            is PageResource.EpubReflowable -> pageResource.link
+            else -> throw IllegalStateException(
+                "Expected EpubFxl or EpubReflowable page resources"
+            )
+        }
+        val positionLocator = publication.positionsByResource[link.url()]?.let { positions ->
+            val index = ceil(progression * (positions.size - 1)).toInt()
+            positions.getOrNull(index)
+        }
 
-            _currentLocator.value = currentLocator
+        val currentLocator = Locator(
+            href = link.url(),
+            mediaType = link.mediaType ?: MediaType.XHTML,
+            title = tableOfContentsTitleByHref[link.href] ?: positionLocator?.title ?: link.title,
+            locations = (positionLocator?.locations ?: Locator.Locations()).copy(
+                progression = progression
+            ),
+            text = positionLocator?.text ?: Locator.Text()
+        )
 
-            // Deprecated notifications
-            reflowableWebView?.let {
-                paginationListener?.onPageChanged(
-                    pageIndex = it.mCurItem,
-                    totalPages = it.numPages,
-                    locator = currentLocator
-                )
-            }
+        _currentLocator.value = currentLocator
+
+        // Deprecated notifications
+        reflowableWebView?.let {
+            paginationListener?.onPageChanged(
+                pageIndex = it.mCurItem,
+                totalPages = it.numPages,
+                locator = currentLocator
+            )
         }
     }
 
