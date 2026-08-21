@@ -139,11 +139,13 @@ import org.readium.r2.navigator.DecorableNavigator
 import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.SelectableNavigator
 import org.readium.r2.navigator.VisualNavigator
+import org.readium.r2.navigator.epub.EpubDefaults
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.Selection
 import org.readium.r2.navigator.html.HtmlDecorationTemplates
+import org.readium.r2.navigator.preferences.Spread
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
@@ -700,7 +702,7 @@ class ReaderActivity : FragmentActivity() {
                 if (readerSettingsState.value.comicReadingDirection == ComicReadingDirection.AUTO) {
                     preservePositionAcross {
                         navigatorFragment?.submitPreferences(
-                            readerSettingsState.value.forComicRendering(true).toEpubPreferences(comicReadingProgressionState.value, isComic = true)
+                            readerSettingsState.value.forComicRendering(true).toEpubPreferences(comicReadingProgressionState.value)
                         )
                     }
                 }
@@ -731,13 +733,22 @@ class ReaderActivity : FragmentActivity() {
             onDictionary = { locator -> launchDictionaryLookup(locator.text.highlight) }
         )
 
-        val navigatorFactory = EpubNavigatorFactory(publication = publication)
+        // Comics get Spread.AUTO (two-page landscape spreads) as a *default*, not a submitted
+        // preference -- EpubPreferences.spread's own require() rejects AUTO outright (see
+        // ReaderSettings.toEpubPreferences' doc comment), but EpubSettingsResolver falls back to
+        // this default whenever preferences.spread is null, which it always is here.
+        val navigatorFactory = EpubNavigatorFactory(
+            publication = publication,
+            configuration = EpubNavigatorFactory.Configuration(
+                defaults = EpubDefaults(spread = if (isComicState.value) Spread.AUTO else null)
+            )
+        )
         val fragmentFactory = navigatorFactory.createFragmentFactory(
             initialLocator = initialLocator,
             // comicReadingProgressionState is still null here -- the fetch that resolves it is
             // launched just above and lands asynchronously, then re-submits via submitPreferences
             // once known (see showNavigator). An explicit LTR/RTL override doesn't wait on it.
-            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(comicReadingProgressionState.value, isComic = isComicState.value),
+            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(comicReadingProgressionState.value),
             paginationListener = pageCountTracker,
             configuration = EpubNavigatorFragment.Configuration(
                 selectionActionModeCallback = selectionCallback,
@@ -1547,7 +1558,7 @@ class ReaderActivity : FragmentActivity() {
         lifecycleScope.launch {
             preservePositionAcross {
                 applyContainerAppearance(rendered)
-                navigatorFragment?.submitPreferences(rendered.toEpubPreferences(comicReadingProgressionState.value, isComic = isComicState.value))
+                navigatorFragment?.submitPreferences(rendered.toEpubPreferences(comicReadingProgressionState.value))
             }
             resolveExactPageCounts()
         }

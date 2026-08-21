@@ -7,7 +7,6 @@ import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily
 import org.readium.r2.navigator.preferences.ReadingProgression as ReadiumReadingProgression
-import org.readium.r2.navigator.preferences.Spread
 import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.shared.ExperimentalReadiumApi
 
@@ -183,13 +182,15 @@ fun ReaderSettings.forComicRendering(isComic: Boolean): ReaderSettings {
  *  when [ComicReadingDirection.AUTO] is in effect; ignored (and safe to omit) for non-comic books,
  *  which never fetch that endpoint.
  *
- *  [isComic] gates [Spread.AUTO] (two-page landscape spreads) -- left at its EpubPreferences
- *  default (null, which resolves to [Spread.NEVER]) for text EPUBs, which have no comic-style
- *  page-turn concept and shouldn't pick up dual-page rendering just because a fixed-layout EPUB
- *  happens to be open. AUTO's actual device-orientation check lives in EpubNavigatorFragment
- *  (readium-navigator-patched), which is what makes AUTO here mean "two pages in landscape, one
- *  in portrait" rather than upstream Readium's own dead AUTO (identical to NEVER in 3.1.1). */
-fun ReaderSettings.toEpubPreferences(comicServerReadingProgression: String? = null, isComic: Boolean = false): EpubPreferences {
+ *  Two-page landscape spreads for comics are NOT set here: EpubPreferences' own init block hard-
+ *  rejects any spread value other than null/NEVER/ALWAYS (see EpubPreferences.kt's
+ *  `require(spread in listOf(null, Spread.NEVER, Spread.ALWAYS))`) -- [Spread.AUTO] is only a
+ *  valid *resolved* EpubSettings value, never a valid user-submitted preference, so submitting it
+ *  here crashed on every comic open. Spread is left null (deferring to EpubSettingsResolver's
+ *  defaults fallback) and the comic/EPUB AUTO-vs-NEVER split lives where the navigator factory is
+ *  built instead (ReaderActivity.showNavigator), via EpubNavigatorFactory.Configuration's
+ *  EpubDefaults(spread). */
+fun ReaderSettings.toEpubPreferences(comicServerReadingProgression: String? = null): EpubPreferences {
     val backgroundColor = effectiveBackgroundHex()?.toReadiumColor()
     val textColor = effectiveTextHex()?.toReadiumColor()
     val readingProgression = when (comicReadingDirection) {
@@ -214,7 +215,7 @@ fun ReaderSettings.toEpubPreferences(comicServerReadingProgression: String? = nu
         scroll = layout == ReaderLayout.SCROLLED,
         pageMargins = pageMargins,
         readingProgression = readingProgression,
-        spread = if (isComic) Spread.AUTO else null
+        spread = null
     )
 }
 
