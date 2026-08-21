@@ -10,6 +10,10 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class CBZPageBookmark(val pageIndex: Int, val title: String, val chapterNumber: Int? = null)
 
+/** [readingProgression] mirrors the server's field but is no longer consumed by Android --
+ *  reading direction is user-set only now (see ComicReadingDirection's doc comment), kept here
+ *  only because it's part of the actual server response shape. [bookmarks] is still the sole
+ *  source for the comic TOC/chapter-title pill (see buildComicToc). */
 @Serializable
 data class ReadingProgressionResponse(
     val readingProgression: String? = null,

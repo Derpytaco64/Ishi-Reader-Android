@@ -362,50 +362,9 @@ public class EpubNavigatorFragment internal constructor(
             }
 
             EpubLayout.FIXED -> {
-                val resourcesSingle = mutableListOf<PageResource>()
-                val resourcesDouble = mutableListOf<PageResource>()
-
-                // TODO needs work, currently showing two resources for fxl, needs to understand which two resources, left & right, or only right etc.
-                var doublePageLeft: Link? = null
-                var doublePageRight: Link?
-
-                for ((index, link) in readingOrder.withIndex()) {
-                    val url = viewModel.urlTo(link)
-                    resourcesSingle.add(PageResource.EpubFxl(leftLink = link, leftUrl = url))
-
-                    // add first page to the right,
-                    if (index == 0) {
-                        resourcesDouble.add(PageResource.EpubFxl(rightLink = link, rightUrl = url))
-                    } else {
-                        // add double pages, left & right
-                        if (doublePageLeft == null) {
-                            doublePageLeft = link
-                        } else {
-                            doublePageRight = link
-                            resourcesDouble.add(
-                                PageResource.EpubFxl(
-                                    leftLink = doublePageLeft,
-                                    leftUrl = viewModel.urlTo(doublePageLeft),
-                                    rightLink = doublePageRight,
-                                    rightUrl = viewModel.urlTo(doublePageRight)
-                                )
-                            )
-                            doublePageLeft = null
-                        }
-                    }
-                }
-                // add last page if there is only a left page remaining
-                if (doublePageLeft != null) {
-                    resourcesDouble.add(
-                        PageResource.EpubFxl(
-                            leftLink = doublePageLeft,
-                            leftUrl = viewModel.urlTo(doublePageLeft)
-                        )
-                    )
-                }
-
-                this.resourcesSingle = resourcesSingle
-                this.resourcesDouble = resourcesDouble
+                val (single, double) = buildFixedLayoutResources()
+                this.resourcesSingle = single
+                this.resourcesDouble = double
             }
         }
 
@@ -492,6 +451,73 @@ public class EpubNavigatorFragment internal constructor(
         }
     }
 
+    // CLAUDE-ADDED: Builds the single- and double-page resource lists for a FIXED-layout
+    // publication. The double-page pairing must mirror left/right slot assignment for RTL content
+    // (manga): under LTR, spread N/N+1 shows the earlier page on the left and the later page on
+    // the right (natural left-to-right reading across the spread); under RTL, reading direction
+    // across a spread runs right-to-left, so the earlier page belongs on the right and the later
+    // page on the left. The very first page (shown alone, no partner) mirrors the same way: right
+    // alone for LTR (matches a western book's front cover appearing before the first two-page
+    // spread), left alone for RTL. Depends on the *current* resolved reading progression, so it
+    // must be re-run (see invalidateResourcePager) whenever that preference changes, not just once
+    // at fragment creation.
+    private fun buildFixedLayoutResources(): Pair<List<PageResource>, List<PageResource>> {
+        val single = mutableListOf<PageResource>()
+        val double = mutableListOf<PageResource>()
+        val isRtl = viewModel.settings.value.readingProgression == ReadingProgression.RTL
+        var pendingPartner: Link? = null
+
+        for ((index, link) in readingOrder.withIndex()) {
+            val url = viewModel.urlTo(link)
+            single.add(PageResource.EpubFxl(leftLink = link, leftUrl = url))
+
+            if (index == 0) {
+                double.add(
+                    if (isRtl) {
+                        PageResource.EpubFxl(leftLink = link, leftUrl = url)
+                    } else {
+                        PageResource.EpubFxl(rightLink = link, rightUrl = url)
+                    }
+                )
+                continue
+            }
+
+            val partner = pendingPartner
+            if (partner == null) {
+                pendingPartner = link
+            } else {
+                val partnerUrl = viewModel.urlTo(partner)
+                double.add(
+                    if (isRtl) {
+                        PageResource.EpubFxl(
+                            leftLink = link,
+                            leftUrl = url,
+                            rightLink = partner,
+                            rightUrl = partnerUrl
+                        )
+                    } else {
+                        PageResource.EpubFxl(
+                            leftLink = partner,
+                            leftUrl = partnerUrl,
+                            rightLink = link,
+                            rightUrl = url
+                        )
+                    }
+                )
+                pendingPartner = null
+            }
+        }
+
+        // A trailing page with no partner always renders through the single-page layout
+        // regardless of which slot it's assigned to (see R2FXLPageFragment: a null companion URL
+        // falls back to the full-width single binding), so left-vs-right doesn't matter here.
+        pendingPartner?.let { leftover ->
+            double.add(PageResource.EpubFxl(leftLink = leftover, leftUrl = viewModel.urlTo(leftover)))
+        }
+
+        return single to double
+    }
+
     // CLAUDE-ADDED: Resolves DualPage.AUTO against the current device orientation -- two pages in
     // landscape, one in portrait -- since upstream Readium 3.1.1 leaves this an unimplemented FIXME
     // (AUTO behaved identically to OFF). ON/OFF stay unconditional either way.
@@ -567,6 +593,15 @@ public class EpubNavigatorFragment internal constructor(
 
     private fun invalidateResourcePager() {
         val locator = currentLocator.value
+        // CLAUDE-ADDED: This fires (among other things) on a readingProgression change -- the
+        // double-page pairing baked into resourcesDouble at fragment creation (see
+        // buildFixedLayoutResources) depends on that same value, so it must be rebuilt here too,
+        // not just once up front, or flipping RTL/LTR mid-session leaves stale left/right pairs.
+        if (publication.metadata.presentation.layout == EpubLayout.FIXED) {
+            val (single, double) = buildFixedLayoutResources()
+            resourcesSingle = single
+            resourcesDouble = double
+        }
         resetResourcePager()
         go(locator)
     }

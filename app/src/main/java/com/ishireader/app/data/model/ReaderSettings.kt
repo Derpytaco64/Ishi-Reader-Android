@@ -46,14 +46,14 @@ enum class ReaderLineHeight(val value: Double) { COMPACT(1.35), NORMAL(1.5), REL
 enum class ReaderLayout { PAGINATED, SCROLLED }
 
 /** Comic-only page-turn direction (see [ReaderSettings.comicReadingDirection]/[ReaderSettingsSheet]'s
- *  Reading Direction row, gated on isComic same as the Theme row). [AUTO] follows whatever the
- *  server detected from the CBZ's own ComicInfo.xml `<Manga>` tag (`YesAndRightToLeft` -> rtl, see
- *  Ishi-Read's comicInfo.ts) -- Android's own local CBZ parser never reads ComicInfo.xml, so that
- *  detection only exists server-side, fetched via ApiService.getReadingProgression and threaded
- *  through [ReaderSettings.toEpubPreferences]'s comicServerReadingProgression parameter. [LTR]/[RTL]
- *  are an explicit user override, e.g. for a CBZ with no ComicInfo.xml (or one incorrectly tagged)
- *  that the reader still wants to read manga-style. */
-enum class ComicReadingDirection { AUTO, LTR, RTL }
+ *  Reading Direction row, gated on isComic same as the Theme row). User-set only -- there used to
+ *  be an [AUTO] option that followed the server's detection of the CBZ's own ComicInfo.xml `<Manga>`
+ *  tag (`YesAndRightToLeft` -> rtl, see Ishi-Read's comicInfo.ts), but that round-tripped through
+ *  ApiService.getReadingProgression asynchronously *after* the navigator was already constructed
+ *  with a null/LTR guess, re-submitting once the real value landed -- the window between those two
+ *  states meant tap-to-turn briefly had the wrong direction on every comic open, so it was dropped
+ *  in favor of just always using whatever the user picked (default [LTR]). */
+enum class ComicReadingDirection { LTR, RTL }
 
 /** What the bottom position indicator shows, if anything. [PAGE] mirrors Readium's own
  *  Locator.Locations.position (1-based index into Publication.positions()); [PERCENT] mirrors
@@ -125,7 +125,7 @@ data class ReaderSettings(
     val hyphens: Boolean? = null,
     val publisherStyles: Boolean = false,
     val layout: ReaderLayout = ReaderLayout.PAGINATED,
-    val comicReadingDirection: ComicReadingDirection = ComicReadingDirection.AUTO,
+    val comicReadingDirection: ComicReadingDirection = ComicReadingDirection.LTR,
     val pageMargins: Double? = null,
     val verticalMargin: Double = 0.0,
     val showChapterTitle: Boolean = false,
@@ -177,10 +177,10 @@ fun ReaderSettings.forComicRendering(isComic: Boolean): ReaderSettings {
     return if (themed.verticalMargin == 0.0) themed else themed.copy(verticalMargin = 0.0)
 }
 
-/** [comicServerReadingProgression] is the raw `readingProgression` string from
- *  ApiService.getReadingProgression (only ever `"rtl"` or null -- see comicInfo.ts), consulted only
- *  when [ComicReadingDirection.AUTO] is in effect; ignored (and safe to omit) for non-comic books,
- *  which never fetch that endpoint.
+/** [isComic] gates [comicReadingDirection] -- only ever consulted for a comic; a plain EPUB always
+ *  submits a null readingProgression so Readium/the publication's own metadata decides (a comic
+ *  session's leftover comicReadingDirection must never leak into an EPUB's rendering, since the two
+ *  formats' settings are otherwise stored entirely separately -- see ReaderPreferencesStore).
  *
  *  Two-page landscape spreads for comics are NOT set here: EpubPreferences' own init block hard-
  *  rejects any spread value other than null/NEVER/ALWAYS (see EpubPreferences.kt's
@@ -190,14 +190,16 @@ fun ReaderSettings.forComicRendering(isComic: Boolean): ReaderSettings {
  *  defaults fallback) and the comic/EPUB AUTO-vs-NEVER split lives where the navigator factory is
  *  built instead (ReaderActivity.showNavigator), via EpubNavigatorFactory.Configuration's
  *  EpubDefaults(spread). */
-fun ReaderSettings.toEpubPreferences(comicServerReadingProgression: String? = null): EpubPreferences {
+fun ReaderSettings.toEpubPreferences(isComic: Boolean = false): EpubPreferences {
     val backgroundColor = effectiveBackgroundHex()?.toReadiumColor()
     val textColor = effectiveTextHex()?.toReadiumColor()
-    val readingProgression = when (comicReadingDirection) {
-        ComicReadingDirection.LTR -> ReadiumReadingProgression.LTR
-        ComicReadingDirection.RTL -> ReadiumReadingProgression.RTL
-        ComicReadingDirection.AUTO ->
-            if (comicServerReadingProgression == "rtl") ReadiumReadingProgression.RTL else null
+    val readingProgression = if (!isComic) {
+        null
+    } else {
+        when (comicReadingDirection) {
+            ComicReadingDirection.LTR -> ReadiumReadingProgression.LTR
+            ComicReadingDirection.RTL -> ReadiumReadingProgression.RTL
+        }
     }
     return EpubPreferences(
         backgroundColor = backgroundColor,

@@ -122,21 +122,23 @@ fun ReaderSettingsSheet(
                     )
                 }
             }
-            SegmentedOptionRow(
-                label = "Font",
-                options = listOf(null) + ReaderFontFamily.entries,
-                selected = settings.fontFamily,
-                optionLabel = { it.label() },
-                onSelect = { onSettingsChange(settings.copy(fontFamily = it)) }
-            )
-            LabeledSlider(
-                label = "Font Size",
-                value = settings.fontSize.toFloat(),
-                valueRange = 0.7f..4.0f,
-                steps = 32,
-                valueLabel = "${(settings.fontSize * 100).roundToInt()}%",
-                onValueChange = { onSettingsChange(settings.copy(fontSize = it.toDouble())) }
-            )
+            if (!isComic) {
+                SegmentedOptionRow(
+                    label = "Font",
+                    options = listOf(null) + ReaderFontFamily.entries,
+                    selected = settings.fontFamily,
+                    optionLabel = { it.label() },
+                    onSelect = { onSettingsChange(settings.copy(fontFamily = it)) }
+                )
+                LabeledSlider(
+                    label = "Font Size",
+                    value = settings.fontSize.toFloat(),
+                    valueRange = 0.7f..4.0f,
+                    steps = 32,
+                    valueLabel = "${(settings.fontSize * 100).roundToInt()}%",
+                    onValueChange = { onSettingsChange(settings.copy(fontSize = it.toDouble())) }
+                )
+            }
 
             SectionLabel("Layout")
             SegmentedOptionRow(
@@ -155,29 +157,29 @@ fun ReaderSettingsSheet(
                     onSelect = { onSettingsChange(settings.copy(comicReadingDirection = it)) }
                 )
             }
-            SegmentedOptionRow(
-                label = "Text Align",
-                options = listOf(null) + ReaderTextAlign.entries,
-                selected = settings.textAlign,
-                optionLabel = { it.label() },
-                onSelect = { onSettingsChange(settings.copy(textAlign = it, publisherStyles = false)) }
-            )
-            SegmentedOptionRow(
-                label = "Line Height",
-                options = listOf(null) + ReaderLineHeight.entries,
-                selected = settings.lineHeight,
-                optionLabel = { it.label() },
-                onSelect = { onSettingsChange(settings.copy(lineHeight = it, publisherStyles = false)) }
-            )
-            LabeledSlider(
-                label = "Horizontal Margin",
-                value = (settings.pageMargins ?: 1.0).toFloat(),
-                valueRange = 0.5f..4.0f,
-                steps = 34,
-                valueLabel = settings.pageMargins?.let { "%.1fx".format(it) } ?: "Default",
-                onValueChange = { onSettingsChange(settings.copy(pageMargins = it.toDouble())) }
-            )
             if (!isComic) {
+                SegmentedOptionRow(
+                    label = "Text Align",
+                    options = listOf(null) + ReaderTextAlign.entries,
+                    selected = settings.textAlign,
+                    optionLabel = { it.label() },
+                    onSelect = { onSettingsChange(settings.copy(textAlign = it, publisherStyles = false)) }
+                )
+                SegmentedOptionRow(
+                    label = "Line Height",
+                    options = listOf(null) + ReaderLineHeight.entries,
+                    selected = settings.lineHeight,
+                    optionLabel = { it.label() },
+                    onSelect = { onSettingsChange(settings.copy(lineHeight = it, publisherStyles = false)) }
+                )
+                LabeledSlider(
+                    label = "Horizontal Margin",
+                    value = (settings.pageMargins ?: 1.0).toFloat(),
+                    valueRange = 0.5f..4.0f,
+                    steps = 34,
+                    valueLabel = settings.pageMargins?.let { "%.1fx".format(it) } ?: "Default",
+                    onValueChange = { onSettingsChange(settings.copy(pageMargins = it.toDouble())) }
+                )
                 LabeledSlider(
                     label = "Vertical Margin",
                     value = settings.verticalMargin.toFloat(),
@@ -251,93 +253,95 @@ fun ReaderSettingsSheet(
                 )
             }
 
-            SectionLabel("Dictionary")
-            DictionaryAppPicker(
-                selectedComponent = settings.dictionaryAppComponent,
-                onSelect = { onSettingsChange(settings.copy(dictionaryAppComponent = it)) }
-            )
+            if (!isComic) {
+                SectionLabel("Dictionary")
+                DictionaryAppPicker(
+                    selectedComponent = settings.dictionaryAppComponent,
+                    onSelect = { onSettingsChange(settings.copy(dictionaryAppComponent = it)) }
+                )
 
-            SectionLabel("Spacing")
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            ) {
-                Text("Use publisher styles", modifier = Modifier.weight(1f))
-                Switch(
-                    checked = settings.publisherStyles,
-                    onCheckedChange = { checked ->
-                        onSettingsChange(
-                            if (checked) {
-                                // Mirrors the website: switching this on clears every spacing/
-                                // align/hyphen override back to "let the publisher decide" rather
-                                // than just toggling a flag while stale values linger underneath.
-                                settings.copy(
-                                    publisherStyles = true,
-                                    textAlign = null,
-                                    lineHeight = null,
-                                    paragraphSpacing = null,
-                                    paragraphIndent = null,
-                                    wordSpacing = null,
-                                    letterSpacing = null,
-                                    hyphens = null
-                                )
-                            } else {
-                                settings.copy(publisherStyles = false)
-                            }
-                        )
-                    }
+                SectionLabel("Spacing")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                ) {
+                    Text("Use publisher styles", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = settings.publisherStyles,
+                        onCheckedChange = { checked ->
+                            onSettingsChange(
+                                if (checked) {
+                                    // Mirrors the website: switching this on clears every spacing/
+                                    // align/hyphen override back to "let the publisher decide" rather
+                                    // than just toggling a flag while stale values linger underneath.
+                                    settings.copy(
+                                        publisherStyles = true,
+                                        textAlign = null,
+                                        lineHeight = null,
+                                        paragraphSpacing = null,
+                                        paragraphIndent = null,
+                                        wordSpacing = null,
+                                        letterSpacing = null,
+                                        hyphens = null
+                                    )
+                                } else {
+                                    settings.copy(publisherStyles = false)
+                                }
+                            )
+                        }
+                    )
+                }
+                val spacingEnabled = !settings.publisherStyles
+                LabeledSlider(
+                    label = "Paragraph Spacing",
+                    value = (settings.paragraphSpacing ?: 0.0).toFloat(),
+                    valueRange = 0f..3f,
+                    steps = 11,
+                    valueLabel = formatSpacing(settings.paragraphSpacing),
+                    enabled = spacingEnabled,
+                    onValueChange = { onSettingsChange(settings.copy(paragraphSpacing = it.toDouble(), publisherStyles = false)) }
                 )
-            }
-            val spacingEnabled = !settings.publisherStyles
-            LabeledSlider(
-                label = "Paragraph Spacing",
-                value = (settings.paragraphSpacing ?: 0.0).toFloat(),
-                valueRange = 0f..3f,
-                steps = 11,
-                valueLabel = formatSpacing(settings.paragraphSpacing),
-                enabled = spacingEnabled,
-                onValueChange = { onSettingsChange(settings.copy(paragraphSpacing = it.toDouble(), publisherStyles = false)) }
-            )
-            LabeledSlider(
-                label = "Paragraph Indent",
-                value = (settings.paragraphIndent ?: 0.0).toFloat(),
-                valueRange = 0f..2f,
-                steps = 7,
-                valueLabel = formatSpacing(settings.paragraphIndent),
-                enabled = spacingEnabled,
-                onValueChange = { onSettingsChange(settings.copy(paragraphIndent = it.toDouble(), publisherStyles = false)) }
-            )
-            LabeledSlider(
-                label = "Word Spacing",
-                value = (settings.wordSpacing ?: 0.0).toFloat(),
-                valueRange = 0f..1f,
-                steps = 9,
-                valueLabel = formatSpacing(settings.wordSpacing),
-                enabled = spacingEnabled,
-                onValueChange = { onSettingsChange(settings.copy(wordSpacing = it.toDouble(), publisherStyles = false)) }
-            )
-            LabeledSlider(
-                label = "Letter Spacing",
-                value = (settings.letterSpacing ?: 0.0).toFloat(),
-                valueRange = 0f..0.5f,
-                steps = 9,
-                valueLabel = formatSpacing(settings.letterSpacing),
-                enabled = spacingEnabled,
-                onValueChange = { onSettingsChange(settings.copy(letterSpacing = it.toDouble(), publisherStyles = false)) }
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            ) {
-                Text("Hyphenate text", modifier = Modifier.weight(1f))
-                Switch(
-                    // Simplified from the site's tri-state (on/off/publisher) to a plain toggle --
-                    // unchecked maps to null (publisher/reader default) rather than an explicit
-                    // "off", which covers the common cases without a third state to explain in a
-                    // small mobile control.
-                    checked = settings.hyphens == true,
-                    onCheckedChange = { onSettingsChange(settings.copy(hyphens = if (it) true else null)) }
+                LabeledSlider(
+                    label = "Paragraph Indent",
+                    value = (settings.paragraphIndent ?: 0.0).toFloat(),
+                    valueRange = 0f..2f,
+                    steps = 7,
+                    valueLabel = formatSpacing(settings.paragraphIndent),
+                    enabled = spacingEnabled,
+                    onValueChange = { onSettingsChange(settings.copy(paragraphIndent = it.toDouble(), publisherStyles = false)) }
                 )
+                LabeledSlider(
+                    label = "Word Spacing",
+                    value = (settings.wordSpacing ?: 0.0).toFloat(),
+                    valueRange = 0f..1f,
+                    steps = 9,
+                    valueLabel = formatSpacing(settings.wordSpacing),
+                    enabled = spacingEnabled,
+                    onValueChange = { onSettingsChange(settings.copy(wordSpacing = it.toDouble(), publisherStyles = false)) }
+                )
+                LabeledSlider(
+                    label = "Letter Spacing",
+                    value = (settings.letterSpacing ?: 0.0).toFloat(),
+                    valueRange = 0f..0.5f,
+                    steps = 9,
+                    valueLabel = formatSpacing(settings.letterSpacing),
+                    enabled = spacingEnabled,
+                    onValueChange = { onSettingsChange(settings.copy(letterSpacing = it.toDouble(), publisherStyles = false)) }
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                ) {
+                    Text("Hyphenate text", modifier = Modifier.weight(1f))
+                    Switch(
+                        // Simplified from the site's tri-state (on/off/publisher) to a plain toggle --
+                        // unchecked maps to null (publisher/reader default) rather than an explicit
+                        // "off", which covers the common cases without a third state to explain in a
+                        // small mobile control.
+                        checked = settings.hyphens == true,
+                        onCheckedChange = { onSettingsChange(settings.copy(hyphens = if (it) true else null)) }
+                    )
+                }
             }
         }
     }
@@ -537,7 +541,6 @@ private fun ReaderLayout.label(): String = when (this) {
 }
 
 private fun ComicReadingDirection.label(): String = when (this) {
-    ComicReadingDirection.AUTO -> "Auto"
     ComicReadingDirection.LTR -> "Left to Right"
     ComicReadingDirection.RTL -> "Right to Left"
 }

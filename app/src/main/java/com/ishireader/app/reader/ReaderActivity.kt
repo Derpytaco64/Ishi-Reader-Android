@@ -27,6 +27,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -36,7 +37,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,7 +45,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -93,7 +92,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.ishireader.app.IshiReaderApp
 import com.ishireader.app.R
-import com.ishireader.app.data.model.ComicReadingDirection
 import com.ishireader.app.data.model.PositionDisplayAlignment
 import com.ishireader.app.data.model.PositionDisplayMode
 import com.ishireader.app.data.model.ReaderLayout
@@ -294,13 +292,11 @@ class ReaderActivity : FragmentActivity() {
      *  whose series isn't AniList-linked (see MangaAniListProgressTracker's own doc comment). */
     private var mangaAniListProgressTracker: MangaAniListProgressTracker? = null
 
-    /** Comic-only, from ApiService.getReadingProgression (fetched once per book-open in
-     *  [showNavigator], see its own comment): the server's raw `"rtl"`/null reading-progression
-     *  detection (consulted by [ComicReadingDirection.AUTO], see ReaderSettings.toEpubPreferences)
-     *  and a synthesized table of contents (see [buildComicToc]) -- the local CBZ parser never
-     *  reads ComicInfo.xml, so [Publication.tableOfContents] itself is always empty for a comic.
-     *  Both reset to their default on every [showNavigator] call, same as isComicState. */
-    private val comicReadingProgressionState = mutableStateOf<String?>(null)
+    /** Comic-only synthesized table of contents (see [buildComicToc]), sourced from
+     *  ApiService.getReadingProgression's bookmarks (fetched once per book-open in
+     *  [showNavigator]) -- the local CBZ parser never reads ComicInfo.xml, so
+     *  [Publication.tableOfContents] itself is always empty for a comic. Reset to empty on every
+     *  [showNavigator] call, same as isComicState. */
     private val comicTocState = mutableStateOf<List<Link>>(emptyList())
 
     /** The settings/device fingerprint (see ReaderSettings.layoutFingerprint) [dynamicPageCountTracker]
@@ -664,7 +660,6 @@ class ReaderActivity : FragmentActivity() {
         // for one format never bleeds into the other.
         readerSettingsState.value = app.readerPreferencesStore.settings(isComicState.value).first()
         applyContainerAppearance(readerSettingsState.value.forComicRendering(isComicState.value))
-        comicReadingProgressionState.value = null
         comicTocState.value = emptyList()
 
         val pageCountTracker = DynamicPageCountTracker(publication)
@@ -672,13 +667,14 @@ class ReaderActivity : FragmentActivity() {
         pageCountTracker.state.onEach { dynamicPageCountState.value = it }.launchIn(lifecycleScope)
         lifecycleScope.launch { resolveExactPageCounts() }
 
-        // CLAUDE-ADDED: One reading-progression fetch per comic open, shared by three things that
-        // the local CBZ parser can't provide on its own (it never reads ComicInfo.xml): the
-        // Reading Direction "Auto" default (comicReadingProgressionState, re-submitted to the
-        // navigator once resolved -- see below), the synthesized TOC/chapter-title source
-        // (comicTocState, see buildComicToc), and MangaAniListProgressTracker's chapter-advance
-        // bookmarks. Previously the AniList tracker fetched this same endpoint itself; consolidated
-        // here so an AniList-linked comic doesn't make the request twice.
+        // CLAUDE-ADDED: One reading-progression fetch per comic open, shared by two things the
+        // local CBZ parser can't provide on its own (it never reads ComicInfo.xml): the
+        // synthesized TOC/chapter-title source (comicTocState, see buildComicToc) and
+        // MangaAniListProgressTracker's chapter-advance bookmarks. Previously the AniList tracker
+        // fetched this same endpoint itself; consolidated here so an AniList-linked comic doesn't
+        // make the request twice. Reading direction itself is no longer auto-detected from this
+        // response -- see ComicReadingDirection's doc comment -- so unlike the TOC/AniList uses,
+        // nothing here waits on it or re-submits preferences once it lands.
         if (isComicState.value) {
             val progressTracker = MangaAniListProgressTracker(app.libraryPrefsRepository, app.aniListRepository, lifecycleScope)
             mangaAniListProgressTracker = progressTracker
@@ -687,25 +683,11 @@ class ReaderActivity : FragmentActivity() {
             lifecycleScope.launch {
                 // CLAUDE-ADDED: Routed through a cached repository (rather than calling
                 // app.network.api.getReadingProgression directly) so a comic opened offline still
-                // gets a reading-direction default and a chapter title pill from whatever this
-                // endpoint last returned, instead of silently getting neither -- see
-                // ComicReadingProgressionRepository's own doc comment.
+                // gets a chapter title pill from whatever this endpoint last returned, instead of
+                // silently getting none -- see ComicReadingProgressionRepository's own doc comment.
                 val body = app.comicReadingProgressionRepository.getReadingProgression(manifestUrl)
-                comicReadingProgressionState.value = body?.readingProgression
                 comicTocState.value = buildComicToc(publication.readingOrder, body?.bookmarks.orEmpty())
                 progressTracker.start(app.libraryRepository.findCached(manifestUrl), body?.bookmarks.orEmpty())
-
-                // Reading Direction "Auto" resolves off this same fetch, which only lands after the
-                // navigator's already been created below with a null server value (see
-                // ReaderSettings.toEpubPreferences) -- re-submit now that the real value is known,
-                // same submitPreferences path applyReaderSettings uses for a live settings change.
-                if (readerSettingsState.value.comicReadingDirection == ComicReadingDirection.AUTO) {
-                    preservePositionAcross {
-                        navigatorFragment?.submitPreferences(
-                            readerSettingsState.value.forComicRendering(true).toEpubPreferences(comicReadingProgressionState.value)
-                        )
-                    }
-                }
             }
         }
 
@@ -745,10 +727,7 @@ class ReaderActivity : FragmentActivity() {
         )
         val fragmentFactory = navigatorFactory.createFragmentFactory(
             initialLocator = initialLocator,
-            // comicReadingProgressionState is still null here -- the fetch that resolves it is
-            // launched just above and lands asynchronously, then re-submits via submitPreferences
-            // once known (see showNavigator). An explicit LTR/RTL override doesn't wait on it.
-            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(comicReadingProgressionState.value),
+            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(isComic = isComicState.value),
             paginationListener = pageCountTracker,
             configuration = EpubNavigatorFragment.Configuration(
                 selectionActionModeCallback = selectionCallback,
@@ -910,6 +889,25 @@ class ReaderActivity : FragmentActivity() {
                 if (liveBottomInsetPx > 0) cachedBottomInsetPx = liveBottomInsetPx
                 val effectiveTopInsetPx = maxOf(liveTopInsetPx, cachedTopInsetPx)
                 val effectiveBottomInsetPx = maxOf(liveBottomInsetPx, cachedBottomInsetPx)
+                // CLAUDE-ADDED: The chapter-title/position pills (unlike the top/bottom chrome bars,
+                // which just fade out entirely with the rest of the chrome) stay visible while chrome
+                // is hidden, sliding up/down to fill the space the status/nav bar vacates. They used
+                // to do that with a plain `if (!chromeShown) Modifier.windowInsetsPadding(...)` --
+                // conditionally reading the *live* WindowInsets value. That's fine while hide() is
+                // mid-animation (its own decay is real, per-frame), but produces a visible lag/jump
+                // because the padding itself has no animation of its own -- it just tracks however
+                // fast (or slow, or step-wise) the live inset happens to be dispatched that frame,
+                // instead of a smooth Compose-driven transition. Animating explicitly off the same
+                // cached/floored inset value the bars already use gives a consistent, smooth slide
+                // regardless of how WindowInsets itself is dispatched.
+                val chromeHiddenTopInsetDp by animateDpAsState(
+                    targetValue = if (chromeShown) 0.dp else with(density) { effectiveTopInsetPx.toDp() },
+                    label = "chromeHiddenTopInset"
+                )
+                val chromeHiddenBottomInsetDp by animateDpAsState(
+                    targetValue = if (chromeShown) 0.dp else with(density) { effectiveBottomInsetPx.toDp() },
+                    label = "chromeHiddenBottomInset"
+                )
                 // Scroll mode has no discrete on-screen pages to count (numPages is meaningless
                 // there -- see DynamicPageCountTracker's own doc comment), same gate the website's
                 // useExactPageCount uses.
@@ -1115,13 +1113,7 @@ class ReaderActivity : FragmentActivity() {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .then(
-                                            if (!chromeShown) {
-                                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
+                                        .padding(top = chromeHiddenTopInsetDp)
                                         .padding(top = 8.dp),
                                     contentAlignment = Alignment.TopCenter
                                 ) {
@@ -1141,13 +1133,7 @@ class ReaderActivity : FragmentActivity() {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(dimmedReaderBackgroundColor.copy(alpha = overlayBarBackgroundAlpha))
-                                        .then(
-                                            if (!chromeShown) {
-                                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
+                                        .padding(top = chromeHiddenTopInsetDp)
                                         .padding(start = 12.dp, end = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     content = chapterTitleRowContent
@@ -1173,13 +1159,7 @@ class ReaderActivity : FragmentActivity() {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(bottom = 8.dp)
-                                        .then(
-                                            if (!chromeShown) {
-                                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
+                                        .padding(bottom = chromeHiddenBottomInsetDp)
                                         .padding(horizontal = 20.dp),
                                     contentAlignment = when (settings.positionDisplayAlignment) {
                                         PositionDisplayAlignment.LEFT -> Alignment.BottomStart
@@ -1229,13 +1209,7 @@ class ReaderActivity : FragmentActivity() {
                                         // getting filled in by it.
                                         .padding(bottom = 8.dp)
                                         .background(dimmedReaderBackgroundColor.copy(alpha = overlayBarBackgroundAlpha))
-                                        .then(
-                                            if (!chromeShown) {
-                                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
+                                        .padding(bottom = chromeHiddenBottomInsetDp)
                                         // Extra horizontal inset (beyond the safe-drawing insets
                                         // above) so left/right-aligned text clears the screen edge
                                         // instead of being cut off by it.
@@ -1558,7 +1532,7 @@ class ReaderActivity : FragmentActivity() {
         lifecycleScope.launch {
             preservePositionAcross {
                 applyContainerAppearance(rendered)
-                navigatorFragment?.submitPreferences(rendered.toEpubPreferences(comicReadingProgressionState.value))
+                navigatorFragment?.submitPreferences(rendered.toEpubPreferences(isComic = isComicState.value))
             }
             resolveExactPageCounts()
         }

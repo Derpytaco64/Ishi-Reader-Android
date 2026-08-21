@@ -23,8 +23,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * library-prefs' anilistLinks map -- ReaderActivity constructs and starts one of these
  * unconditionally per book-open rather than checking first. [bookmarks] is passed in rather than
  * fetched here -- ReaderActivity already fetches ApiService.getReadingProgression once per comic
- * open (for the TOC and reading-direction auto-detect, see buildComicToc/ComicReadingDirection),
- * so this class would otherwise be making the exact same network call a second time.
+ * open (for the TOC, see buildComicToc), so this class would otherwise be making the exact same
+ * network call a second time.
  */
 class MangaAniListProgressTracker(
     private val libraryPrefsRepository: LibraryPrefsRepository,
