@@ -58,7 +58,10 @@ fun AnnotationsPanelSheet(
     // Highlighting needs selectable text, which a comic page (rendered as a single image) doesn't
     // have -- so comics only ever get bookmarks and page-attached notes, and the Highlights filter
     // chip is meaningless clutter there.
-    isComic: Boolean = false
+    isComic: Boolean = false,
+    // See buildRows' own doc -- best-effort re-resolution for annotations saved before chapter
+    // titles were fixed at creation time.
+    chapterTitleFor: (Locator) -> String? = { null }
 ) {
     var tab by remember { mutableStateOf(AnnotationTab.ALL) }
     var descending by remember { mutableStateOf(false) }
@@ -105,7 +108,7 @@ fun AnnotationsPanelSheet(
                 return@Column
             }
 
-            val rows = buildRows(state, tab, descending, isComic)
+            val rows = buildRows(state, tab, descending, isComic, chapterTitleFor)
             if (rows.isEmpty()) {
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text("No annotations yet", color = MaterialTheme.colorScheme.onSurfaceVariant)

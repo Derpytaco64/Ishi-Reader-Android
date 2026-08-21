@@ -1,7 +1,15 @@
 package com.ishireader.app.ui.bookdetail
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,8 +85,10 @@ import com.ishireader.app.data.model.DailyReadingBucket
 import com.ishireader.app.data.model.formatPercent
 import com.ishireader.app.data.model.isComic
 import com.ishireader.app.reader.AnnotationsUiState
+import com.ishireader.app.reader.ImageGallery
 import com.ishireader.app.reader.ReadingTimerUiState
 import com.ishireader.app.reader.TappedImage
+import java.io.ByteArrayOutputStream
 import com.ishireader.app.ui.reader.AnnotationRowItem
 import com.ishireader.app.ui.reader.AnnotationTab
 import com.ishireader.app.ui.reader.AnnotationType
@@ -131,6 +141,42 @@ fun BookDetailScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var coverImage by remember { mutableStateOf<TappedImage?>(null) }
+    // CLAUDE-ADDED: "Save image" in the cover viewer overlay -- shares ImageGallery's MediaStore
+    // write with the reader's own Save Image actions (ComicPageContextMenu/ImageViewerOverlay in
+    // ReaderActivity), but needs its own permission-request launcher since this is a plain
+    // Composable, not an Activity that can own one directly.
+    var pendingCoverSave by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val coverSavePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = pendingCoverSave
+        pendingCoverSave = null
+        if (granted) {
+            action?.invoke()
+        } else {
+            Toast.makeText(context, "Storage permission is needed to save images", Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun saveCoverImageToGallery(image: TappedImage) {
+        fun performSave() {
+            coroutineScope.launch(Dispatchers.IO) {
+                val bytes = ByteArrayOutputStream().use { stream ->
+                    image.bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                    stream.toByteArray()
+                }
+                val saved = ImageGallery.saveBytes(context, bytes, "image/png", "cover", "png")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, if (saved) "Image saved to gallery" else "Couldn't save image", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingCoverSave = { performSave() }
+            coverSavePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            return
+        }
+        performSave()
+    }
     var loadingCover by remember { mutableStateOf(false) }
     var showTimerSheet by remember { mutableStateOf(false) }
     var showTrackingSheet by remember { mutableStateOf(false) }
@@ -573,7 +619,11 @@ fun BookDetailScreen(
         }
 
         coverImage?.let { image ->
-            ImageViewerOverlay(image = image, onClose = { coverImage = null })
+            ImageViewerOverlay(
+                image = image,
+                onClose = { coverImage = null },
+                onSave = { saveCoverImageToGallery(image) }
+            )
         }
 
         if (showTimerSheet) {

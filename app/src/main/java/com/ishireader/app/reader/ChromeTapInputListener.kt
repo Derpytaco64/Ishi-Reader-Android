@@ -4,6 +4,7 @@ import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
+import org.readium.r2.navigator.preferences.ReadingProgression
 import org.readium.r2.shared.ExperimentalReadiumApi
 
 /**
@@ -32,9 +33,14 @@ class ChromeTapInputListener(
 
         val fraction = event.point.x / width
         val overflow = navigator as? OverflowableNavigator
+        // goForward/goBackward are semantic (reading-progression-relative, not screen-relative --
+        // see OverflowableNavigator.goForward's own doc), so for RTL content (manga) "next" is
+        // visually to the left: flip which screen zone maps to which call, rather than always
+        // sending left-tap to goBackward.
+        val isRtl = overflow?.overflow?.value?.readingProgression == ReadingProgression.RTL
         when {
-            fraction < EDGE_ZONE_FRACTION -> overflow?.goBackward(animated = true)
-            fraction > 1 - EDGE_ZONE_FRACTION -> overflow?.goForward(animated = true)
+            fraction < EDGE_ZONE_FRACTION -> if (isRtl) overflow?.goForward(animated = true) else overflow?.goBackward(animated = true)
+            fraction > 1 - EDGE_ZONE_FRACTION -> if (isRtl) overflow?.goBackward(animated = true) else overflow?.goForward(animated = true)
             else -> onToggleChrome()
         }
         return true

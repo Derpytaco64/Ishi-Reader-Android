@@ -15,6 +15,7 @@ import com.ishireader.app.data.repository.AnnotationsRepository
 import com.ishireader.app.data.repository.AuthRepository
 import com.ishireader.app.data.repository.BookDownloadRepository
 import com.ishireader.app.data.repository.BookMigrationRepository
+import com.ishireader.app.data.repository.ComicReadingProgressionRepository
 import com.ishireader.app.data.repository.CompletedReadsRepository
 import com.ishireader.app.data.repository.ExactPageCountRepository
 import com.ishireader.app.data.repository.LibraryMetadataPrefetcher
@@ -82,6 +83,8 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
     lateinit var updateCheckRepository: UpdateCheckRepository
         private set
     lateinit var aniListRepository: AniListRepository
+        private set
+    lateinit var comicReadingProgressionRepository: ComicReadingProgressionRepository
         private set
 
     override fun onCreate() {
@@ -153,6 +156,7 @@ class IshiReaderApp : Application(), ImageLoaderFactory, Configuration.Provider 
         aniListRepository = AniListRepository(
             network, database.cachedUserDao(), database.cachedAniListEntryDao(), database.pendingAniListPatchDao(), syncScheduler
         )
+        comicReadingProgressionRepository = ComicReadingProgressionRepository(network, database.comicReadingProgressionDao())
 
         // CLAUDE-ADDED: So a downloaded-for-offline book shows real time/pace/sessions/annotations
         // without ever having been opened -- see LibraryMetadataPrefetcher's doc comment. The

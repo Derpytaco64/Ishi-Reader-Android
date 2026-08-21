@@ -2,13 +2,16 @@
 
 package com.ishireader.app.reader
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.PointF
 import android.graphics.RectF
 import android.os.Bundle
@@ -21,6 +24,8 @@ import android.view.WindowManager
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -323,7 +328,15 @@ class ReaderActivity : FragmentActivity() {
         ReadingTimerTracker(lifecycleScope, app.readingTimerRepository, app.completedReadsRepository)
     }
     private val annotationsController: AnnotationsController by lazy {
-        AnnotationsController(lifecycleScope, app.annotationsRepository, app.notesRepository)
+        AnnotationsController(
+            scope = lifecycleScope,
+            annotationsRepository = app.annotationsRepository,
+            notesRepository = app.notesRepository,
+            chapterTitleFor = { locator ->
+                val pub = publication
+                pub?.chapterTitleFor(locator, toc = if (isComicState.value) comicTocState.value else pub.tableOfContents)
+            }
+        )
     }
 
     /** Plain mutableStateOf, same reasoning as readerSettingsState -- these are written from
@@ -486,7 +499,10 @@ class ReaderActivity : FragmentActivity() {
     private fun openBook(manifestUrl: String) {
         showSyncingOverlay()
         lifecycleScope.launch {
-            readerSettingsState.value = app.readerPreferencesStore.settings.first()
+            // Format (EPUB vs comic) isn't known yet at this point -- guess EPUB for this early,
+            // pre-parse container appearance; showNavigator reloads with the correct format-scoped
+            // settings as soon as isComicState is determined, before anything else reads them.
+            readerSettingsState.value = app.readerPreferencesStore.settings(isComic = false).first()
             applyContainerAppearance(readerSettingsState.value)
             // Always starts a fresh book-open at the system brightness, per user request --
             // any left-edge adjustment from a previous session is intentionally not restored here.
@@ -637,10 +653,14 @@ class ReaderActivity : FragmentActivity() {
         return runCatching { Locator.fromJSON(JSONObject(locatorJson.toString())) }.getOrNull()
     }
 
-    private fun showNavigator(publication: Publication, initialLocator: Locator?, manifestUrl: String) {
+    private suspend fun showNavigator(publication: Publication, initialLocator: Locator?, manifestUrl: String) {
         progressOverlay.visibility = View.GONE
         this.publication = publication
         isComicState.value = publication.metadata.conformsTo.contains(Publication.Profile.DIVINA)
+        // Reload now that the real format is known -- EPUB and comic settings are persisted
+        // entirely separately (see ReaderPreferencesStore) so theme/reading-direction/etc picked
+        // for one format never bleeds into the other.
+        readerSettingsState.value = app.readerPreferencesStore.settings(isComicState.value).first()
         applyContainerAppearance(readerSettingsState.value.forComicRendering(isComicState.value))
         comicReadingProgressionState.value = null
         comicTocState.value = emptyList()
@@ -663,12 +683,12 @@ class ReaderActivity : FragmentActivity() {
             pageCountTracker.state.onEach { state -> state.currentPage?.let { page -> progressTracker.onPageChanged(page, state.totalPages) } }.launchIn(lifecycleScope)
 
             lifecycleScope.launch {
-                val response = try {
-                    app.network.api.getReadingProgression(manifestUrl)
-                } catch (e: Exception) {
-                    null
-                }
-                val body = response?.takeIf { it.isSuccessful }?.body()
+                // CLAUDE-ADDED: Routed through a cached repository (rather than calling
+                // app.network.api.getReadingProgression directly) so a comic opened offline still
+                // gets a reading-direction default and a chapter title pill from whatever this
+                // endpoint last returned, instead of silently getting neither -- see
+                // ComicReadingProgressionRepository's own doc comment.
+                val body = app.comicReadingProgressionRepository.getReadingProgression(manifestUrl)
                 comicReadingProgressionState.value = body?.readingProgression
                 comicTocState.value = buildComicToc(publication.readingOrder, body?.bookmarks.orEmpty())
                 progressTracker.start(app.libraryRepository.findCached(manifestUrl), body?.bookmarks.orEmpty())
@@ -680,7 +700,7 @@ class ReaderActivity : FragmentActivity() {
                 if (readerSettingsState.value.comicReadingDirection == ComicReadingDirection.AUTO) {
                     preservePositionAcross {
                         navigatorFragment?.submitPreferences(
-                            readerSettingsState.value.forComicRendering(true).toEpubPreferences(comicReadingProgressionState.value)
+                            readerSettingsState.value.forComicRendering(true).toEpubPreferences(comicReadingProgressionState.value, isComic = true)
                         )
                     }
                 }
@@ -717,7 +737,7 @@ class ReaderActivity : FragmentActivity() {
             // comicReadingProgressionState is still null here -- the fetch that resolves it is
             // launched just above and lands asynchronously, then re-submits via submitPreferences
             // once known (see showNavigator). An explicit LTR/RTL override doesn't wait on it.
-            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(comicReadingProgressionState.value),
+            initialPreferences = readerSettingsState.value.forComicRendering(isComicState.value).toEpubPreferences(comicReadingProgressionState.value, isComic = isComicState.value),
             paginationListener = pageCountTracker,
             configuration = EpubNavigatorFragment.Configuration(
                 selectionActionModeCallback = selectionCallback,
@@ -1419,7 +1439,10 @@ class ReaderActivity : FragmentActivity() {
                         onEditNote = annotationsController::updateNoteText,
                         onDeleteNote = annotationsController::deleteNote,
                         onDismiss = { annotationsSheetOpen = false },
-                        isComic = isComic
+                        isComic = isComic,
+                        chapterTitleFor = { locator ->
+                            publication?.chapterTitleFor(locator, toc = if (isComic) comicToc else publication?.tableOfContents.orEmpty())
+                        }
                     )
                 }
 
@@ -1479,7 +1502,11 @@ class ReaderActivity : FragmentActivity() {
                 }
 
                 pendingImageOverlay.value?.let { image ->
-                    ImageViewerOverlay(image = image, onClose = { pendingImageOverlay.value = null })
+                    ImageViewerOverlay(
+                        image = image,
+                        onClose = { pendingImageOverlay.value = null },
+                        onSave = { saveTappedImageToGallery(image) }
+                    )
                 }
 
                 val comicContextMenuAnchor by pendingComicContextMenu
@@ -1488,6 +1515,7 @@ class ReaderActivity : FragmentActivity() {
                         ComicPageContextMenu(
                             anchor = anchor,
                             onCopy = ::copyCurrentPageImageToClipboard,
+                            onSaveImage = ::saveCurrentPageImageToGallery,
                             onBookmark = {
                                 navigatorFragment?.currentLocator?.value?.let { annotationsController.addBookmark(it) }
                             },
@@ -1519,11 +1547,11 @@ class ReaderActivity : FragmentActivity() {
         lifecycleScope.launch {
             preservePositionAcross {
                 applyContainerAppearance(rendered)
-                navigatorFragment?.submitPreferences(rendered.toEpubPreferences(comicReadingProgressionState.value))
+                navigatorFragment?.submitPreferences(rendered.toEpubPreferences(comicReadingProgressionState.value, isComic = isComicState.value))
             }
             resolveExactPageCounts()
         }
-        lifecycleScope.launch { app.readerPreferencesStore.save(updated) }
+        lifecycleScope.launch { app.readerPreferencesStore.save(updated, isComicState.value) }
     }
 
     /** Checks/updates the exact, deterministic page count for the book's *current* settings +
@@ -1633,7 +1661,10 @@ class ReaderActivity : FragmentActivity() {
         super.onConfigurationChanged(newConfig)
         if (!::readerContainer.isInitialized) return
         lifecycleScope.launch {
-            preservePositionAcross { }
+            // Comic-only: DualPage.AUTO (two-page landscape spreads) depends on device orientation,
+            // re-checked here since a rotation doesn't otherwise trigger the navigator to
+            // reconsider it -- see EpubNavigatorFragment.refreshAutoSpreadForOrientation.
+            preservePositionAcross { navigatorFragment?.refreshAutoSpreadForOrientation() }
             resolveExactPageCounts(waitForNextLayout = true)
         }
     }
@@ -1735,6 +1766,78 @@ class ReaderActivity : FragmentActivity() {
             clipboardManager.setPrimaryClip(ClipData.newUri(contentResolver, "Comic page", uri))
             if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
                 Toast.makeText(this@ReaderActivity, "Image copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** Reads the current comic page's raw bytes the same way [copyCurrentPageImageToClipboard]
+     *  does, then saves them to the device's Pictures gallery instead of the clipboard. */
+    private fun saveCurrentPageImageToGallery() {
+        val locator = navigatorFragment?.currentLocator?.value ?: return
+        val pub = publication ?: return
+        lifecycleScope.launch {
+            val bytes = pub.get(locator.href)?.read()?.getOrNull()
+            if (bytes == null) {
+                Toast.makeText(this@ReaderActivity, "Couldn't save image", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val extension = locator.href.toString().substringBefore('?').substringAfterLast('.', "jpg")
+            saveImageBytesToGallery(bytes, ImageGallery.mimeTypeForExtension(extension), "comic_page", extension)
+        }
+    }
+
+    /** EPUB counterpart to [saveCurrentPageImageToGallery] -- [ImageTapInputListener] only ever
+     *  hands back a decoded [Bitmap] (see [TappedImage]), not the resource's original bytes/
+     *  extension, so this re-encodes it as a PNG (lossless, universally supported) rather than
+     *  guessing at a source format. */
+    private fun saveTappedImageToGallery(image: TappedImage) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val bytes = java.io.ByteArrayOutputStream().use { stream ->
+                image.bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                stream.toByteArray()
+            }
+            withContext(Dispatchers.Main) {
+                saveImageBytesToGallery(bytes, "image/png", "epub_image", "png")
+            }
+        }
+    }
+
+    /** Below Android 10 (Q, API 29), inserting into MediaStore's shared image collection still
+     *  needs the legacy runtime WRITE_EXTERNAL_STORAGE permission (see the manifest's
+     *  maxSdkVersion="28" on it) -- everything from Q onward uses the scoped-storage
+     *  RELATIVE_PATH/IS_PENDING columns instead and needs no permission at all. [pendingSaveImage]
+     *  re-drives the same save once the permission result comes back, so the user doesn't have to
+     *  re-open the menu and tap Save again after granting it. */
+    private var pendingSaveImage: (() -> Unit)? = null
+
+    private val storagePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val action = pendingSaveImage
+            pendingSaveImage = null
+            if (granted) {
+                action?.invoke()
+            } else {
+                Toast.makeText(this, "Storage permission is needed to save images", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+    private fun saveImageBytesToGallery(bytes: ByteArray, mimeType: String, displayNameBase: String, extension: String) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingSaveImage = { saveImageBytesToGallery(bytes, mimeType, displayNameBase, extension) }
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            return
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val saved = ImageGallery.saveBytes(this@ReaderActivity, bytes, mimeType, displayNameBase, extension)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    this@ReaderActivity,
+                    if (saved) "Image saved to gallery" else "Couldn't save image",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }

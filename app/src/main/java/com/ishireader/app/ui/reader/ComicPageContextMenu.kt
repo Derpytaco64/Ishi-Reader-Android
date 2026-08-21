@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +43,7 @@ import kotlin.math.roundToInt
 fun ComicPageContextMenu(
     anchor: PointF,
     onCopy: () -> Unit,
+    onSaveImage: () -> Unit,
     onBookmark: () -> Unit,
     onNote: () -> Unit,
     onDismiss: () -> Unit
@@ -58,7 +60,7 @@ fun ComicPageContextMenu(
         val maxWidthPx = with(density) { maxWidth.toPx() }
         val maxHeightPx = with(density) { maxHeight.toPx() }
         val cardWidthPx = with(density) { 160.dp.toPx() }
-        val cardHeightPx = with(density) { 152.dp.toPx() }
+        val cardHeightPx = with(density) { 202.dp.toPx() }
         val margin = with(density) { 12.dp.toPx() }
 
         val minLeft = margin
@@ -82,6 +84,7 @@ fun ComicPageContextMenu(
         ) {
             Column {
                 ContextMenuRow(Icons.Filled.ContentCopy, "Copy", onClick = { onCopy(); onDismiss() })
+                ContextMenuRow(Icons.Filled.Download, "Save Image", onClick = { onSaveImage(); onDismiss() })
                 ContextMenuRow(Icons.Filled.BookmarkAdd, "Bookmark", onClick = { onBookmark(); onDismiss() })
                 ContextMenuRow(Icons.Filled.EditNote, "Note", onClick = { onNote(); onDismiss() })
             }

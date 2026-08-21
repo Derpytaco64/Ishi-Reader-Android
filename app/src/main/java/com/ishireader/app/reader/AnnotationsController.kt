@@ -81,7 +81,12 @@ data class AnnotationsUiState(
 class AnnotationsController(
     private val scope: CoroutineScope,
     private val annotationsRepository: AnnotationsRepository,
-    private val notesRepository: NotesRepository
+    private val notesRepository: NotesRepository,
+    /** Resolves a locator to its containing chapter/section title via
+     *  [com.ishireader.app.reader.chapterTitleFor] -- preferred over Readium's own [Locator.title]
+     *  (used only as a fallback below), which is frequently blank, especially for comics whose
+     *  chapter data comes from a synthesized TOC never attached to the locator itself. */
+    private val chapterTitleFor: (Locator) -> String? = { null }
 ) {
     private val _state = MutableStateFlow(AnnotationsUiState())
     val state: StateFlow<AnnotationsUiState> = _state.asStateFlow()
@@ -262,7 +267,7 @@ class AnnotationsController(
                 locator = locatorToJson(locator),
                 color = color.id,
                 createdAt = System.currentTimeMillis().toDouble(),
-                chapterTitle = locator.title
+                chapterTitle = chapterTitleFor(locator) ?: locator.title
             )
             annotationsRepository.saveHighlight(manifestUrl, item)
             refresh()
@@ -290,7 +295,7 @@ class AnnotationsController(
                 id = UUID.randomUUID().toString(),
                 locator = locatorToJson(locator),
                 createdAt = System.currentTimeMillis().toDouble(),
-                chapterTitle = locator.title
+                chapterTitle = chapterTitleFor(locator) ?: locator.title
             )
             annotationsRepository.saveBookmark(manifestUrl, item)
             refresh()
@@ -311,7 +316,7 @@ class AnnotationsController(
                 locator = locatorToJson(locator),
                 text = text,
                 createdAt = System.currentTimeMillis().toDouble(),
-                chapterTitle = locator.title
+                chapterTitle = chapterTitleFor(locator) ?: locator.title
             )
             notesRepository.saveNote(manifestUrl, item)
             refresh()

@@ -62,7 +62,19 @@ internal data class AnnotationRow(
     val quote: String? = null
 )
 
-internal fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending: Boolean, isComic: Boolean = false): List<AnnotationRow> {
+internal fun buildRows(
+    state: AnnotationsUiState,
+    tab: AnnotationTab,
+    descending: Boolean,
+    isComic: Boolean = false,
+    // CLAUDE-ADDED: Best-effort fallback for annotations saved before chapter titles were resolved
+    // properly at creation time (see AnnotationsController) -- re-derives it live from the
+    // publication's TOC when the stored value is missing/blank, so already-existing bookmarks/
+    // notes/highlights self-heal the next time this panel is opened, without needing a migration.
+    // Defaults to always-null so callers without a live Publication handy (e.g. the book detail
+    // screen, which never parses one) just keep whatever was already stored.
+    chapterTitleFor: (Locator) -> String? = { null }
+): List<AnnotationRow> {
     val rows = mutableListOf<AnnotationRow>()
     // Highlighting requires selectable text, which a comic page doesn't have (see
     // AnnotationsPanelSheet's isComic doc) -- excluded here too, not just from the tab chips,
@@ -75,7 +87,7 @@ internal fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending
                 type = AnnotationType.HIGHLIGHT,
                 locator = locator,
                 createdAt = h.createdAt,
-                chapterTitle = h.chapterTitle,
+                chapterTitle = h.chapterTitle.resolvedOrElse(locator, chapterTitleFor),
                 colorHex = HighlightColor.fromId(h.color).hex,
                 quote = locator?.text?.highlight
             )
@@ -89,7 +101,7 @@ internal fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending
                 type = AnnotationType.BOOKMARK,
                 locator = locator,
                 createdAt = b.createdAt,
-                chapterTitle = b.chapterTitle,
+                chapterTitle = b.chapterTitle.resolvedOrElse(locator, chapterTitleFor),
                 quote = locator?.text?.highlight
             )
         }
@@ -103,7 +115,7 @@ internal fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending
                 locator = locator,
                 createdAt = n.createdAt,
                 updatedAt = n.updatedAt,
-                chapterTitle = n.chapterTitle,
+                chapterTitle = n.chapterTitle.resolvedOrElse(locator, chapterTitleFor),
                 noteText = n.text,
                 quote = locator?.text?.highlight
             )
@@ -119,6 +131,9 @@ internal fun buildRows(state: AnnotationsUiState, tab: AnnotationTab, descending
     )
     return if (descending) sorted.reversed() else sorted
 }
+
+private fun String?.resolvedOrElse(locator: Locator?, chapterTitleFor: (Locator) -> String?): String? =
+    takeUnless { it.isNullOrBlank() } ?: locator?.let(chapterTitleFor)
 
 internal fun parseLocator(json: JsonElement): Locator? =
     runCatching { Locator.fromJSON(JSONObject(json.toString())) }.getOrNull()

@@ -480,15 +480,7 @@ public class EpubNavigatorFragment internal constructor(
                 R2PagerAdapter(childFragmentManager, resourcesSingle)
             }
             EpubLayout.FIXED -> {
-                when (viewModel.dualPageMode) {
-                    // FIXME: Properly implement DualPage.AUTO depending on the device orientation.
-                    DualPage.OFF, DualPage.AUTO -> {
-                        R2PagerAdapter(childFragmentManager, resourcesSingle)
-                    }
-                    DualPage.ON -> {
-                        R2PagerAdapter(childFragmentManager, resourcesDouble)
-                    }
-                }
+                R2PagerAdapter(childFragmentManager, if (useDoublePage()) resourcesDouble else resourcesSingle)
             }
         }
         adapter.listener = PagerAdapterListener()
@@ -498,6 +490,27 @@ public class EpubNavigatorFragment internal constructor(
             ReadingProgression.RTL -> LayoutDirection.RTL
             ReadingProgression.LTR -> LayoutDirection.LTR
         }
+    }
+
+    // CLAUDE-ADDED: Resolves DualPage.AUTO against the current device orientation -- two pages in
+    // landscape, one in portrait -- since upstream Readium 3.1.1 leaves this an unimplemented FIXME
+    // (AUTO behaved identically to OFF). ON/OFF stay unconditional either way.
+    private fun useDoublePage(): Boolean = when (viewModel.dualPageMode) {
+        DualPage.ON -> true
+        DualPage.OFF -> false
+        DualPage.AUTO -> resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    }
+
+    // CLAUDE-ADDED: Re-evaluates the orientation check above and swaps the pager's adapter if the
+    // answer changed -- call whenever the containing Activity's configuration changes (e.g. a
+    // rotate button, since device auto-rotate is typically locked by the host Activity). A no-op
+    // for anything else (non-FXL layout, or an explicit ON/OFF spread choice). Position restoration
+    // after the adapter swap is left to the caller, same as every other layout-affecting change
+    // this navigator doesn't restore itself (submitPreferences, etc).
+    public fun refreshAutoSpreadForOrientation() {
+        if (publication.metadata.presentation.layout != EpubLayout.FIXED) return
+        if (viewModel.dualPageMode != DualPage.AUTO) return
+        resetResourcePagerAdapter()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -639,15 +652,7 @@ public class EpubNavigatorFragment internal constructor(
         if (publication.metadata.presentation.layout != EpubLayout.FIXED) {
             setCurrent(resourcesSingle)
         } else {
-            when (viewModel.dualPageMode) {
-                // FIXME: Properly implement DualPage.AUTO depending on the device orientation.
-                DualPage.OFF, DualPage.AUTO -> {
-                    setCurrent(resourcesSingle)
-                }
-                DualPage.ON -> {
-                    setCurrent(resourcesDouble)
-                }
-            }
+            setCurrent(if (useDoublePage()) resourcesDouble else resourcesSingle)
         }
 
         return true

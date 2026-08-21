@@ -28,9 +28,10 @@ import androidx.room.RoomDatabase
         DailyListeningBucketCacheEntity::class,
         PendingDailyListeningBucketDeltaEntity::class,
         CachedAniListEntryEntity::class,
-        PendingAniListPatchEntity::class
+        PendingAniListPatchEntity::class,
+        ComicReadingProgressionCacheEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class IshiReaderDatabase : RoomDatabase() {
@@ -54,6 +55,7 @@ abstract class IshiReaderDatabase : RoomDatabase() {
     abstract fun dailyListeningBucketDao(): DailyListeningBucketDao
     abstract fun cachedAniListEntryDao(): CachedAniListEntryDao
     abstract fun pendingAniListPatchDao(): PendingAniListPatchDao
+    abstract fun comicReadingProgressionDao(): ComicReadingProgressionDao
 
     companion object {
         @Volatile

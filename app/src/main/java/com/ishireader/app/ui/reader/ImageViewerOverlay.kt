@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -36,7 +38,7 @@ import com.ishireader.app.reader.TappedImage
  *  own multi-touch [transformable] gesture detector for pinch-to-zoom/pan instead of a slider +
  *  hand-rolled drag handler, so there's no separate zoom controller UI to build. */
 @Composable
-fun ImageViewerOverlay(image: TappedImage, onClose: () -> Unit) {
+fun ImageViewerOverlay(image: TappedImage, onClose: () -> Unit, onSave: () -> Unit) {
     // Claims the system back gesture/button for as long as this overlay is on screen -- without
     // this, back falls through to the Activity's default handling and exits the book instead of
     // just dismissing the overlay, the same behavior the close X gives.
@@ -91,18 +93,22 @@ fun ImageViewerOverlay(image: TappedImage, onClose: () -> Unit) {
                     )
                 }
         )
-        IconButton(
-            onClick = onClose,
+        Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
                 .displayCutoutPadding()
                 // Extra headroom below the status bar / cutout insets above -- a front camera
                 // punch-hole isn't always fully covered by those insets alone, and this keeps the
-                // X from sitting flush in line with it.
+                // buttons from sitting flush in line with it.
                 .padding(top = 24.dp, end = 8.dp)
         ) {
-            Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+            IconButton(onClick = onSave) {
+                Icon(Icons.Filled.Download, contentDescription = "Save image", tint = Color.White)
+            }
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+            }
         }
     }
 }
