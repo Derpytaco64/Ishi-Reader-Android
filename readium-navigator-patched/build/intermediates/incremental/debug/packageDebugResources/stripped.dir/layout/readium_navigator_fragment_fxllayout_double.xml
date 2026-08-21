@@ -5,10 +5,22 @@
   available in the top-level LICENSE file of the project.
 -->
 
+<!--
+  CLAUDE-PATCHED: forced layoutDirection="ltr" here (and on the single-page variant, for
+  consistency). EpubNavigatorFragment.resetResourcePagerAdapter() sets the *pager's* layoutDirection
+  to RTL for RTL manga so R2RTLViewPager's own reversal (which page index is "next") kicks in,
+  but layoutDirection otherwise cascades down to every descendant view with no explicit override,
+  including this fragment's firstWebView/secondWebView LinearLayout. That means Android's own
+  automatic RTL mirroring would silently swap which physical side (left/right) firstWebView and
+  secondWebView render on, on top of (and cancelling out) buildFixedLayoutResources' own explicit
+  leftLink/rightLink swap for RTL spreads. Pinning this subtree to ltr makes buildFixedLayoutResources
+  the single source of truth for left/right placement in a spread.
+-->
 <org.readium.r2.navigator.epub.fxl.R2FXLLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/r2FXLLayout"
     android:focusable="false"
+    android:layoutDirection="ltr"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 

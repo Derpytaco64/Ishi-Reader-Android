@@ -741,6 +741,9 @@ class ReaderActivity : FragmentActivity() {
         }
 
         navigatorFragment = fragment as EpubNavigatorFragment
+        if (isComicState.value) {
+            navigatorFragment!!.pagePreloadDistance = readerSettingsState.value.mangaPreloadPages
+        }
         var lastDecoratedHref: String? = null
         navigatorFragment!!.currentLocator
             .onEach { locator ->
@@ -1533,6 +1536,9 @@ class ReaderActivity : FragmentActivity() {
             preservePositionAcross {
                 applyContainerAppearance(rendered)
                 navigatorFragment?.submitPreferences(rendered.toEpubPreferences(isComic = isComicState.value))
+                if (isComicState.value) {
+                    navigatorFragment?.pagePreloadDistance = updated.mangaPreloadPages
+                }
             }
             resolveExactPageCounts()
         }

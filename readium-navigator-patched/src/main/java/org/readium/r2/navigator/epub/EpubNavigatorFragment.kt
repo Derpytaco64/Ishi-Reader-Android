@@ -329,6 +329,20 @@ public class EpubNavigatorFragment internal constructor(
 
     internal lateinit var resourcePager: R2ViewPager
 
+    /** CLAUDE-ADDED: how many pages before/after the current one stay instantiated (pre-decoded)
+     *  in [resourcePager] at all times -- the underlying ViewPager's own default (1) can show a
+     *  brief blank/loading page when paging quickly through a comic's large bitmaps. Exposed
+     *  publicly so the app can drive it from a user-adjustable "page preload buffer" setting.
+     *  Setting it while the pager already exists applies immediately, without needing a full
+     *  [invalidateResourcePager] rebuild. */
+    public var pagePreloadDistance: Int = 1
+        set(value) {
+            field = value.coerceAtLeast(1)
+            if (::resourcePager.isInitialized) {
+                resourcePager.offscreenPageLimit = field
+            }
+        }
+
     private lateinit var resourcesSingle: List<PageResource>
     private lateinit var resourcesDouble: List<PageResource>
 
@@ -427,6 +441,7 @@ public class EpubNavigatorFragment internal constructor(
         resourcePager.setBackgroundColor(viewModel.settings.value.effectiveBackgroundColor)
         // Let the page views handle the keyboard events.
         resourcePager.isFocusable = false
+        resourcePager.offscreenPageLimit = pagePreloadDistance
 
         parent.addView(resourcePager)
 

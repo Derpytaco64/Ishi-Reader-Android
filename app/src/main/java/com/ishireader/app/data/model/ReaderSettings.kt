@@ -126,6 +126,11 @@ data class ReaderSettings(
     val publisherStyles: Boolean = false,
     val layout: ReaderLayout = ReaderLayout.PAGINATED,
     val comicReadingDirection: ComicReadingDirection = ComicReadingDirection.LTR,
+    /** Comic-only: how many pages before/after the current one stay pre-decoded in the pager (see
+     *  EpubNavigatorFragment.pagePreloadDistance) -- avoids a blank/loading flash when paging
+     *  quickly through a manga's large bitmap pages. 2 means the current page plus 2 ahead and 2
+     *  behind. Not exposed for EPUBs: reflowable HTML pages don't have this loading-flash problem. */
+    val mangaPreloadPages: Int = 2,
     val pageMargins: Double? = null,
     val verticalMargin: Double = 0.0,
     val showChapterTitle: Boolean = false,

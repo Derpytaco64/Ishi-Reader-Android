@@ -5,10 +5,13 @@
   available in the top-level LICENSE file of the project.
 -->
 
+<!-- CLAUDE-PATCHED: see readium_navigator_fragment_fxllayout_double.xml's comment;
+     pinned to ltr so this subtree never inherits the pager's RTL layoutDirection and auto-mirrors. -->
 <org.readium.r2.navigator.epub.fxl.R2FXLLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/r2FXLLayout"
     android:focusable="false"
+    android:layoutDirection="ltr"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 

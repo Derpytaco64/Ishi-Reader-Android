@@ -156,6 +156,14 @@ fun ReaderSettingsSheet(
                     optionLabel = { it.label() },
                     onSelect = { onSettingsChange(settings.copy(comicReadingDirection = it)) }
                 )
+                LabeledSlider(
+                    label = "Page Preload Buffer",
+                    value = settings.mangaPreloadPages.toFloat(),
+                    valueRange = 1f..5f,
+                    steps = 3,
+                    valueLabel = "${settings.mangaPreloadPages} page${if (settings.mangaPreloadPages == 1) "" else "s"}",
+                    onValueChange = { onSettingsChange(settings.copy(mangaPreloadPages = it.roundToInt())) }
+                )
             }
             if (!isComic) {
                 SegmentedOptionRow(
