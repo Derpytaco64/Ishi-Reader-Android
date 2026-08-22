@@ -47,6 +47,12 @@ private val ChartHeight = 140.dp
 private val AxisLabelWidth = 36.dp
 private const val AreaFillAlpha = 0.35f
 
+// CLAUDE-ADDED: Fixed (not data-driven) per the user's own request, so the scale reads consistently
+// from week to week instead of rescaling to whatever the busiest day happened to be -- a day that
+// genuinely exceeds this just gets visually capped at the top of the chart (see yAt's coerceIn below)
+// rather than distorting every other week's scale.
+private const val MaxScaleSeconds = 5.0 * 3600.0
+
 /**
  * Top-of-stats-screen graph: 7 local calendar days of reading/listening time, stacked by book type --
  * EPUB on top, Manga/Comic in the middle, Audiobooks at the bottom, each band's fill a translucent
@@ -66,9 +72,6 @@ fun WeeklyReadingChart(
     if (days.isEmpty()) return
 
     val hasActivity = days.any { it.epubSeconds + it.comicSeconds + it.audiobookSeconds > 0.0 }
-    val maxTotalSeconds = remember(days) {
-        days.maxOf { it.epubSeconds + it.comicSeconds + it.audiobookSeconds }.coerceAtLeast(60.0)
-    }
     val dayLabelFormatter = remember { DateTimeFormatter.ofPattern("EEE") }
     val n = days.size
 
@@ -102,10 +105,8 @@ fun WeeklyReadingChart(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                val topLabel = if (hasActivity) formatAxisSeconds(maxTotalSeconds) else ""
-                val midLabel = if (hasActivity) formatAxisSeconds(maxTotalSeconds / 2) else ""
-                Text(text = topLabel, style = MaterialTheme.typography.labelSmall, color = gridlineColor)
-                Text(text = midLabel, style = MaterialTheme.typography.labelSmall, color = gridlineColor)
+                Text(text = formatAxisSeconds(MaxScaleSeconds), style = MaterialTheme.typography.labelSmall, color = gridlineColor)
+                Text(text = formatAxisSeconds(MaxScaleSeconds / 2), style = MaterialTheme.typography.labelSmall, color = gridlineColor)
                 Text(text = "0", style = MaterialTheme.typography.labelSmall, color = gridlineColor)
             }
 
@@ -125,7 +126,10 @@ fun WeeklyReadingChart(
                     // fillMaxWidth/weight(1f) day-label Row below so the chart and its x-axis labels
                     // line up exactly.
                     fun xAt(i: Int) = (i + 0.5f) / n * size.width
-                    fun yAt(seconds: Double) = size.height - (seconds / maxTotalSeconds).toFloat() * size.height
+                    fun yAt(seconds: Double): Float {
+                        val fraction = (seconds.coerceIn(0.0, MaxScaleSeconds) / MaxScaleSeconds).toFloat()
+                        return size.height - fraction * size.height
+                    }
 
                     val zero = DoubleArray(n)
                     val audiobookTop = DoubleArray(n) { days[it].audiobookSeconds }
@@ -206,19 +210,24 @@ private fun LegendItem(color: Color, label: String) {
     }
 }
 
-/** Compact single-unit axis label ("2h"/"45m"/"30s") -- unlike formatFullReadingTime, an axis tick
- *  doesn't need every unit down to the second, just enough precision to read the scale at a glance. */
+/** Compact axis label ("5h"/"2h 30m"/"45m"/"30s") -- unlike formatFullReadingTime, an axis tick
+ *  doesn't need every unit down to the second, just enough precision to read the scale at a glance.
+ *  Combines hours+minutes (rather than truncating to a bare hour count) since MaxScaleSeconds / 2
+ *  lands on a half-hour, which a bare "${whole/3600}h" would otherwise silently round down to "2h". */
 private fun formatAxisSeconds(seconds: Double): String {
     val whole = seconds.toLong()
+    val hours = whole / 3600
+    val minutes = (whole % 3600) / 60
     return when {
-        whole >= 3600 -> "${whole / 3600}h"
-        whole >= 60 -> "${whole / 60}m"
+        hours > 0 && minutes > 0 -> "${hours}h ${minutes}m"
+        hours > 0 -> "${hours}h"
+        minutes > 0 -> "${minutes}m"
         else -> "${whole}s"
     }
 }
 
 private fun formatDateRangeTitle(days: List<WeeklyBookTypeDay>): String {
-    val formatter = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
+    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())
     val start = LocalDate.parse(days.first().date)
     val end = LocalDate.parse(days.last().date)
     return "${start.format(formatter)} – ${end.format(formatter)}"
