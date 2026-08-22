@@ -52,9 +52,10 @@ private const val DRAG_SENSITIVITY = 1.5f
  * Moon+ Reader-style brightness gesture: dragging vertically anywhere in this strip (meant to be
  * pinned to the far-left edge of the reader, full height, see ReaderActivity) adjusts brightness
  * live via [onPreview]; a plain tap (no meaningful vertical movement) falls through to [onTap]
- * instead of being swallowed -- normally wired to the same "go back a page" action
- * ChromeTapInputListener's own left-edge zone uses, so a tap here doesn't silently lose that
- * behavior just because this control also lives in that zone. [onCommit] fires once, with the
+ * instead of being swallowed -- normally wired to the same reading-progression-aware action
+ * ChromeTapInputListener's own left-edge zone uses (back page for LTR, forward for RTL), so a tap
+ * here doesn't silently lose or invert that behavior just because this control also lives in that
+ * zone. [onCommit] fires once, with the
  * final value, when the drag ends.
  *
  * Built as a manual down/move/up loop (same style as SettingsDrawerContent's ColorWheelPicker)

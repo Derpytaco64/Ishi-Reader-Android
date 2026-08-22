@@ -144,6 +144,7 @@ import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.Selection
 import org.readium.r2.navigator.html.HtmlDecorationTemplates
+import org.readium.r2.navigator.preferences.ReadingProgression
 import org.readium.r2.navigator.preferences.Spread
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
@@ -1011,7 +1012,15 @@ class ReaderActivity : FragmentActivity() {
                         value = sessionBrightness ?: currentSystemBrightnessFraction(),
                         onPreview = { applyBrightness(it) },
                         onCommit = { sessionBrightnessState.value = it },
-                        onTap = { (navigatorFragment as? OverflowableNavigator)?.goBackward(animated = true) },
+                        onTap = {
+                            // This strip sits at the physical left edge, same zone as
+                            // ChromeTapInputListener's own left-edge tap -- so it must mirror that
+                            // listener's RTL handling instead of assuming "left edge always means
+                            // go back a page" (only true for LTR; RTL content advances to the left).
+                            val overflow = navigatorFragment as? OverflowableNavigator
+                            val isRtl = overflow?.overflow?.value?.readingProgression == ReadingProgression.RTL
+                            if (isRtl) overflow?.goForward(animated = true) else overflow?.goBackward(animated = true)
+                        },
                         // Comic pages are art, not a solid theme-colored background -- readerTextColor
                         // (tuned to sit on readerBackgroundColor, which for the forced Dark/Light comic
                         // theme is white/near-white) reliably disappears against a light manga page. The
