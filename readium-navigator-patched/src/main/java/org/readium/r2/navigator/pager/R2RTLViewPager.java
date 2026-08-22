@@ -20,6 +20,7 @@ import android.content.Context;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -63,6 +64,13 @@ class R2RTLViewPager extends ViewPager {
         if (direction == ReadingProgression.RTL) {
             viewCompatLayoutDirection = ViewCompat.LAYOUT_DIRECTION_RTL;
         }
+        // CLAUDE-ADDED: temporary diagnostic logging for the RTL portrait-vs-landscape tap-direction
+        // bug -- see EpubNavigatorFragment.goToNextResource/goToPreviousResource and
+        // ChromeTapInputListener for the matching log lines. Safe/cheap to leave in briefly; strip
+        // once the bug is found.
+        Log.d("IshiRTLDebug", "onRtlPropertiesChanged: incomingLayoutDirection=" + layoutDirection
+            + " direction=" + direction + " resolvedViewCompatLayoutDirection=" + viewCompatLayoutDirection
+            + " currentMLayoutDirection=" + mLayoutDirection);
         if (viewCompatLayoutDirection != mLayoutDirection) {
             PagerAdapter adapter = super.getAdapter();
             int position = 0;
@@ -98,21 +106,27 @@ class R2RTLViewPager extends ViewPager {
 
     @Override
     public int getCurrentItem() {
-        int item = super.getCurrentItem();
+        int rawItem = super.getCurrentItem();
+        int item = rawItem;
         PagerAdapter adapter = super.getAdapter();
         if (adapter != null && isRtl()) {
             item = adapter.getCount() - item - 1;
         }
+        Log.d("IshiRTLDebug", "getCurrentItem: rawItem=" + rawItem + " logicalItem=" + item
+            + " isRtl=" + isRtl() + " count=" + (adapter == null ? -1 : adapter.getCount()));
         return item;
     }
 
     @Override
     public void setCurrentItem(int position, boolean smoothScroll) {
         PagerAdapter adapter = super.getAdapter();
+        int rawPosition = position;
         if (adapter != null && isRtl()) {
-            position = adapter.getCount() - position - 1;
+            rawPosition = adapter.getCount() - position - 1;
         }
-        super.setCurrentItem(position, smoothScroll);
+        Log.d("IshiRTLDebug", "setCurrentItem(2-arg): logicalPosition=" + position + " rawPosition=" + rawPosition
+            + " isRtl=" + isRtl() + " count=" + (adapter == null ? -1 : adapter.getCount()));
+        super.setCurrentItem(rawPosition, smoothScroll);
     }
 
     @Override

@@ -13,6 +13,7 @@ import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
 import android.util.LayoutDirection
+import android.util.Log
 import android.view.ActionMode
 import android.view.LayoutInflater
 import android.view.View
@@ -977,6 +978,14 @@ public class EpubNavigatorFragment internal constructor(
 
     private fun goToNextResource(jump: Boolean, animated: Boolean): Boolean {
         val adapter = resourcePager.adapter ?: return false
+        // CLAUDE-ADDED: temporary diagnostic logging for the RTL portrait-vs-landscape tap-direction
+        // bug -- see R2RTLViewPager and ChromeTapInputListener for the matching log lines. Safe/cheap
+        // to leave in briefly; strip once the bug is found.
+        Log.d(
+            "IshiRTLDebug",
+            "goToNextResource: currentItem(before)=${resourcePager.currentItem} count=${adapter.count} " +
+                "useDoublePage=${useDoublePage()} readingProgression=${settings.value.readingProgression}"
+        )
         if (resourcePager.currentItem >= adapter.count - 1) {
             return false
         }
@@ -986,6 +995,7 @@ public class EpubNavigatorFragment internal constructor(
         }
 
         resourcePager.setCurrentItem(resourcePager.currentItem + 1, animated)
+        Log.d("IshiRTLDebug", "goToNextResource: currentItem(after)=${resourcePager.currentItem}")
 
         currentReflowablePageFragment?.webView?.let { webView ->
             if (settings.value.readingProgression == ReadingProgression.RTL) {
@@ -999,6 +1009,12 @@ public class EpubNavigatorFragment internal constructor(
     }
 
     private fun goToPreviousResource(jump: Boolean, animated: Boolean): Boolean {
+        // CLAUDE-ADDED: temporary diagnostic logging, see goToNextResource's matching comment.
+        Log.d(
+            "IshiRTLDebug",
+            "goToPreviousResource: currentItem(before)=${resourcePager.currentItem} " +
+                "useDoublePage=${useDoublePage()} readingProgression=${settings.value.readingProgression}"
+        )
         if (resourcePager.currentItem <= 0) {
             return false
         }
@@ -1008,6 +1024,7 @@ public class EpubNavigatorFragment internal constructor(
         }
 
         resourcePager.setCurrentItem(resourcePager.currentItem - 1, animated)
+        Log.d("IshiRTLDebug", "goToPreviousResource: currentItem(after)=${resourcePager.currentItem}")
 
         currentReflowablePageFragment?.webView?.let { webView ->
             if (settings.value.readingProgression == ReadingProgression.RTL) {
