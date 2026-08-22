@@ -10,6 +10,7 @@ package org.readium.r2.navigator.epub
 
 import android.graphics.PointF
 import android.graphics.RectF
+import android.net.Uri
 import android.os.Bundle
 import android.util.LayoutDirection
 import android.view.ActionMode
@@ -678,6 +679,18 @@ public class EpubNavigatorFragment internal constructor(
         listener?.onJumpToLocator(locator)
 
         val href = locator.href.removeFragment()
+        // CLAUDE-ADDED: a saved locator's href can arrive percent-encoded differently than the
+        // resource URLs built locally (e.g. a comic page opened on the website goes through the Go
+        // toolkit's manifest, which percent-encodes "(" / ")" as %28/%29, while Android's own
+        // ImageParser-derived Url.fromDecodedPath -> Uri.encode leaves those two characters
+        // unescaped) -- a plain, un-decoded suffix comparison then never matches, silently leaving
+        // go() a no-op (comic opens on the cover instead of the saved page, though currentLocator
+        // still echoes back this href since it's seeded straight from the requested locator, not
+        // from wherever the pager actually lands -- see _currentLocator below). The
+        // PageResource.EpubReflowable branch doesn't have this problem since Url.isEquivalent()
+        // already decodes+re-encodes both sides through the same Uri.Builder before comparing;
+        // mirror that here by decoding both operands before the suffix check.
+        val hrefForMatch = Uri.decode(href.toString())
 
         fun setCurrent(resources: List<PageResource>) {
             val page = resources.withIndex().firstOrNull { (_, res) ->
@@ -685,9 +698,8 @@ public class EpubNavigatorFragment internal constructor(
                     is PageResource.EpubReflowable ->
                         res.link.url().isEquivalent(href)
                     is PageResource.EpubFxl ->
-                        res.leftUrl?.toString()?.endsWith(href.toString()) == true || res.rightUrl?.toString()?.endsWith(
-                            href.toString()
-                        ) == true
+                        res.leftUrl?.toString()?.let { Uri.decode(it) }?.endsWith(hrefForMatch) == true ||
+                            res.rightUrl?.toString()?.let { Uri.decode(it) }?.endsWith(hrefForMatch) == true
                     else -> false
                 }
             } ?: return
