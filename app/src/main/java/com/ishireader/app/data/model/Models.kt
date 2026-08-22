@@ -426,3 +426,19 @@ data class UserStats(
     val audiobooksFinished: Int = 0,
     val totalListeningSeconds: Double = 0.0
 )
+
+/** Mirrors the server's WeeklyBookTypeStats shape (src/lib/userData/weeklyStatsTypes.ts) -- a fixed
+ *  7-row window of the last local calendar days (oldest first), each day's reading/listening time
+ *  split by book type for the stats page's stacked-by-type graph. */
+@Serializable
+data class WeeklyBookTypeDay(
+    val date: String,
+    val epubSeconds: Double = 0.0,
+    val comicSeconds: Double = 0.0,
+    val audiobookSeconds: Double = 0.0
+)
+
+@Serializable
+data class WeeklyBookTypeStats(
+    val days: List<WeeklyBookTypeDay> = emptyList()
+)

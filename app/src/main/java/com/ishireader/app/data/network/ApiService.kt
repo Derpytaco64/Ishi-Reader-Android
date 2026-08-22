@@ -63,6 +63,7 @@ import com.ishireader.app.data.model.UpdateProfileRequest
 import com.ishireader.app.data.model.UpdateProfileResponse
 import com.ishireader.app.data.model.UserDataFolderField
 import com.ishireader.app.data.model.UserStats
+import com.ishireader.app.data.model.WeeklyBookTypeStats
 import com.ishireader.app.data.model.WordCountRequest
 import com.ishireader.app.data.model.WordCountResponse
 import kotlinx.serialization.json.JsonObject
@@ -229,6 +230,9 @@ interface ApiService {
 
     @GET("api/userdata/stats")
     suspend fun stats(): Response<UserStats>
+
+    @GET("api/userdata/stats/weekly")
+    suspend fun weeklyStats(): Response<WeeklyBookTypeStats>
 
     @POST("api/userdata/migrateBookData")
     suspend fun migrateBookData(@Body request: MigrateBookDataRequest): Response<Unit>

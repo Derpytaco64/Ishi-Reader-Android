@@ -89,6 +89,7 @@ import com.ishireader.app.R
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.PublicUser
 import com.ishireader.app.data.model.UserStats
+import com.ishireader.app.data.model.WeeklyBookTypeStats
 import com.ishireader.app.data.model.buildNotesMarkdown
 import com.ishireader.app.data.model.manifestUrl
 import com.ishireader.app.data.model.notesExportFilename
@@ -153,6 +154,7 @@ fun MainTabsScreen(
     var userMenuExpanded by remember { mutableStateOf(false) }
     var isStatsOpen by remember { mutableStateOf(false) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
+    var weeklyStats by remember { mutableStateOf<WeeklyBookTypeStats?>(null) }
     var isMigrateOpen by remember { mutableStateOf(false) }
     var isClearingCache by remember { mutableStateOf(false) }
     var isEditUserOpen by remember { mutableStateOf(false) }
@@ -211,8 +213,13 @@ fun MainTabsScreen(
     LaunchedEffect(isStatsOpen) {
         if (isStatsOpen) {
             stats = null
+            weeklyStats = null
             when (val result = statsRepository.getStats()) {
                 is ApiResult.Success -> stats = result.data
+                is ApiResult.Failure -> {}
+            }
+            when (val result = statsRepository.getWeeklyStats()) {
+                is ApiResult.Success -> weeklyStats = result.data
                 is ApiResult.Failure -> {}
             }
         }
@@ -588,7 +595,7 @@ fun MainTabsScreen(
         }
 
         if (isStatsOpen) {
-            StatsDialog(stats = stats, onDismiss = { isStatsOpen = false })
+            StatsDialog(stats = stats, weeklyStats = weeklyStats, onDismiss = { isStatsOpen = false })
         }
 
         if (isEditUserOpen) {
@@ -770,7 +777,7 @@ private fun SyncProgressRing(isSyncing: Boolean, modifier: Modifier = Modifier) 
 /** Mirrors StatefulUserMenu.tsx's stats dialog -- same four sections/fields, read from the same
  *  /api/userdata/stats endpoint, just laid out as label/value rows instead of a tile grid. */
 @Composable
-private fun StatsDialog(stats: UserStats?, onDismiss: () -> Unit) {
+private fun StatsDialog(stats: UserStats?, weeklyStats: WeeklyBookTypeStats?, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large, tonalElevation = 4.dp) {
             Column(
@@ -782,6 +789,11 @@ private fun StatsDialog(stats: UserStats?, onDismiss: () -> Unit) {
             ) {
                 Text(text = "Stats", style = MaterialTheme.typography.titleLarge)
                 Spacer(modifier = Modifier.height(16.dp))
+
+                weeklyStats?.days?.let { days ->
+                    WeeklyReadingChart(days = days)
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
                 if (stats == null) {
                     Text(text = "Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)

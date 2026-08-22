@@ -3,6 +3,7 @@ package com.ishireader.app.data.repository
 import com.ishireader.app.data.local.CachedUserStatsDao
 import com.ishireader.app.data.local.CachedUserStatsEntity
 import com.ishireader.app.data.model.UserStats
+import com.ishireader.app.data.model.WeeklyBookTypeStats
 import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.NetworkModule
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,22 @@ class StatsRepository(
     }
 
     private suspend fun cachedStats(): UserStats? = cachedUserStatsDao.get()?.toUserStats()
+
+    /** No offline cache, unlike getStats() -- this only backs the stats page's weekly graph, which
+     *  simply shows nothing rather than a stale week if the network call fails. */
+    suspend fun getWeeklyStats(): ApiResult<WeeklyBookTypeStats> = withContext(Dispatchers.IO) {
+        try {
+            val response = network.api.weeklyStats()
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                ApiResult.Success(body)
+            } else {
+                ApiResult.Failure("Couldn't load weekly stats (${response.code()})")
+            }
+        } catch (e: Exception) {
+            ApiResult.Failure(e.message ?: "Network error", isNetworkError = true)
+        }
+    }
 }
 
 private fun UserStats.toEntity() = CachedUserStatsEntity(
