@@ -21,7 +21,7 @@ class ChromeTapInputListener(
 ) : InputListener {
 
     private companion object {
-        const val EDGE_ZONE_FRACTION = 0.3
+        const val EDGE_ZONE_FRACTION = 0.25
     }
 
     override fun onTap(event: TapEvent): Boolean {
