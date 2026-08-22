@@ -190,7 +190,45 @@ internal class R2FXLPageFragment : Fragment() {
             true
         }
 
-        resourceUrl?.let { webView.loadUrl(it.toString()) }
+        // CLAUDE-ADDED: Comic/manga readingOrder links point straight at raw page images (see
+        // FixedLayoutComicPublicationParser's doc comment), so loading them via webView.loadUrl()
+        // hands the image to WebView's built-in image viewer, which zooms to fit the viewport
+        // *width* only. In landscape ("horizontal") orientation a portrait manga page then gets
+        // scaled up until it fills the screen width, cropping the top and bottom off-screen.
+        // Wrapping the image in a tiny HTML/CSS shell with object-fit: contain instead fits it
+        // within both dimensions, so the whole page is always visible (letterboxed rather than
+        // cropped) regardless of device orientation.
+        resourceUrl?.let { url ->
+            val src = url.toString().replace("&", "&amp;")
+            val html = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        width: 100%;
+                        height: 100%;
+                        overflow: hidden;
+                    }
+                    img {
+                        display: block;
+                        width: 100%;
+                        height: 100%;
+                        object-fit: contain;
+                    }
+                </style>
+                </head>
+                <body>
+                <img src="$src">
+                </body>
+                </html>
+            """.trimIndent()
+            webView.loadDataWithBaseURL(url.toString(), html, "text/html", "utf-8", null)
+        }
     }
 
     companion object {
