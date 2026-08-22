@@ -162,7 +162,7 @@ class PageCountSweeper(
 
     companion object {
         private const val SWEEP_FRAGMENT_TAG = "page_count_sweep_fragment"
-        private const val RESOURCE_TIMEOUT_MS = 8_000L
+        private const val RESOURCE_TIMEOUT_MS = 4_000L
 
         /** How long to wait after a resource's first page-count measurement before forcing a
          *  second one (see the sweep loop) -- long enough for a locally-bundled EPUB image to
