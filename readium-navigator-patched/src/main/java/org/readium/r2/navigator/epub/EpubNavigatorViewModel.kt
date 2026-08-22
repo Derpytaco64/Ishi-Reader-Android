@@ -240,7 +240,15 @@ internal class EpubNavigatorViewModel(
                 // We need to invalidate the resource pager when changing from scroll mode to
                 // paginated, otherwise the horizontal scroll will be broken.
                 // See https://github.com/readium/kotlin-toolkit/pull/304
-                oldSettings.scroll != newSettings.scroll
+                oldSettings.scroll != newSettings.scroll ||
+                // CLAUDE-ADDED: FXL/comic pages bake their letterbox background color directly into
+                // each R2FXLPageFragment's HTML at creation time (see R2FXLPageFragment.setupWebView),
+                // since there's no live re-theming hook for already-rendered WebView content the way
+                // resourcePager's own background repaints on the fly (see onSettingsChange). Toggling
+                // dark mode while a comic is already open must rebuild those fragments, or the
+                // already-visible page keeps its stale (e.g. white) letterbox color.
+                (layout == EpubLayout.FIXED &&
+                    (oldSettings.backgroundColor != newSettings.backgroundColor || oldSettings.theme != newSettings.theme))
             )
 
         if (needsInvalidation) {

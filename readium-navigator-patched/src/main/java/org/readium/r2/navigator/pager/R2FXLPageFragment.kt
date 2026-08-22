@@ -82,8 +82,8 @@ internal class R2FXLPageFragment : Fragment() {
             val left = doubleBinding.firstWebView
             val right = doubleBinding.secondWebView
 
-            setupWebView(left, firstResourceLink, firstResourceUrl)
-            setupWebView(right, secondResourceLink, secondResourceUrl)
+            setupWebView(left, firstResourceLink, firstResourceUrl, objectPosition = "right center")
+            setupWebView(right, secondResourceLink, secondResourceUrl, objectPosition = "left center")
 
             r2FXLLayout.addOnDoubleTapListener(R2FXLOnDoubleTapListener(true))
             r2FXLLayout.addOnTapListener(object : R2FXLLayout.OnTapListener {
@@ -143,7 +143,12 @@ internal class R2FXLPageFragment : Fragment() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun setupWebView(webView: R2BasicWebView, link: Link?, resourceUrl: Url?) {
+    private fun setupWebView(
+        webView: R2BasicWebView,
+        link: Link?,
+        resourceUrl: Url?,
+        objectPosition: String = "center",
+    ) {
         webViews.add(webView)
         navigator?.let {
             webView.listener = it.webViewListener
@@ -198,8 +203,26 @@ internal class R2FXLPageFragment : Fragment() {
         // Wrapping the image in a tiny HTML/CSS shell with object-fit: contain instead fits it
         // within both dimensions, so the whole page is always visible (letterboxed rather than
         // cropped) regardless of device orientation.
+        //
+        // CLAUDE-ADDED: For a two-page spread, each half is fit independently, so if the object-fit
+        // shrinkage is height-constrained the image ends up narrower than its half and, by default,
+        // centered -- leaving a visible gap at the spine where the two pages should meet. objectPosition
+        // pins each image to the shared inner edge instead (the left page hugs the right edge of its
+        // box, the right page hugs the left edge of its box) so the spread always stays flush.
         resourceUrl?.let { url ->
             val src = url.toString().replace("&", "&amp;")
+            // CLAUDE-ADDED: dark mode for comics has never recolored the page itself -- it just paints
+            // the R2ViewPager behind these fragments with the theme color (see
+            // EpubNavigatorFragment.effectiveBackgroundColor) and lets it show through any letterboxing.
+            // The old direct loadUrl(imageUrl) used WebView's built-in "image document" viewer, which has
+            // no opaque page background of its own. This wrapper is a real HTML document though, and an
+            // HTML page defaults to an opaque white background -- so without an explicit color here, the
+            // object-fit letterbox bars paint white over the dark pager behind them regardless of theme.
+            // Match the wrapper's background to the same effective color so letterboxing stays themed.
+            val settings = viewModel.settings.value
+            val backgroundColorInt = settings.backgroundColor?.int ?: settings.theme.backgroundColor
+            val backgroundHex = String.format("#%06X", 0xFFFFFF and backgroundColorInt)
+            webView.setBackgroundColor(backgroundColorInt)
             val html = """
                 <!DOCTYPE html>
                 <html>
@@ -213,12 +236,14 @@ internal class R2FXLPageFragment : Fragment() {
                         width: 100%;
                         height: 100%;
                         overflow: hidden;
+                        background-color: $backgroundHex;
                     }
                     img {
                         display: block;
                         width: 100%;
                         height: 100%;
                         object-fit: contain;
+                        object-position: $objectPosition;
                     }
                 </style>
                 </head>
