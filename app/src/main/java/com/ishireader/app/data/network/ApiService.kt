@@ -231,8 +231,10 @@ interface ApiService {
     @GET("api/userdata/stats")
     suspend fun stats(): Response<UserStats>
 
+    /** offset 0 is the current week; each step below 0 pages back another 7 days -- see the server
+     *  route's own comment for why it's clamped server-side to never go past the current week. */
     @GET("api/userdata/stats/weekly")
-    suspend fun weeklyStats(): Response<WeeklyBookTypeStats>
+    suspend fun weeklyStats(@Query("offset") offset: Int = 0): Response<WeeklyBookTypeStats>
 
     @POST("api/userdata/migrateBookData")
     suspend fun migrateBookData(@Body request: MigrateBookDataRequest): Response<Unit>

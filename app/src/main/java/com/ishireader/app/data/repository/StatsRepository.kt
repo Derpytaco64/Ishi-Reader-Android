@@ -41,9 +41,9 @@ class StatsRepository(
 
     /** No offline cache, unlike getStats() -- this only backs the stats page's weekly graph, which
      *  simply shows nothing rather than a stale week if the network call fails. */
-    suspend fun getWeeklyStats(): ApiResult<WeeklyBookTypeStats> = withContext(Dispatchers.IO) {
+    suspend fun getWeeklyStats(offset: Int = 0): ApiResult<WeeklyBookTypeStats> = withContext(Dispatchers.IO) {
         try {
-            val response = network.api.weeklyStats()
+            val response = network.api.weeklyStats(offset)
             val body = response.body()
             if (response.isSuccessful && body != null) {
                 ApiResult.Success(body)

@@ -155,6 +155,7 @@ fun MainTabsScreen(
     var isStatsOpen by remember { mutableStateOf(false) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
     var weeklyStats by remember { mutableStateOf<WeeklyBookTypeStats?>(null) }
+    var weekOffset by remember { mutableStateOf(0) }
     var isMigrateOpen by remember { mutableStateOf(false) }
     var isClearingCache by remember { mutableStateOf(false) }
     var isEditUserOpen by remember { mutableStateOf(false) }
@@ -213,12 +214,23 @@ fun MainTabsScreen(
     LaunchedEffect(isStatsOpen) {
         if (isStatsOpen) {
             stats = null
-            weeklyStats = null
+            weekOffset = 0
             when (val result = statsRepository.getStats()) {
                 is ApiResult.Success -> stats = result.data
                 is ApiResult.Failure -> {}
             }
-            when (val result = statsRepository.getWeeklyStats()) {
+        }
+    }
+
+    // CLAUDE-ADDED: Separate from the effect above -- keyed on weekOffset too, so tapping the chart's
+    // prev/next-week arrows (which only change weekOffset) re-fetches just the weekly graph without
+    // re-fetching the rest of the stats dialog. Resetting weekOffset to 0 on open (above) means this
+    // also fires once on the initial open in the common case (offset unchanged from last close, so
+    // isStatsOpen alone wouldn't retrigger it) since isStatsOpen is a key here too.
+    LaunchedEffect(isStatsOpen, weekOffset) {
+        if (isStatsOpen) {
+            weeklyStats = null
+            when (val result = statsRepository.getWeeklyStats(weekOffset)) {
                 is ApiResult.Success -> weeklyStats = result.data
                 is ApiResult.Failure -> {}
             }
@@ -595,7 +607,14 @@ fun MainTabsScreen(
         }
 
         if (isStatsOpen) {
-            StatsDialog(stats = stats, weeklyStats = weeklyStats, onDismiss = { isStatsOpen = false })
+            StatsDialog(
+                stats = stats,
+                weeklyStats = weeklyStats,
+                canGoToNextWeek = weekOffset < 0,
+                onPreviousWeek = { weekOffset -= 1 },
+                onNextWeek = { weekOffset += 1 },
+                onDismiss = { isStatsOpen = false }
+            )
         }
 
         if (isEditUserOpen) {
@@ -777,7 +796,14 @@ private fun SyncProgressRing(isSyncing: Boolean, modifier: Modifier = Modifier) 
 /** Mirrors StatefulUserMenu.tsx's stats dialog -- same four sections/fields, read from the same
  *  /api/userdata/stats endpoint, just laid out as label/value rows instead of a tile grid. */
 @Composable
-private fun StatsDialog(stats: UserStats?, weeklyStats: WeeklyBookTypeStats?, onDismiss: () -> Unit) {
+private fun StatsDialog(
+    stats: UserStats?,
+    weeklyStats: WeeklyBookTypeStats?,
+    canGoToNextWeek: Boolean,
+    onPreviousWeek: () -> Unit,
+    onNextWeek: () -> Unit,
+    onDismiss: () -> Unit
+) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large, tonalElevation = 4.dp) {
             Column(
@@ -791,7 +817,12 @@ private fun StatsDialog(stats: UserStats?, weeklyStats: WeeklyBookTypeStats?, on
                 Spacer(modifier = Modifier.height(16.dp))
 
                 weeklyStats?.days?.let { days ->
-                    WeeklyReadingChart(days = days)
+                    WeeklyReadingChart(
+                        days = days,
+                        canGoToNextWeek = canGoToNextWeek,
+                        onPreviousWeek = onPreviousWeek,
+                        onNextWeek = onNextWeek
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
