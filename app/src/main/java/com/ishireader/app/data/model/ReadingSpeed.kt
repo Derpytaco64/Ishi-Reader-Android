@@ -11,6 +11,12 @@ import timber.log.Timber
  *  produce before the trim ever runs, so it can't be out-voted by a cluster of bad data. */
 private const val PLAUSIBLE_WPM_CEILING = 600.0
 
+/** Companion floor to the ceiling above -- mirrors ReadingTimerTracker's MIN_PLAUSIBLE_WPM. New
+ *  samples this slow are already kept out of the buffer at the source (an AFK/asleep gap, not real
+ *  reading), but this also strains out any sample that predates that fix or otherwise slipped in
+ *  below human reading pace, so the global average can't be dragged down by non-reading time either. */
+private const val PLAUSIBLE_WPM_FLOOR = 25.0
+
 /** <50 samples: simple weighted rate. >=50: median/MAD outlier-trimmed weighted rate -- mirrors
  *  computeCurrentWpm in the website's computeReadingSpeed.ts. 50 matches MAX_SPEED_SAMPLES (the
  *  rolling buffer's own cap, see ReadingTimerTracker), so trimming never kicks in until the buffer
@@ -22,7 +28,7 @@ fun computeCurrentWpm(speedSamples: List<ReadingSpeedSample>, source: String = "
     if (speedSamples.isEmpty()) return null
 
     val rates = speedSamples.map { it.deltaWords / (it.deltaSeconds / 60.0) }
-    val plausibleIndices = rates.indices.filter { rates[it] in 0.0..PLAUSIBLE_WPM_CEILING }
+    val plausibleIndices = rates.indices.filter { rates[it] in PLAUSIBLE_WPM_FLOOR..PLAUSIBLE_WPM_CEILING }
     // CLAUDE-ADDED: If literally every sample is above the ceiling (a consistently very fast
     // reader), fall back to the full buffer rather than returning nothing -- the ceiling is meant
     // to stop a minority of bad data from out-voting good data, not to cap a real reader's pace.

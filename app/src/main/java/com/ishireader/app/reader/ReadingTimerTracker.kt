@@ -56,6 +56,7 @@ class ReadingTimerTracker(
         const val PERSIST_INTERVAL_TICKS = 30
         const val JUMP_DISCARD_THRESHOLD = 0.05
         const val RAPID_TURN_WPM_CEILING = 2500.0
+        const val MIN_PLAUSIBLE_WPM = 25.0
         const val MAX_SPEED_SAMPLES = 50
     }
 
@@ -266,10 +267,17 @@ class ReadingTimerTracker(
         val words = wordCount
         var deltaWords = 0.0
         var acceptedSample = false
+        var afkGap = false
         if (words != null && deltaProgression > 0 && deltaProgression <= JUMP_DISCARD_THRESHOLD) {
             val candidateWords = deltaProgression * words
             val impliedWpm = candidateWords / (deltaSeconds / 60.0)
-            if (impliedWpm <= RAPID_TURN_WPM_CEILING) {
+            if (impliedWpm < MIN_PLAUSIBLE_WPM) {
+                // Slower than any human reads implies the book was left open while away from it (AFK,
+                // fell asleep) rather than genuinely slow reading -- unlike a rejected-but-plausible
+                // sample (still real time with the book open, see below), this interval's seconds are
+                // backed out of both the live counter and today's bucket instead of being credited.
+                afkGap = true
+            } else if (impliedWpm <= RAPID_TURN_WPM_CEILING) {
                 deltaWords = candidateWords
                 acceptedSample = true
             }
@@ -282,12 +290,18 @@ class ReadingTimerTracker(
             while (speedSamples.size > MAX_SPEED_SAMPLES) speedSamples.removeAt(0)
         }
 
-        creditBucket(
-            LocalDate.now().toString(),
-            seconds = deltaSeconds,
-            words = deltaWords,
-            progressionDelta = if (acceptedSample) deltaProgression else 0.0
-        )
+        if (afkGap) {
+            val reverted = nowSeconds - deltaSeconds
+            lastSampleSeconds = reverted
+            _state.value = _state.value.copy(accumulatedSeconds = reverted)
+        } else {
+            creditBucket(
+                LocalDate.now().toString(),
+                seconds = deltaSeconds,
+                words = deltaWords,
+                progressionDelta = if (acceptedSample) deltaProgression else 0.0
+            )
+        }
 
         val wpm = computeCurrentWpm(speedSamples, source = "onLocatorChanged.sample")
         _state.value = _state.value.copy(wpm = wpm, secondsLeft = computeSecondsLeft(wordCount, wpm, lastTotalProgression))
