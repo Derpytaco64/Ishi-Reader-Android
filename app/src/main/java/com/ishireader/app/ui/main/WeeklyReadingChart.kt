@@ -53,6 +53,10 @@ private const val AreaFillAlpha = 0.35f
 // rather than distorting every other week's scale.
 private const val MaxScaleSeconds = 5.0 * 3600.0
 
+// CLAUDE-ADDED: One gridline/label per whole hour from 0 up to MaxScaleSeconds, per the user's own
+// request -- previously just three marks (max/half/zero).
+private val HourMarks = (0..(MaxScaleSeconds / 3600.0).toInt()).map { it * 3600.0 }
+
 /**
  * Top-of-stats-screen graph: 7 local calendar days of reading/listening time, stacked by book type --
  * EPUB on top, Manga/Comic in the middle, Audiobooks at the bottom, each band's fill a translucent
@@ -105,9 +109,13 @@ fun WeeklyReadingChart(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(text = formatAxisSeconds(MaxScaleSeconds), style = MaterialTheme.typography.labelSmall, color = gridlineColor)
-                Text(text = formatAxisSeconds(MaxScaleSeconds / 2), style = MaterialTheme.typography.labelSmall, color = gridlineColor)
-                Text(text = "0", style = MaterialTheme.typography.labelSmall, color = gridlineColor)
+                HourMarks.asReversed().forEach { seconds ->
+                    Text(
+                        text = if (seconds == 0.0) "0" else formatAxisSeconds(seconds),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = gridlineColor
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(4.dp))
@@ -152,11 +160,11 @@ fun WeeklyReadingChart(
                         }
                     }
 
-                    // Recessive gridlines at the same max/half/zero levels as the axis labels.
+                    // Recessive gridlines at the same hourly levels as the axis labels.
                     val gridStroke = Stroke(width = 1.dp.toPx())
                     val gridlinePaintColor = gridlineColor.copy(alpha = 0.2f)
-                    listOf(0f, 0.5f, 1f).forEach { fraction ->
-                        val y = size.height * fraction
+                    HourMarks.forEach { seconds ->
+                        val y = yAt(seconds)
                         drawLine(
                             color = gridlinePaintColor,
                             start = Offset(0f, y),
