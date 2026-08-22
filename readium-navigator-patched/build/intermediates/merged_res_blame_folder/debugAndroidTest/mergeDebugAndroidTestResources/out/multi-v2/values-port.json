@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "org.readium.r2.navigator.test.readium-navigator-patched-mergeDebugAndroidTestResources-37:/values-port/values-port.xml",
+            "map": [
+                {
+                    "source": "/home/deck/.gradle/caches/8.9/transforms/ac3bcff3b8f666505b4a4286a44e01ff/transformed/appcompat-1.7.0/res/values-port/values-port.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "55",
+                        "endOffsets": "106"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -122,7 +122,14 @@ internal class WebViewServer(
             "Accept-Ranges" to "bytes"
         )
 
-        if (range == null) {
+        // CLAUDE-ADDED: WebView's <img> tag loader (used by R2FXLPageFragment's object-fit:contain
+        // wrapper for comic/manga pages) issues open-ended byte-Range requests ("bytes=0-") as part
+        // of its own image decoding, unlike a plain main-frame navigation to the same URL. Chromium's
+        // <img> subresource path doesn't reliably handle a 206/Content-Range response the way <video>/
+        // <audio> elements do, and this ever silently fails to render (blank/invisible page) if it
+        // does not like it. Bitmaps are never worth partial-fetching here anyway (comic pages are read
+        // whole), so always serve them in full regardless of any Range header.
+        if (range == null || link.mediaType?.isBitmap == true) {
             return WebResourceResponse(
                 link.mediaType?.toString(),
                 null,

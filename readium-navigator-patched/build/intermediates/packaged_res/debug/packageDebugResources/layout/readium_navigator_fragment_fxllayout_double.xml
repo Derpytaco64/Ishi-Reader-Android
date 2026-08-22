@@ -15,55 +15,41 @@
   secondWebView render on, on top of (and cancelling out) buildFixedLayoutResources' own explicit
   leftLink/rightLink swap for RTL spreads. Pinning this subtree to ltr makes buildFixedLayoutResources
   the single source of truth for left/right placement in a spread.
+
+  CLAUDE-PATCHED: dropped the old ScrollView/RelativeLayout/wrap_content-LinearLayout wrapper, same
+  reasoning as readium_navigator_fragment_fxllayout_single.xml: the WebViews now need a real,
+  non-circular pixel height (match_parent) for the synthetic object-fit: contain HTML document
+  (see R2FXLPageFragment.setupWebView()) to size its CSS percentages against.
 -->
 <org.readium.r2.navigator.epub.fxl.R2FXLLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/r2FXLLayout"
     android:focusable="false"
     android:layoutDirection="ltr"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ScrollView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true"
-        android:focusable="false"
-        android:scrollbars="none">
+        android:gravity="center_horizontal"
+        android:orientation="horizontal"
+        android:focusable="false">
 
-        <RelativeLayout
-            android:layout_width="match_parent"
+        <org.readium.r2.navigator.R2BasicWebView
+            android:id="@+id/firstWebView"
+            android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:focusable="false"
-            android:layout_gravity="center">
+            android:layout_gravity="end"
+            android:layout_weight="1"
+            android:layerType="hardware" />
 
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_centerInParent="true"
-                android:gravity="center_horizontal"
-                android:orientation="horizontal"
-                android:focusable="false"
-                tools:ignore="UselessParent">
+        <org.readium.r2.navigator.R2BasicWebView
+            android:id="@+id/secondWebView"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            android:layout_weight="1"
+            android:layerType="hardware" />
 
-                <org.readium.r2.navigator.R2BasicWebView
-                    android:id="@+id/firstWebView"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="end"
-                    android:layout_weight="1"
-                    android:layerType="hardware" />
-
-                <org.readium.r2.navigator.R2BasicWebView
-                    android:id="@+id/secondWebView"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="start"
-                    android:layout_weight="1"
-                    android:layerType="hardware"
-                    />
-
-            </LinearLayout>
-        </RelativeLayout>
-    </ScrollView>
+    </LinearLayout>
 </org.readium.r2.navigator.epub.fxl.R2FXLLayout>

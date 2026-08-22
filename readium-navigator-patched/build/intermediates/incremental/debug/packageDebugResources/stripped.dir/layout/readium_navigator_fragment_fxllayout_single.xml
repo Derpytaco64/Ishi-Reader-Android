@@ -6,47 +6,29 @@
 -->
 
 <!-- CLAUDE-PATCHED: see readium_navigator_fragment_fxllayout_double.xml's comment;
-     pinned to ltr so this subtree never inherits the pager's RTL layoutDirection and auto-mirrors. -->
+     pinned to ltr so this subtree never inherits the pager's RTL layoutDirection and auto-mirrors.
+
+     CLAUDE-PATCHED: dropped the old ScrollView/RelativeLayout/wrap_content-LinearLayout wrapper.
+     That chain existed to let the WebView grow to the *natural* height of a raw image loaded via
+     loadUrl() (WebView's built-in image-document mode reports content height directly), with
+     ScrollView(fillViewport) letting a too-tall page scroll, except R2FXLLayout.isScrollingAllowed
+     is hardcoded false, so the ScrollView never actually received scroll touches; it was a layout-only
+     mechanism. Now that R2FXLPageFragment.setupWebView() loads a synthetic HTML document with
+     object-fit: contain (see its comment) to letterbox the page instead of cropping it, the WebView
+     needs a real, non-circular pixel height to size its CSS percentages against; match_parent gives
+     it the actual R2FXLLayout viewport directly, instead of wrap_content deriving from content that
+     itself depends on the (undetermined) wrap_content height, which collapsed to zero. -->
 <org.readium.r2.navigator.epub.fxl.R2FXLLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/r2FXLLayout"
     android:focusable="false"
     android:layoutDirection="ltr"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ScrollView
+    <org.readium.r2.navigator.R2BasicWebView
+        android:id="@+id/webViewSingle"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true"
-        android:focusable="false"
-        android:scrollbars="none">
-
-        <RelativeLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:focusable="false"
-            android:layout_gravity="center">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_centerInParent="true"
-                android:gravity="center_horizontal"
-                android:orientation="horizontal"
-                android:focusable="false"
-                tools:ignore="UselessParent">
-
-                <org.readium.r2.navigator.R2BasicWebView
-                    android:id="@+id/webViewSingle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layerType="hardware" />
-
-            </LinearLayout>
-
-        </RelativeLayout>
-    </ScrollView>
+        android:layerType="hardware" />
 
 </org.readium.r2.navigator.epub.fxl.R2FXLLayout>

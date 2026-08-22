@@ -1,0 +1,41 @@
+org.readium.r2.navigator.test.readium-navigator-patched-savedstate-ktx-1.2.1-0 /home/deck/.gradle/caches/8.9/transforms/04cd968f2ad823f4b74d10eb52d9efa3/transformed/savedstate-ktx-1.2.1/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-livedata-2.8.7-1 /home/deck/.gradle/caches/8.9/transforms/29f1348e8574f3e7a768da817188a8f1/transformed/lifecycle-livedata-2.8.7/res
+org.readium.r2.navigator.test.readium-navigator-patched-emoji2-1.3.0-2 /home/deck/.gradle/caches/8.9/transforms/2ae28f7df00b45189e937a0f4e8c00a0/transformed/emoji2-1.3.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-tracing-1.2.0-3 /home/deck/.gradle/caches/8.9/transforms/327fe224506b43b6fa58b14fd485130c/transformed/tracing-1.2.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-core-runtime-2.2.0-4 /home/deck/.gradle/caches/8.9/transforms/3632016abdd636544f7e0210ea0f944d/transformed/core-runtime-2.2.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-viewmodel-ktx-2.8.7-5 /home/deck/.gradle/caches/8.9/transforms/38fd178ede14fcfa78e237826b733ca7/transformed/lifecycle-viewmodel-ktx-2.8.7/res
+org.readium.r2.navigator.test.readium-navigator-patched-webkit-1.13.0-6 /home/deck/.gradle/caches/8.9/transforms/3a59142022d1ec02220d17c1516a26d4/transformed/webkit-1.13.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-core-1.15.0-7 /home/deck/.gradle/caches/8.9/transforms/3dfd531248abd7b4666767a35b7f61a2/transformed/core-1.15.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-viewmodel-savedstate-2.8.7-8 /home/deck/.gradle/caches/8.9/transforms/422b77847a53bc46ec1b09a2b250f2cf/transformed/lifecycle-viewmodel-savedstate-2.8.7/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-runtime-ktx-release-9 /home/deck/.gradle/caches/8.9/transforms/4f8e95eec8caa644fc311a7a6258ec94/transformed/lifecycle-runtime-ktx-release/res
+org.readium.r2.navigator.test.readium-navigator-patched-profileinstaller-1.4.0-10 /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-constraintlayout-2.2.1-11 /home/deck/.gradle/caches/8.9/transforms/5a3e81c7c5e55ae0b89a1905abf394be/transformed/constraintlayout-2.2.1/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-livedata-core-2.8.7-12 /home/deck/.gradle/caches/8.9/transforms/5df824745455086f83fcca532e0e5d91/transformed/lifecycle-livedata-core-2.8.7/res
+org.readium.r2.navigator.test.readium-navigator-patched-appcompat-resources-1.7.0-13 /home/deck/.gradle/caches/8.9/transforms/6383f966318683b4f4dfd1ef336c4ea4/transformed/appcompat-resources-1.7.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-emoji2-views-helper-1.3.0-14 /home/deck/.gradle/caches/8.9/transforms/6ae159a1c2fb773b5943faa0e1cb85d0/transformed/emoji2-views-helper-1.3.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-startup-runtime-1.1.1-15 /home/deck/.gradle/caches/8.9/transforms/6dd19b838cad0d290ec61e2b2b69afcc/transformed/startup-runtime-1.1.1/res
+org.readium.r2.navigator.test.readium-navigator-patched-readium-shared-3.1.1-16 /home/deck/.gradle/caches/8.9/transforms/7236c730758381e440c80e0cdec6e9bc/transformed/readium-shared-3.1.1/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-livedata-core-ktx-2.8.7-17 /home/deck/.gradle/caches/8.9/transforms/7fb54a3e1615c7aaf811313b1af5ce56/transformed/lifecycle-livedata-core-ktx-2.8.7/res
+org.readium.r2.navigator.test.readium-navigator-patched-recyclerview-1.3.2-18 /home/deck/.gradle/caches/8.9/transforms/81bff5cb9904126847839af5b132b173/transformed/recyclerview-1.3.2/res
+org.readium.r2.navigator.test.readium-navigator-patched-browser-1.8.0-19 /home/deck/.gradle/caches/8.9/transforms/8314b2d630b294272abe80f7bc05d120/transformed/browser-1.8.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-annotation-experimental-1.4.1-20 /home/deck/.gradle/caches/8.9/transforms/868d277f6384824e0deec0a36950a2cb/transformed/annotation-experimental-1.4.1/res
+org.readium.r2.navigator.test.readium-navigator-patched-media3-exoplayer-1.6.0-21 /home/deck/.gradle/caches/8.9/transforms/88f0933544dceb9945c50233ea7fc48c/transformed/media3-exoplayer-1.6.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-process-2.8.7-22 /home/deck/.gradle/caches/8.9/transforms/96673cad43139f5cd4b02624f6f4346f/transformed/lifecycle-process-2.8.7/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-runtime-release-23 /home/deck/.gradle/caches/8.9/transforms/a54449b0edd8501dc0bc4910cd0bf5a4/transformed/lifecycle-runtime-release/res
+org.readium.r2.navigator.test.readium-navigator-patched-lifecycle-viewmodel-release-24 /home/deck/.gradle/caches/8.9/transforms/a9d95d2da6222b9144f117526118ff51/transformed/lifecycle-viewmodel-release/res
+org.readium.r2.navigator.test.readium-navigator-patched-appcompat-1.7.0-25 /home/deck/.gradle/caches/8.9/transforms/ac3bcff3b8f666505b4a4286a44e01ff/transformed/appcompat-1.7.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-fragment-1.8.6-26 /home/deck/.gradle/caches/8.9/transforms/b286fbfb349d62f1f37349aa1d9d47f9/transformed/fragment-1.8.6/res
+org.readium.r2.navigator.test.readium-navigator-patched-fragment-ktx-1.8.6-27 /home/deck/.gradle/caches/8.9/transforms/b34863129f482a8459db1e157a2d9918/transformed/fragment-ktx-1.8.6/res
+org.readium.r2.navigator.test.readium-navigator-patched-savedstate-1.2.1-28 /home/deck/.gradle/caches/8.9/transforms/b5edf25de65f0073f02962a5621bda7e/transformed/savedstate-1.2.1/res
+org.readium.r2.navigator.test.readium-navigator-patched-coordinatorlayout-1.0.0-29 /home/deck/.gradle/caches/8.9/transforms/c2d6ebc20d2ef24c0c6599bb693cabb8/transformed/coordinatorlayout-1.0.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-core-ktx-1.15.0-30 /home/deck/.gradle/caches/8.9/transforms/c9a026e97c732f36c8c1789328d72563/transformed/core-ktx-1.15.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-media3-session-1.6.0-31 /home/deck/.gradle/caches/8.9/transforms/cb7937ffda59b9593b673b4593d3379a/transformed/media3-session-1.6.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-customview-poolingcontainer-1.0.0-32 /home/deck/.gradle/caches/8.9/transforms/db23d3b8d7e4896cf5091110a7e33a45/transformed/customview-poolingcontainer-1.0.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-activity-ktx-1.8.1-33 /home/deck/.gradle/caches/8.9/transforms/e35afad3521984a4d7463c5bd9a54438/transformed/activity-ktx-1.8.1/res
+org.readium.r2.navigator.test.readium-navigator-patched-activity-1.8.1-34 /home/deck/.gradle/caches/8.9/transforms/e906fe0536f47f8852569b8f5c8e5041/transformed/activity-1.8.1/res
+org.readium.r2.navigator.test.readium-navigator-patched-media-1.7.0-35 /home/deck/.gradle/caches/8.9/transforms/fffc803626d22793f40379f42736b7a3/transformed/media-1.7.0/res
+org.readium.r2.navigator.test.readium-navigator-patched-androidTest-36 /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/generated/res/resValues/androidTest/debug
+org.readium.r2.navigator.test.readium-navigator-patched-mergeDebugAndroidTestResources-37 /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/merged.dir
+org.readium.r2.navigator.test.readium-navigator-patched-mergeDebugAndroidTestResources-38 /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/stripped.dir
+org.readium.r2.navigator.test.readium-navigator-patched-debugAndroidTest-39 /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/merged_res/debugAndroidTest/mergeDebugAndroidTestResources
+org.readium.r2.navigator.test.readium-navigator-patched-debug-40 /home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/packaged_res/debug/packageDebugResources

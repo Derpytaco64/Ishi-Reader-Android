@@ -1,0 +1,117 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="org.readium.r2.navigator.test" >
+4
+5    <uses-sdk
+5-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:5:5-74
+6        android:minSdkVersion="26"
+6-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:5:15-41
+7        android:targetSdkVersion="26" />
+7-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:5:42-71
+8
+9    <instrumentation
+9-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:11:5-15:79
+10        android:name="android.test.InstrumentationTestRunner"
+10-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:11:22-75
+11        android:functionalTest="false"
+11-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:14:22-52
+12        android:handleProfiling="false"
+12-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:13:22-53
+13        android:label="Tests for org.readium.r2.navigator.test"
+13-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:15:22-77
+14        android:targetPackage="org.readium.r2.navigator.test" />
+14-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:12:22-75
+15
+16    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+16-->[androidx.media3:media3-exoplayer:1.6.0] /home/deck/.gradle/caches/8.9/transforms/88f0933544dceb9945c50233ea7fc48c/transformed/media3-exoplayer-1.6.0/AndroidManifest.xml:22:5-79
+16-->[androidx.media3:media3-exoplayer:1.6.0] /home/deck/.gradle/caches/8.9/transforms/88f0933544dceb9945c50233ea7fc48c/transformed/media3-exoplayer-1.6.0/AndroidManifest.xml:22:22-76
+17
+18    <permission
+18-->[androidx.core:core:1.15.0] /home/deck/.gradle/caches/8.9/transforms/3dfd531248abd7b4666767a35b7f61a2/transformed/core-1.15.0/AndroidManifest.xml:22:5-24:47
+19        android:name="org.readium.r2.navigator.test.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+19-->[androidx.core:core:1.15.0] /home/deck/.gradle/caches/8.9/transforms/3dfd531248abd7b4666767a35b7f61a2/transformed/core-1.15.0/AndroidManifest.xml:23:9-81
+20        android:protectionLevel="signature" />
+20-->[androidx.core:core:1.15.0] /home/deck/.gradle/caches/8.9/transforms/3dfd531248abd7b4666767a35b7f61a2/transformed/core-1.15.0/AndroidManifest.xml:24:9-44
+21
+22    <uses-permission android:name="org.readium.r2.navigator.test.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+22-->[androidx.core:core:1.15.0] /home/deck/.gradle/caches/8.9/transforms/3dfd531248abd7b4666767a35b7f61a2/transformed/core-1.15.0/AndroidManifest.xml:26:5-97
+22-->[androidx.core:core:1.15.0] /home/deck/.gradle/caches/8.9/transforms/3dfd531248abd7b4666767a35b7f61a2/transformed/core-1.15.0/AndroidManifest.xml:26:22-94
+23
+24    <application
+24-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:7:5-9:19
+25        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+25-->[androidx.core:core:1.15.0] /home/deck/.gradle/caches/8.9/transforms/3dfd531248abd7b4666767a35b7f61a2/transformed/core-1.15.0/AndroidManifest.xml:28:18-86
+26        android:debuggable="true"
+27        android:extractNativeLibs="false" >
+28        <uses-library android:name="android.test.runner" />
+28-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:8:9-60
+28-->/home/deck/Documents/Ishi-Reader Android/readium-navigator-patched/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest3893701478587186101.xml:8:23-57
+29
+30        <provider
+30-->[androidx.emoji2:emoji2:1.3.0] /home/deck/.gradle/caches/8.9/transforms/2ae28f7df00b45189e937a0f4e8c00a0/transformed/emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
+31            android:name="androidx.startup.InitializationProvider"
+31-->[androidx.emoji2:emoji2:1.3.0] /home/deck/.gradle/caches/8.9/transforms/2ae28f7df00b45189e937a0f4e8c00a0/transformed/emoji2-1.3.0/AndroidManifest.xml:25:13-67
+32            android:authorities="org.readium.r2.navigator.test.androidx-startup"
+32-->[androidx.emoji2:emoji2:1.3.0] /home/deck/.gradle/caches/8.9/transforms/2ae28f7df00b45189e937a0f4e8c00a0/transformed/emoji2-1.3.0/AndroidManifest.xml:26:13-68
+33            android:exported="false" >
+33-->[androidx.emoji2:emoji2:1.3.0] /home/deck/.gradle/caches/8.9/transforms/2ae28f7df00b45189e937a0f4e8c00a0/transformed/emoji2-1.3.0/AndroidManifest.xml:27:13-37
+34            <meta-data
+34-->[androidx.emoji2:emoji2:1.3.0] /home/deck/.gradle/caches/8.9/transforms/2ae28f7df00b45189e937a0f4e8c00a0/transformed/emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
+35                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+35-->[androidx.emoji2:emoji2:1.3.0] /home/deck/.gradle/caches/8.9/transforms/2ae28f7df00b45189e937a0f4e8c00a0/transformed/emoji2-1.3.0/AndroidManifest.xml:30:17-75
+36                android:value="androidx.startup" />
+36-->[androidx.emoji2:emoji2:1.3.0] /home/deck/.gradle/caches/8.9/transforms/2ae28f7df00b45189e937a0f4e8c00a0/transformed/emoji2-1.3.0/AndroidManifest.xml:31:17-49
+37            <meta-data
+37-->[androidx.lifecycle:lifecycle-process:2.8.7] /home/deck/.gradle/caches/8.9/transforms/96673cad43139f5cd4b02624f6f4346f/transformed/lifecycle-process-2.8.7/AndroidManifest.xml:29:13-31:52
+38                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+38-->[androidx.lifecycle:lifecycle-process:2.8.7] /home/deck/.gradle/caches/8.9/transforms/96673cad43139f5cd4b02624f6f4346f/transformed/lifecycle-process-2.8.7/AndroidManifest.xml:30:17-78
+39                android:value="androidx.startup" />
+39-->[androidx.lifecycle:lifecycle-process:2.8.7] /home/deck/.gradle/caches/8.9/transforms/96673cad43139f5cd4b02624f6f4346f/transformed/lifecycle-process-2.8.7/AndroidManifest.xml:31:17-49
+40            <meta-data
+40-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:29:13-31:52
+41                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+41-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:30:17-85
+42                android:value="androidx.startup" />
+42-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:31:17-49
+43        </provider>
+44
+45        <receiver
+45-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:34:9-52:20
+46            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+46-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:35:13-76
+47            android:directBootAware="false"
+47-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:36:13-44
+48            android:enabled="true"
+48-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:37:13-35
+49            android:exported="true"
+49-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:38:13-36
+50            android:permission="android.permission.DUMP" >
+50-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:39:13-57
+51            <intent-filter>
+51-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:40:13-42:29
+52                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+52-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:41:17-91
+52-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:41:25-88
+53            </intent-filter>
+54            <intent-filter>
+54-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:43:13-45:29
+55                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+55-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:44:17-85
+55-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:44:25-82
+56            </intent-filter>
+57            <intent-filter>
+57-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:46:13-48:29
+58                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+58-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:47:17-88
+58-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:47:25-85
+59            </intent-filter>
+60            <intent-filter>
+60-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:49:13-51:29
+61                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+61-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:50:17-95
+61-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/deck/.gradle/caches/8.9/transforms/59a0db64756e00500587d44402bdbc73/transformed/profileinstaller-1.4.0/AndroidManifest.xml:50:25-92
+62            </intent-filter>
+63        </receiver>
+64    </application>
+65
+66</manifest>
