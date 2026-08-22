@@ -202,10 +202,14 @@ private fun ShelfCarousel(
     LaunchedEffect(focusBookUrl, books) {
         val targetIndex = focusBookUrl?.let { url -> books.indexOfFirst { it.url == url } } ?: -1
         if (targetIndex <= 0 || targetIndex == books.lastIndex) {
-            // First volume (or no focus at all): the default left-aligned resting position is
-            // already correct. Last volume: scrollToItem still needs to run so the list's
+            // First volume (or no focus at all): explicitly snap to the start rather than assuming
+            // the carousel is already resting there -- listState is remembered across
+            // recompositions of this same call site, so this shelf switching to a *different*
+            // books list entirely (e.g. Last Series Read moving on to a different series) can
+            // otherwise leave it sitting at whatever offset the previous list's focus scrolled to,
+            // not actually left-aligned. Last volume: scrollToItem still needs to run so the list's
             // own end-of-content snapping puts it flush against the right edge.
-            if (targetIndex == books.lastIndex && targetIndex > 0) listState.scrollToItem(targetIndex)
+            listState.scrollToItem(if (targetIndex == books.lastIndex && targetIndex > 0) targetIndex else 0)
             return@LaunchedEffect
         }
 

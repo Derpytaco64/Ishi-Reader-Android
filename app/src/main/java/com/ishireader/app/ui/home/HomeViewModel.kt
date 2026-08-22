@@ -1,6 +1,5 @@
 package com.ishireader.app.ui.home
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -99,16 +98,7 @@ class HomeViewModel(
         // otherwise look frozen until the next sync -- see effectiveLastReadAt below.
         val localTimestamps = positionRepository.localLastReadTimestamps()
 
-        // CLAUDE-ADDED: temporary diagnostic logging -- see ReaderActivity's LOG_TAG doc comment,
-        // same tag, so a `grep IshiPositionDebug` on logcat shows the whole chain: whether
-        // savePosition wrote for a given manifestUrl, and what localTimestamps looked like the next
-        // time Home recomputed the focus off of it.
-        Log.d("IshiPositionDebug", "buildShelves: localTimestamps=$localTimestamps")
         val (lastSeriesReadBooks, lastSeriesReadFocusUrl) = computeLastSeriesRead(allBooks, localTimestamps)
-        Log.d(
-            "IshiPositionDebug",
-            "buildShelves: lastSeriesReadFocusUrl=$lastSeriesReadFocusUrl, series=${lastSeriesReadBooks.map { it.url to it.series?.position }}"
-        )
 
         _uiState.value = HomeUiState(
             isLoading = false,

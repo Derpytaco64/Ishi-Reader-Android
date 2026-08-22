@@ -16,7 +16,6 @@ import android.graphics.PointF
 import android.graphics.RectF
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -193,10 +192,6 @@ private data class PendingHighlightPicker(
 class ReaderActivity : FragmentActivity() {
 
     companion object {
-        /** CLAUDE-ADDED: temporary diagnostic tag for tracing whether a reading position actually
-         *  gets written to Room before the reader closes (see onPause/savePosition) -- grep for it
-         *  to follow one reading session's position-save chain end to end in logcat. */
-        private const val LOG_TAG = "IshiPositionDebug"
         const val EXTRA_MANIFEST_URL = "manifest_url"
         const val EXTRA_TITLE = "title"
 
@@ -467,7 +462,6 @@ class ReaderActivity : FragmentActivity() {
         // Home's Last Series Read, which is driven by this). Flushing here, in onPause (still well
         // before the fragment's view/lifecycleScope are torn down), forces that pending change to
         // land in currentLocator -- and from there into savePosition below -- immediately instead.
-        Log.d(LOG_TAG, "onPause: flushing pending location notification, manifestUrl=${intent.getStringExtra(EXTRA_MANIFEST_URL)}")
         navigatorFragment?.flushPendingLocationNotification()
     }
 
@@ -1939,17 +1933,11 @@ class ReaderActivity : FragmentActivity() {
         val exactFraction = exactPageFraction(dynamicPageCount, locator)
         val atBookEnd = exactFraction?.let { it >= 1.0 } ?: isAtBookEndByProgression(locator)
         val exactPercent = if (atBookEnd) 100.0 else exactFraction?.let { roundPercent(it) }
-        // CLAUDE-ADDED: temporary diagnostic logging -- see LOG_TAG's doc comment. Logs the
-        // *launch* of the write; the "wrote" line only appears if the coroutine actually ran to
-        // completion, so a session where this "requested" line has no matching "wrote" line means
-        // lifecycleScope got cancelled (Activity destroyed) before the Room upsert finished.
-        Log.d(LOG_TAG, "savePosition requested: manifestUrl=$manifestUrl href=${locator.href} position=${locator.locations.position}")
         lifecycleScope.launch {
             var locatorJson = Json.parseToJsonElement(locator.toJSON().toString())
             if (atBookEnd) locatorJson = locatorJson.withTotalProgressionOne()
             app.positionRepository.setPosition(manifestUrl, locatorJson)
             if (exactPercent != null) app.positionRepository.saveExactPercent(manifestUrl, exactPercent)
-            Log.d(LOG_TAG, "savePosition wrote: manifestUrl=$manifestUrl href=${locator.href} position=${locator.locations.position}")
         }
     }
 
