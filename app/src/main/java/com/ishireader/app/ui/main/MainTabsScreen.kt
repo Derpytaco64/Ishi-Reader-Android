@@ -214,6 +214,7 @@ fun MainTabsScreen(
     LaunchedEffect(isStatsOpen) {
         if (isStatsOpen) {
             stats = null
+            weeklyStats = null
             weekOffset = 0
             when (val result = statsRepository.getStats()) {
                 is ApiResult.Success -> stats = result.data
@@ -227,9 +228,15 @@ fun MainTabsScreen(
     // re-fetching the rest of the stats dialog. Resetting weekOffset to 0 on open (above) means this
     // also fires once on the initial open in the common case (offset unchanged from last close, so
     // isStatsOpen alone wouldn't retrigger it) since isStatsOpen is a key here too.
+    //
+    // CLAUDE-ADDED: Deliberately does NOT null weeklyStats before fetching -- StatsDialog only renders
+    // WeeklyReadingChart (including its own prev/next buttons) while weeklyStats is non-null, so
+    // clearing it here made the whole chart -- buttons included -- disappear on every single week
+    // navigation, and stay gone forever on a failed fetch. Keeping the previous week's data mounted
+    // while the next one loads means a tap always has a chart to land on and a slow/failed fetch just
+    // leaves the last-good week showing instead of vanishing.
     LaunchedEffect(isStatsOpen, weekOffset) {
         if (isStatsOpen) {
-            weeklyStats = null
             when (val result = statsRepository.getWeeklyStats(weekOffset)) {
                 is ApiResult.Success -> weeklyStats = result.data
                 is ApiResult.Failure -> {}

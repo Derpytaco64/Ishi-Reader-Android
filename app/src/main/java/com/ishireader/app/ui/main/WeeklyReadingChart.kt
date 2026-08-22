@@ -35,9 +35,10 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 // CLAUDE-ADDED: Deliberately literal RGB, not the app's usual palette -- the user's own choice, not
-// tuned toward a design-system hue. Audiobook/Comic were swapped from the original red/green/blue
-// stacking-order mnemonic per the user's explicit request, so the color-to-category mapping no longer
-// matches the top/middle/bottom stack order -- that's intentional, not a bug.
+// tuned toward a design-system hue. Both the colors and the stack order were reassigned per explicit
+// user requests (first Audiobook/Comic colors swapped, then Audiobook/Comic stack *positions* swapped
+// too), so neither the color-to-category mapping nor the position-to-category mapping matches the
+// original red/green/blue-by-position mnemonic anymore -- that's intentional, not a bug.
 private val EpubColor = Color(0xFFE53935)
 private val AudiobookColor = Color(0xFF1E88E5)
 private val ComicColor = Color(0xFF43A047)
@@ -48,7 +49,7 @@ private const val AreaFillAlpha = 0.35f
 
 /**
  * Top-of-stats-screen graph: 7 local calendar days of reading/listening time, stacked by book type --
- * EPUB on top, Audiobooks in the middle, Manga/Comic at the bottom, each band's fill a translucent
+ * EPUB on top, Manga/Comic in the middle, Audiobooks at the bottom, each band's fill a translucent
  * version of its line color. Title is the covered date range, flanked by prev/next-week arrows
  * ([onPreviousWeek]/[onNextWeek], the latter disabled once [canGoToNextWeek] is false -- there's no
  * "next week" past the one that includes today); a left-side time scale and a legend below (identity
@@ -127,9 +128,9 @@ fun WeeklyReadingChart(
                     fun yAt(seconds: Double) = size.height - (seconds / maxTotalSeconds).toFloat() * size.height
 
                     val zero = DoubleArray(n)
-                    val comicTop = DoubleArray(n) { days[it].comicSeconds }
-                    val audiobookTop = DoubleArray(n) { comicTop[it] + days[it].audiobookSeconds }
-                    val epubTop = DoubleArray(n) { audiobookTop[it] + days[it].epubSeconds }
+                    val audiobookTop = DoubleArray(n) { days[it].audiobookSeconds }
+                    val comicTop = DoubleArray(n) { audiobookTop[it] + days[it].comicSeconds }
+                    val epubTop = DoubleArray(n) { comicTop[it] + days[it].epubSeconds }
 
                     fun bandFillPath(bottom: DoubleArray, top: DoubleArray): Path = Path().apply {
                         for (i in 0 until n) {
@@ -161,13 +162,13 @@ fun WeeklyReadingChart(
                     }
 
                     // Bottom-to-top fills first, so no band's fill can paint over a lower band's top line.
-                    drawPath(bandFillPath(zero, comicTop), color = ComicColor.copy(alpha = AreaFillAlpha))
-                    drawPath(bandFillPath(comicTop, audiobookTop), color = AudiobookColor.copy(alpha = AreaFillAlpha))
-                    drawPath(bandFillPath(audiobookTop, epubTop), color = EpubColor.copy(alpha = AreaFillAlpha))
+                    drawPath(bandFillPath(zero, audiobookTop), color = AudiobookColor.copy(alpha = AreaFillAlpha))
+                    drawPath(bandFillPath(audiobookTop, comicTop), color = ComicColor.copy(alpha = AreaFillAlpha))
+                    drawPath(bandFillPath(comicTop, epubTop), color = EpubColor.copy(alpha = AreaFillAlpha))
 
                     val lineStroke = Stroke(width = 2.dp.toPx())
-                    drawPath(topEdgePath(comicTop), color = ComicColor, style = lineStroke)
                     drawPath(topEdgePath(audiobookTop), color = AudiobookColor, style = lineStroke)
+                    drawPath(topEdgePath(comicTop), color = ComicColor, style = lineStroke)
                     drawPath(topEdgePath(epubTop), color = EpubColor, style = lineStroke)
                 }
             }
@@ -190,8 +191,8 @@ fun WeeklyReadingChart(
         Spacer(modifier = Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             LegendItem(EpubColor, "EPUB")
-            LegendItem(AudiobookColor, "Audiobook")
             LegendItem(ComicColor, "Manga/Comic")
+            LegendItem(AudiobookColor, "Audiobook")
         }
     }
 }
