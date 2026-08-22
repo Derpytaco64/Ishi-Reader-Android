@@ -1151,7 +1151,24 @@ public class EpubNavigatorFragment internal constructor(
     private suspend fun emitCurrentLocation() {
         // We don't want to notify the current location if the navigator is still loading a
         // locator, to avoid notifying intermediate locations.
-        if (currentReflowablePageFragment?.isLoaded?.value == false || state != State.Ready) {
+        if (currentReflowablePageFragment?.isLoaded?.value == false) {
+            return
+        }
+
+        // CLAUDE-ADDED: [state] only ever flips Initializing/Loading -> Ready once per navigator
+        // instance, the moment a WebView's onPageLoaded fires for the href that was originally
+        // requested by the *first* go() call this session (see the go()/onPageLoaded state
+        // machine above). For FIXED (comic/manga) layout, that's a single point of failure for
+        // this whole function: if that one match is ever missed (e.g. the initial page's WebView
+        // load doesn't fire onPageLoaded for some reason), state is stuck below Ready forever,
+        // _currentLocator silently never advances past the initial locator no matter how many
+        // pages the user turns, and anything relying on currentLocator (position saving,
+        // preservePositionAcross's anchor on a later orientation switch) keeps reporting wherever
+        // the session started -- typically the cover. onPageSelected already only fires for a
+        // settled, fully page-turned ViewPager position (there's no reflowable-style "mid-scroll"
+        // concept for a discrete FXL page/spread), so this guard doesn't protect anything
+        // meaningful for FIXED layout the way it does for reflowable content -- skip it there.
+        if (viewModel.layout != EpubLayout.FIXED && state != State.Ready) {
             return
         }
 
