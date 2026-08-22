@@ -126,6 +126,11 @@ data class ReaderSettings(
     val publisherStyles: Boolean = false,
     val layout: ReaderLayout = ReaderLayout.PAGINATED,
     val comicReadingDirection: ComicReadingDirection = ComicReadingDirection.LTR,
+    /** Comic-only: shifts which pages get paired into a two-page landscape spread by one (see
+     *  EpubPreferences.spreadOffset). Off by default; the user flips this on when a scanned
+     *  double-page illustration is landing split across the wrong spread boundary, so its two
+     *  halves render together again. */
+    val comicSpreadOffset: Boolean = false,
     /** Comic-only: how many pages before/after the current one stay pre-decoded in the pager (see
      *  EpubNavigatorFragment.pagePreloadDistance) -- avoids a blank/loading flash when paging
      *  quickly through a manga's large bitmap pages. 2 means the current page plus 2 ahead and 2
@@ -222,7 +227,8 @@ fun ReaderSettings.toEpubPreferences(isComic: Boolean = false): EpubPreferences 
         scroll = layout == ReaderLayout.SCROLLED,
         pageMargins = pageMargins,
         readingProgression = readingProgression,
-        spread = null
+        spread = null,
+        spreadOffset = if (isComic) comicSpreadOffset else null
     )
 }
 

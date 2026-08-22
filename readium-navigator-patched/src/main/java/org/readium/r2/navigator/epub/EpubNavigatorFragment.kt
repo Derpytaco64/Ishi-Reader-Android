@@ -477,17 +477,24 @@ public class EpubNavigatorFragment internal constructor(
     // spread), left alone for RTL. Depends on the *current* resolved reading progression, so it
     // must be re-run (see invalidateResourcePager) whenever that preference changes, not just once
     // at fragment creation.
+    //
+    // [EpubSettings.spreadOffset] lets the user shift this pairing by one page: some scanned/
+    // ripped comics don't actually start their double-page spreads on the boundary this pairing
+    // assumes (e.g. an extra unpaired page slipped in before a two-page illustration), which
+    // splits that illustration's two halves into different spreads. Skipping the "first page
+    // alone" special case realigns every pair after it by one.
     private fun buildFixedLayoutResources(): Pair<List<PageResource>, List<PageResource>> {
         val single = mutableListOf<PageResource>()
         val double = mutableListOf<PageResource>()
         val isRtl = viewModel.settings.value.readingProgression == ReadingProgression.RTL
+        val spreadOffset = viewModel.settings.value.spreadOffset
         var pendingPartner: Link? = null
 
         for ((index, link) in readingOrder.withIndex()) {
             val url = viewModel.urlTo(link)
             single.add(PageResource.EpubFxl(leftLink = link, leftUrl = url))
 
-            if (index == 0) {
+            if (index == 0 && !spreadOffset) {
                 double.add(
                     if (isRtl) {
                         PageResource.EpubFxl(leftLink = link, leftUrl = url)

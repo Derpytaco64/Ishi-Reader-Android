@@ -54,6 +54,7 @@ public data class EpubSettings @ExperimentalReadiumApi constructor(
     val readingProgression: ReadingProgression,
     val scroll: Boolean,
     val spread: Spread,
+    val spreadOffset: Boolean,
     val textAlign: TextAlign?,
     val textColor: Color?,
     val textNormalization: Boolean,

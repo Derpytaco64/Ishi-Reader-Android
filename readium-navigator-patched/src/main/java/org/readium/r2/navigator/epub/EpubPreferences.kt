@@ -37,6 +37,11 @@ import org.readium.r2.shared.util.Language
  *   instead of synthetic pagination.
  * @param spread Indicates if the fixed-layout publication should be rendered with a
  *   synthetic spread (dual-page).
+ * @param spreadOffset Shifts which pages are paired into a synthetic spread by one -- e.g. if a
+ *   two-page illustration is being rendered split across the wrong page boundary (one half at the
+ *   end of a spread, the other alone at the start of the next), toggling this realigns the
+ *   pairing so the two halves land together again. Only meaningful when [spread] pairs pages at
+ *   all; a no-op for [Spread.NEVER] or reflowable content.
  * @param textAlign Page text alignment.
  * @param textColor Default page text color.
  * @param textNormalization Normalize text styles to increase accessibility.
@@ -67,6 +72,7 @@ public data class EpubPreferences @ExperimentalReadiumApi constructor(
     val readingProgression: ReadingProgression? = null,
     val scroll: Boolean? = null,
     val spread: Spread? = null,
+    val spreadOffset: Boolean? = null,
     val textAlign: TextAlign? = null,
     val textColor: Color? = null,
     val textNormalization: Boolean? = null,
@@ -108,6 +114,7 @@ public data class EpubPreferences @ExperimentalReadiumApi constructor(
             readingProgression = other.readingProgression ?: readingProgression,
             scroll = other.scroll ?: scroll,
             spread = other.spread ?: spread,
+            spreadOffset = other.spreadOffset ?: spreadOffset,
             textAlign = other.textAlign ?: textAlign,
             textColor = other.textColor ?: textColor,
             textNormalization = other.textNormalization ?: textNormalization,

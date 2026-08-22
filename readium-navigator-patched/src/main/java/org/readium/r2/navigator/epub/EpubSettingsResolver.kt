@@ -55,6 +55,7 @@ internal class EpubSettingsResolver(
             readingProgression = readingProgression,
             scroll = scroll,
             spread = preferences.spread ?: defaults.spread ?: Spread.NEVER,
+            spreadOffset = preferences.spreadOffset ?: false,
             textAlign = preferences.textAlign ?: defaults.textAlign,
             textColor = preferences.textColor,
             textNormalization = preferences.textNormalization ?: defaults.textNormalization ?: false,

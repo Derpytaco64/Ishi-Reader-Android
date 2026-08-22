@@ -164,6 +164,22 @@ fun ReaderSettingsSheet(
                     valueLabel = "${settings.mangaPreloadPages} page${if (settings.mangaPreloadPages == 1) "" else "s"}",
                     onValueChange = { onSettingsChange(settings.copy(mangaPreloadPages = it.roundToInt())) }
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                ) {
+                    Text("Shift page pairing by 1", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = settings.comicSpreadOffset,
+                        onCheckedChange = { onSettingsChange(settings.copy(comicSpreadOffset = it)) }
+                    )
+                }
+                Text(
+                    text = "Turn on if two-page spreads in landscape are split across the wrong pages",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 0.dp, bottom = 4.dp)
+                )
             }
             if (!isComic) {
                 SegmentedOptionRow(
