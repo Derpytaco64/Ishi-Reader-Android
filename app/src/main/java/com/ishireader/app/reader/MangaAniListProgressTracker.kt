@@ -1,5 +1,6 @@
 package com.ishireader.app.reader
 
+import android.util.Log
 import com.ishireader.app.data.model.Book
 import com.ishireader.app.data.model.CBZPageBookmark
 import com.ishireader.app.data.model.aniListSeriesKey
@@ -39,17 +40,24 @@ class MangaAniListProgressTracker(
     private var started = false
 
     fun start(book: Book?, bookmarks: List<CBZPageBookmark>) {
+        Log.d("AniListDbg", "start() called: started=$started book=${book?.title} bookmarks=${bookmarks.size}")
         if (started || book == null) return
         started = true
 
         scope.launch {
-            val link = libraryPrefsRepository.getAniListLinks()[book.aniListSeriesKey()]
-                ?.takeIf { it.syncEnabled } ?: return@launch
+            val seriesKey = book.aniListSeriesKey()
+            val links = libraryPrefsRepository.getAniListLinks()
+            Log.d("AniListDbg", "seriesKey=$seriesKey links=$links")
+            val link = links[seriesKey]?.takeIf { it.syncEnabled } ?: run {
+                Log.d("AniListDbg", "no matching sync-enabled link, bailing")
+                return@launch
+            }
 
             mediaId = link.mediaId
             sortedBookmarks = bookmarks
                 .mapNotNull { bookmark -> bookmark.chapterNumber?.let { bookmark.pageIndex to it } }
                 .sortedBy { it.first }
+            Log.d("AniListDbg", "resolved mediaId=$mediaId sortedBookmarks=$sortedBookmarks")
         }
     }
 
@@ -62,6 +70,7 @@ class MangaAniListProgressTracker(
      *  gets pushed. The chapter the reader is sitting in only counts once the very last page of the
      *  book is reached, since there's no further bookmark transition to catch its own completion. */
     fun onPageChanged(currentPageOneBased: Int, totalPages: Int?) {
+        Log.d("AniListDbg", "onPageChanged: page=$currentPageOneBased total=$totalPages mediaId=$mediaId bookmarks=${sortedBookmarks.size}")
         val id = mediaId ?: return
         if (sortedBookmarks.isEmpty()) return
 
@@ -75,8 +84,10 @@ class MangaAniListProgressTracker(
             currentChapterIdx > 0 -> sortedBookmarks[currentChapterIdx - 1].second
             else -> null
         } ?: return
+        Log.d("AniListDbg", "completedChapter=$completedChapter lastPushed=$lastPushedChapter")
         if (completedChapter <= lastPushedChapter) return
         lastPushedChapter = completedChapter
+        Log.d("AniListDbg", "PUSHING progress=$completedChapter for mediaId=$id")
 
         scope.launch {
             // clampProgress = true -- this push is inferred from page position, not a deliberate

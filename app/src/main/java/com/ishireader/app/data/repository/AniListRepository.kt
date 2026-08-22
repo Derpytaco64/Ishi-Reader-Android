@@ -1,5 +1,6 @@
 package com.ishireader.app.data.repository
 
+import android.util.Log
 import com.ishireader.app.data.local.CachedAniListEntryDao
 import com.ishireader.app.data.local.CachedAniListEntryEntity
 import com.ishireader.app.data.local.CachedUserDao
@@ -156,9 +157,11 @@ class AniListRepository(
      *  caller, same "the edit is safely saved either way" contract as LibraryPrefsRepository.patchPrefs. */
     suspend fun patchEntry(mediaId: Int, patch: JsonObject, clampProgress: Boolean = false): ApiResult<Unit> = withContext(Dispatchers.IO) {
         outboxMutex.withLock {
+            Log.d("AniListDbg", "patchEntry called mediaId=$mediaId patch=$patch clampProgress=$clampProgress")
             val effectivePatch = if (clampProgress) clampProgressPatch(mediaId, patch) else patch
             val pending = JsonObject(readPendingPatch(mediaId) + effectivePatch)
-            if (pending.isEmpty()) return@withLock ApiResult.Success(Unit)
+            Log.d("AniListDbg", "effectivePatch=$effectivePatch pending=$pending")
+            if (pending.isEmpty()) { Log.d("AniListDbg", "pending empty, bailing before outbox write"); return@withLock ApiResult.Success(Unit) }
             pendingPatchDao.upsert(PendingAniListPatchEntity(mediaId, pending.toString(), System.currentTimeMillis()))
 
             try {
