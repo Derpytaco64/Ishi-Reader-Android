@@ -687,7 +687,14 @@ class ReaderActivity : FragmentActivity() {
         if (isComicState.value) {
             val progressTracker = MangaAniListProgressTracker(app.libraryPrefsRepository, app.aniListRepository, lifecycleScope)
             mangaAniListProgressTracker = progressTracker
-            pageCountTracker.state.onEach { state -> state.currentPage?.let { page -> progressTracker.onPageChanged(page, state.totalPages) } }.launchIn(lifecycleScope)
+            // Deliberately NOT pageCountTracker.state.onEach { state.currentPage } here -- that
+            // field is only ever updated by EpubNavigatorFragment's deprecated PaginationListener
+            // callback, which exactPageFraction's own doc comment already flags as unreliable
+            // relative to the currentLocator stream (every other page-driven consumer in this file
+            // -- the footer, the slider, exactPageFraction/savePosition -- uses dynamicPageForLocator
+            // off currentLocator instead, never this field). For comics that callback doesn't fire
+            // at all, so AniList progress is hooked into the currentLocator.onEach block below
+            // instead, once it's set up.
 
             lifecycleScope.launch {
                 // CLAUDE-ADDED: Routed through a cached repository (rather than calling
@@ -770,6 +777,14 @@ class ReaderActivity : FragmentActivity() {
                     locator
                 )
                 readingTimerTracker.onLocatorChanged(locator, exactProgression)
+                // Same locator-derived page number exactProgression above already computes this
+                // way rather than trusting pageCountTracker.state.currentPage -- see the comic-setup
+                // block's own comment on why AniList progress can't use that field either.
+                mangaAniListProgressTracker?.let { tracker ->
+                    dynamicPageForLocator(dynamicPageCountState.value, locator)?.let { page ->
+                        tracker.onPageChanged(page, dynamicPageCountState.value.totalPages)
+                    }
+                }
                 // Belt-and-suspenders against decorations silently missing on a chapter that
                 // wasn't the visible one yet when annotationsController.start() first fetched and
                 // applied them (Readium's own re-apply-on-load only fires for a resource the very
