@@ -15,6 +15,7 @@ import com.ishireader.app.data.network.ApiResult
 import com.ishireader.app.data.network.NetworkModule
 import com.ishireader.app.data.sync.SyncScheduler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -155,7 +156,14 @@ class AniListRepository(
      *  (offline, or the server/AniList itself failing) leaves the merged patch queued for
      *  [com.ishireader.app.data.sync.AniListSyncWorker] and is still reported as a success to the
      *  caller, same "the edit is safely saved either way" contract as LibraryPrefsRepository.patchPrefs. */
-    suspend fun patchEntry(mediaId: Int, patch: JsonObject, clampProgress: Boolean = false): ApiResult<Unit> = withContext(Dispatchers.IO) {
+    /** Runs under [NonCancellable] -- callers push this from lifecycle/viewModel-scoped coroutines
+     *  (e.g. [MangaAniListProgressTracker][com.ishireader.app.reader.MangaAniListProgressTracker]'s
+     *  per-page-turn pushes on ReaderActivity's lifecycleScope), and without this a page turned right
+     *  before backing out of the reader could have its outbox write cancelled by scope teardown
+     *  before [pendingPatchDao.upsert] ever runs -- silently dropping the edit instead of queuing it
+     *  for [com.ishireader.app.data.sync.AniListSyncWorker], same failure class ReaderActivity.onPause
+     *  already documents for position saves. */
+    suspend fun patchEntry(mediaId: Int, patch: JsonObject, clampProgress: Boolean = false): ApiResult<Unit> = withContext(NonCancellable + Dispatchers.IO) {
         outboxMutex.withLock {
             Log.d("AniListDbg", "patchEntry called mediaId=$mediaId patch=$patch clampProgress=$clampProgress")
             val effectivePatch = if (clampProgress) clampProgressPatch(mediaId, patch) else patch
