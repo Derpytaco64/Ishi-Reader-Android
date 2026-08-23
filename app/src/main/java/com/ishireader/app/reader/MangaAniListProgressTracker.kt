@@ -91,9 +91,16 @@ class MangaAniListProgressTracker(
 
         scope.launch {
             // clampProgress = true -- this push is inferred from page position, not a deliberate
-            // user edit, so it must never regress AniList's progress below what's already known
-            // (see AniListRepository's class doc). A manual edit from the tracking sheet skips this.
-            aniListRepository.patchEntry(id, JsonObject(mapOf("progress" to JsonPrimitive(completedChapter))), clampProgress = true)
+            // user edit, so progress must never regress below what's already known (see
+            // AniListRepository's class doc). autoCompleteOnLastChapter = true -- if this chapter
+            // is the series' known last one, patchEntry also marks it COMPLETED (see
+            // AniListRepository.applyAutoComplete for the offline-safe cache+pending-outbox check).
+            aniListRepository.patchEntry(
+                id,
+                JsonObject(mapOf("progress" to JsonPrimitive(completedChapter))),
+                clampProgress = true,
+                autoCompleteOnLastChapter = true
+            )
         }
     }
 }

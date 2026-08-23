@@ -163,10 +163,22 @@ class AniListRepository(
      *  before [pendingPatchDao.upsert] ever runs -- silently dropping the edit instead of queuing it
      *  for [com.ishireader.app.data.sync.AniListSyncWorker], same failure class ReaderActivity.onPause
      *  already documents for position saves. */
-    suspend fun patchEntry(mediaId: Int, patch: JsonObject, clampProgress: Boolean = false): ApiResult<Unit> = withContext(NonCancellable + Dispatchers.IO) {
+    /** [autoCompleteOnLastChapter], when true, also injects `status: COMPLETED` if [patch]'s
+     *  (post-clamp) `progress` reaches the series' known total chapter count -- see
+     *  [applyAutoComplete]. Runs under the same [outboxMutex] as the clamp/merge below so it sees
+     *  the same atomic snapshot of cache + pending outbox, offline included (both reads are local
+     *  Room lookups, no network). Only [MangaAniListProgressTracker]'s inferred pushes opt in; a
+     *  manual tracking-sheet edit is a deliberate user choice that shouldn't be second-guessed. */
+    suspend fun patchEntry(
+        mediaId: Int,
+        patch: JsonObject,
+        clampProgress: Boolean = false,
+        autoCompleteOnLastChapter: Boolean = false
+    ): ApiResult<Unit> = withContext(NonCancellable + Dispatchers.IO) {
         outboxMutex.withLock {
             Log.d("AniListDbg", "patchEntry called mediaId=$mediaId patch=$patch clampProgress=$clampProgress")
-            val effectivePatch = if (clampProgress) clampProgressPatch(mediaId, patch) else patch
+            val clamped = if (clampProgress) clampProgressPatch(mediaId, patch) else patch
+            val effectivePatch = if (autoCompleteOnLastChapter) applyAutoComplete(mediaId, clamped) else clamped
             val pending = JsonObject(readPendingPatch(mediaId) + effectivePatch)
             Log.d("AniListDbg", "effectivePatch=$effectivePatch pending=$pending")
             if (pending.isEmpty()) { Log.d("AniListDbg", "pending empty, bailing before outbox write"); return@withLock ApiResult.Success(Unit) }
@@ -208,6 +220,30 @@ class AniListRepository(
         val pendingProgress = (readPendingPatch(mediaId)["progress"] as? JsonPrimitive)?.intOrNull ?: 0
         val known = maxOf(cached, pendingProgress)
         return if (incoming > known) patch else JsonObject(patch - "progress")
+    }
+
+    /** Injects `status: COMPLETED` alongside a `progress` push that reaches the series' last known
+     *  chapter -- mirrors Tachiyomi's own "mark completed" behavior. A no-op (returns [patch]
+     *  unchanged) whenever: [patch] has no `progress` key (nothing to check, e.g.
+     *  [clampProgressPatch] already dropped it as a non-advance); the total chapter count isn't
+     *  cached yet (this device never fetched this series' entry, so "last chapter" is unknown); or
+     *  the *effective* status -- a still-pending, not-yet-synced status edit from the outbox if one
+     *  exists, else the last-synced cached status -- is already COMPLETED (no churn) or REPEATING (a
+     *  reread in progress; AniList/Tachiyomi convention leaves that alone and bumps `repeat`
+     *  instead, which this inferred push doesn't attempt). Checking the pending patch rather than
+     *  only the cache matters offline: a manual status edit queued earlier in the same offline
+     *  session hasn't reached [cacheSavedEntry] yet, so reading the cache alone could stomp it right
+     *  back to COMPLETED. */
+    private suspend fun applyAutoComplete(mediaId: Int, patch: JsonObject): JsonObject {
+        val progress = (patch["progress"] as? JsonPrimitive)?.intOrNull ?: return patch
+        val totalChapters = getCachedEntry(mediaId)?.chapters ?: return patch
+        if (progress < totalChapters) return patch
+
+        val pendingStatus = (readPendingPatch(mediaId)["status"] as? JsonPrimitive)?.content
+        val effectiveStatus = pendingStatus ?: getCachedEntry(mediaId)?.mediaListEntry?.status
+        if (effectiveStatus == "COMPLETED" || effectiveStatus == "REPEATING") return patch
+
+        return JsonObject(patch + mapOf("status" to JsonPrimitive("COMPLETED")))
     }
 
     /** Updates just the mediaListEntry portion of the cache after a successful save, preserving

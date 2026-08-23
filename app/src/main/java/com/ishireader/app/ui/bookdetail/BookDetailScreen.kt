@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.work.WorkInfo
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -96,6 +97,7 @@ import com.ishireader.app.ui.reader.ImageViewerOverlay
 import com.ishireader.app.ui.reader.ReadingTimerSheet
 import com.ishireader.app.ui.reader.buildRows
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -194,6 +196,17 @@ fun BookDetailScreen(
     LaunchedEffect(book) {
         if (isComic) trackingViewModel.checkLinked(book)
     }
+    // AniListSyncWorker drains its outbox purely in the background (e.g. after reconnecting from
+    // offline) with no other way to tell this already-open screen its cached entry just changed --
+    // refetch this series' entry whenever a run completes while this screen is up. drop(1) skips
+    // whatever state the unique work already happened to be in at subscribe time (a stale SUCCEEDED
+    // left over from an earlier run), so only a completion that actually happens now triggers this.
+    LaunchedEffect(book) {
+        if (!isComic) return@LaunchedEffect
+        app.syncScheduler.aniListSyncStateFlow()
+            .drop(1)
+            .collect { state -> if (state == WorkInfo.State.SUCCEEDED) trackingViewModel.refresh(book) }
+    }
     var pendingDeleteCompletedReadId by remember { mutableStateOf<String?>(null) }
     var pendingDeleteCompletedListenId by remember { mutableStateOf<String?>(null) }
 
@@ -203,11 +216,20 @@ fun BookDetailScreen(
     // Same reasoning applies to the AniList summary row/sheet: MangaAniListProgressTracker may have
     // just auto-advanced this series' chapter progress mid-read (see TrackingViewModel.refresh).
     val lifecycleOwner = LocalLifecycleOwner.current
+    // Lifecycle.addObserver delivers the *current* state to a newly-added observer immediately --
+    // if the Activity is already RESUMED (the normal case, just navigating into this screen), that
+    // means ON_RESUME fires right away on first composition too, not only on a genuine
+    // background/foreground round-trip. Without this guard that duplicated the LaunchedEffect(book)/
+    // start() calls below with an identical getEntry() fetch on every fresh visit, not just returns.
+    var hasResumedBefore by remember { mutableStateOf(false) }
     DisposableEffect(lifecycleOwner, viewModel, trackingViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.refresh()
-                if (isComic) trackingViewModel.refresh(book)
+                if (hasResumedBefore) {
+                    viewModel.refresh()
+                    if (isComic) trackingViewModel.refresh(book)
+                }
+                hasResumedBefore = true
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

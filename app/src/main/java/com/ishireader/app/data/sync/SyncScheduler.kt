@@ -12,6 +12,8 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.TimeUnit
 
 /**
@@ -115,6 +117,18 @@ class SyncScheduler(private val context: Context) {
     private fun connectedConstraints() = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
+
+    /** Emits the AniList outbox worker's terminal state each time a run finishes (success or
+     *  failure) -- lets a screen that's already open (BookDetailScreen's tracking summary) pick up
+     *  a push that lands after reconnecting from offline, since [AniListSyncWorker] runs purely in
+     *  the background with no other way to tell an already-mounted screen its cached entry just
+     *  changed. Callers should `drop(1)` before collecting -- the first emission is whatever state
+     *  the unique work already happened to be in at subscribe time (e.g. a stale SUCCEEDED left
+     *  over from a previous run), not a completion that actually happened just now. */
+    fun aniListSyncStateFlow(): Flow<WorkInfo.State?> =
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(ANILIST_SYNC_WORK_NAME)
+            .map { infos -> infos.firstOrNull()?.state }
+            .distinctUntilChanged()
 
     /** True while either sync worker is actively running -- drives the library screen's sync
      *  progress ring (see MainTabsScreen's SyncProgressRing). Only [WorkInfo.State.RUNNING] counts,
