@@ -228,22 +228,39 @@ class AniListRepository(
      *  [clampProgressPatch] already dropped it as a non-advance); the total chapter count isn't
      *  cached yet (this device never fetched this series' entry, so "last chapter" is unknown); or
      *  the *effective* status -- a still-pending, not-yet-synced status edit from the outbox if one
-     *  exists, else the last-synced cached status -- is already COMPLETED (no churn) or REPEATING (a
-     *  reread in progress; AniList/Tachiyomi convention leaves that alone and bumps `repeat`
-     *  instead, which this inferred push doesn't attempt). Checking the pending patch rather than
-     *  only the cache matters offline: a manual status edit queued earlier in the same offline
-     *  session hasn't reached [cacheSavedEntry] yet, so reading the cache alone could stomp it right
-     *  back to COMPLETED. */
+     *  exists, else the last-synced cached status -- is already COMPLETED (no churn). Checking the
+     *  pending patch rather than only the cache matters offline: a manual status edit queued earlier
+     *  in the same offline session hasn't reached [cacheSavedEntry] yet, so reading the cache alone
+     *  could stomp it right back to COMPLETED.
+     *
+     *  If the effective status is REPEATING -- a reread in progress, started via
+     *  [com.ishireader.app.ui.bookdetail.TrackingViewModel.setStatus]'s progress-reset -- reaching
+     *  the last chapter again completes *that* reread: status flips back to COMPLETED and `repeat`
+     *  increments by one, mirroring Tachiyomi's own rereading-completion behavior. The effective
+     *  repeat count (pending outbox value if one's already queued this session, else the last-synced
+     *  cache) is read the same offline-safe way as effectiveStatus, so this is correct even fully
+     *  offline -- both reads are local Room lookups under the same [outboxMutex] as the merge below. */
     private suspend fun applyAutoComplete(mediaId: Int, patch: JsonObject): JsonObject {
         val progress = (patch["progress"] as? JsonPrimitive)?.intOrNull ?: return patch
         val totalChapters = getCachedEntry(mediaId)?.chapters ?: return patch
         if (progress < totalChapters) return patch
 
-        val pendingStatus = (readPendingPatch(mediaId)["status"] as? JsonPrimitive)?.content
-        val effectiveStatus = pendingStatus ?: getCachedEntry(mediaId)?.mediaListEntry?.status
-        if (effectiveStatus == "COMPLETED" || effectiveStatus == "REPEATING") return patch
+        val pending = readPendingPatch(mediaId)
+        val cachedEntry = getCachedEntry(mediaId)?.mediaListEntry
+        val effectiveStatus = (pending["status"] as? JsonPrimitive)?.content ?: cachedEntry?.status
+        if (effectiveStatus == "COMPLETED") return patch
 
-        return JsonObject(patch + mapOf("status" to JsonPrimitive("COMPLETED")))
+        return if (effectiveStatus == "REPEATING") {
+            val effectiveRepeat = (pending["repeat"] as? JsonPrimitive)?.intOrNull ?: cachedEntry?.repeat ?: 0
+            JsonObject(
+                patch + mapOf(
+                    "status" to JsonPrimitive("COMPLETED"),
+                    "repeat" to JsonPrimitive(effectiveRepeat + 1)
+                )
+            )
+        } else {
+            JsonObject(patch + mapOf("status" to JsonPrimitive("COMPLETED")))
+        }
     }
 
     /** Updates just the mediaListEntry portion of the cache after a successful save, preserving

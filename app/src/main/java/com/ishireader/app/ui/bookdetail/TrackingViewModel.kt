@@ -185,9 +185,25 @@ class TrackingViewModel(
         viewModelScope.launch { libraryPrefsRepository.setAniListLink(seriesKey, updated) }
     }
 
+    /** Switching *into* REPEATING (and only then -- reselecting it while already rereading is a
+     *  no-op here) resets `progress` to 0 alongside the status change, same convention Tachiyomi's
+     *  trackers use when you start a reread: without this, [AniListRepository.clampProgressPatch]
+     *  would keep silently dropping the reader's page-1-of-the-reread pushes as non-advances against
+     *  the previous read-through's final progress (see [AniListRepository]'s class doc). Bundled
+     *  into one patch object rather than two separate [pushPatch] calls so the outbox merge (and one
+     *  inline network attempt) sees both fields atomically, offline included. */
     fun setStatus(status: String) {
-        updateLocalEntry { it.copy(status = status) }
-        pushPatch(JsonObject(mapOf("status" to JsonPrimitive(status))))
+        val previousStatus = _uiState.value.media?.mediaListEntry?.status
+        val startingReread = status == "REPEATING" && previousStatus != "REPEATING"
+        updateLocalEntry { entry ->
+            if (startingReread) entry.copy(status = status, progress = 0) else entry.copy(status = status)
+        }
+        val fields = if (startingReread) {
+            mapOf("status" to JsonPrimitive(status), "progress" to JsonPrimitive(0))
+        } else {
+            mapOf("status" to JsonPrimitive(status))
+        }
+        pushPatch(JsonObject(fields))
     }
 
     fun setScore(score: Double) {
@@ -195,9 +211,16 @@ class TrackingViewModel(
         pushPatch(JsonObject(mapOf("score" to JsonPrimitive(score))))
     }
 
+    /** [autoCompleteOnLastChapter] mirrors [MangaAniListProgressTracker][com.ishireader.app.reader.MangaAniListProgressTracker]'s
+     *  own reader-driven pushes -- a manual chapter-field edit that reaches the series' last known
+     *  chapter completes a reread (status REPEATING -> COMPLETED, `repeat` += 1) exactly the same way
+     *  an automatic page-turn-driven one does, see [AniListRepository.applyAutoComplete]. Unlike the
+     *  reader's pushes this one does *not* pass `clampProgress` -- a manual edit (including typing in
+     *  a lower number to correct a mistake, or the 0 reset from [setStatus]) is a deliberate,
+     *  last-write-wins choice, not an inferred one that needs guarding against regressing. */
     fun setProgress(progress: Int) {
         updateLocalEntry { it.copy(progress = progress) }
-        pushPatch(JsonObject(mapOf("progress" to JsonPrimitive(progress))))
+        pushPatch(JsonObject(mapOf("progress" to JsonPrimitive(progress))), autoCompleteOnLastChapter = true)
     }
 
     fun setRepeat(repeat: Int) {
@@ -226,9 +249,11 @@ class TrackingViewModel(
         }
     }
 
-    private fun pushPatch(fields: JsonObject) {
+    private fun pushPatch(fields: JsonObject, autoCompleteOnLastChapter: Boolean = false) {
         val mediaId = _uiState.value.link?.mediaId ?: return
-        viewModelScope.launch { aniListRepository.patchEntry(mediaId, fields) }
+        viewModelScope.launch {
+            aniListRepository.patchEntry(mediaId, fields, autoCompleteOnLastChapter = autoCompleteOnLastChapter)
+        }
     }
 
     class Factory(
