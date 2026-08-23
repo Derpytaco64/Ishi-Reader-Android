@@ -10,4 +10,4 @@
 local.properties
 *.hprof
 
-app/build/
+**/build/

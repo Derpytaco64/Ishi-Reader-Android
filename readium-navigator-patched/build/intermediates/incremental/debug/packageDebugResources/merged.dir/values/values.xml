@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <dimen name="readium_navigator_epub_vertical_padding">40dp</dimen>
-    <item name="readium_pdf_container" type="id"/>
-    <string name="readium_media_notification_channel_description">Audiobook currently being played</string>
-    <string name="readium_media_notification_channel_name">Audiobook</string>
-</resources>
